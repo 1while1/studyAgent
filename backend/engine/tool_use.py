@@ -169,6 +169,12 @@ class ToolUseLoop:
             event["error"] = str(e)[:100]
             return event, (f"【系统注入】读取失败：{e}。"
                            "请换用其他引用或跳过该文件继续讲解。")
+        if not data["content"].strip():
+            event.update({"ok": True, "path": f"{hit['root']}/{hit['path']}",
+                          "lines": ""})
+            return event, (
+                f"【系统注入】`{hit['path']}` 存在但**内容为空**（0 字节占位文件）。"
+                "请明确告知用户该文件为空，换用其他真实文件继续，禁止编造其内容。")
         all_lines = data["content"].split("\n")
         total = len(all_lines)
         s = max(1, int(start)) if start else 1
