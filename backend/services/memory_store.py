@@ -102,6 +102,26 @@ class MemoryStore:
     # ---- 局部修改 ----
 
     @staticmethod
+    def sync_items(content: str, field: str) -> list[str]:
+        """提取 [同步] 记录某字段的条目列表（按 、/， 切分，跳过 无/空）。"""
+        in_sync = False
+        for line in content.splitlines():
+            if line.startswith("### [同步] 记录"):
+                in_sync = True
+                continue
+            if in_sync and line.startswith("### "):
+                break
+            if in_sync:
+                m = re.match(rf"^-\s*{re.escape(field)}[:：]\s*(.*)$", line)
+                if m:
+                    body = m.group(1).strip()
+                    if body in ("", "无"):
+                        return []
+                    return [x.strip() for x in re.split(r"[、，,]", body)
+                            if x.strip()]
+        return []
+
+    @staticmethod
     def reset_for_restart(content: str) -> str:
         """「重新开始今日学习」：单元勾选重置为 [ ]，其余（[同步] 记录/评分/评语/备注）原样保留。
 
