@@ -183,6 +183,26 @@ class TestToolUseLoop(unittest.TestCase):
         self.assertEqual(self._reads(events)[0]["lines"], "L2-L2")
         self.assertNotIn("READ:", loop.text)
 
+    def test_suggest_camelcase_suffix_divergence(self):
+        # Entity vs DO 后缀差异：stem 最长前缀命中（线上 CouponTemplate 真实场景）
+        (self.tmp / "projA" / "dao").mkdir()
+        (self.tmp / "projA" / "dao" / "CouponTemplateDO.java").write_text(
+            "class DO {}", encoding="utf-8")
+        tips = self.browser.suggest("projA/domain/entity/CouponTemplateEntity.java")
+        self.assertTrue(tips)
+        self.assertIn("CouponTemplateDO.java", tips[0]["path"])
+
+    def test_empty_file_injection(self):
+        (self.tmp / "projA" / "empty.sql").write_text("", encoding="utf-8")
+        llm, loop, events = self._run([
+            "[READ:projA/empty.sql]\n", "文件是空的，换别的讲",
+        ])
+        reads = self._reads(events)
+        self.assertTrue(reads[0]["ok"])
+        injected = llm.calls[1][-1]["content"]
+        self.assertIn("内容为空", injected)
+        self.assertIn("禁止编造", injected)
+
 
 if __name__ == "__main__":
     unittest.main()

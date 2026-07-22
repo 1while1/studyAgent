@@ -153,12 +153,17 @@ class CodeBrowser:
             return False
 
     def suggest(self, query: str, limit: int = 5) -> list[dict]:
-        """resolve 未命中时的模糊候选：按文件名/词干子串匹配索引，供 AI 纠正路径。"""
+        """resolve 未命中时的模糊候选，供 AI 纠正路径。
+
+        两级匹配：完整文件名子串（优先）→ 词干最长前缀（≥6 字符）子串，
+        后者兼容 Java 命名后缀差异（Entity/DO/DTO/VO 互换，如
+        CouponTemplateEntity vs CouponTemplateDO）。
+        """
         q = query.strip().strip("`").replace("\\", "/")
         q = re.sub(r":L?\d+(?:-L?\d+)?$", "", q).lower()
         base = q.split("/")[-1]
         stem = base.rsplit(".", 1)[0]
-        hits: list[tuple[int, int, dict]] = []
+        hits: list[tuple[tuple, dict]] = []
         for r in self._config.code_roots:
             root = self._resolve_root(r["path"])
             if not root or not root.is_dir():
@@ -166,14 +171,19 @@ class CodeBrowser:
             for rel in self._index(r["name"], root):
                 rl = rel.lower()
                 if base and base in rl:
-                    score = 0
-                elif stem and len(stem) >= 4 and stem in rl:
-                    score = 1
+                    key = (0, -len(base), len(rel))
                 else:
-                    continue
-                hits.append((score, len(rel), {"root": r["name"], "path": rel}))
-        hits.sort(key=lambda h: (h[0], h[1]))
-        return [h[2] for h in hits[:limit]]
+                    cut = 0
+                    for c in range(len(stem), 5, -1):
+                        if stem[:c] in rl:
+                            cut = c
+                            break
+                    if not cut:
+                        continue
+                    key = (1, -cut, len(rel))
+                hits.append((key, {"root": r["name"], "path": rel}))
+        hits.sort(key=lambda h: h[0])
+        return [h[1] for h in hits[:limit]]
 
     def _index(self, name: str, root: Path) -> list[str]:
         now = time.time()
