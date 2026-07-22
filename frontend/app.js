@@ -318,7 +318,19 @@ async function loadHistory() {
 
 // ---------- SSE 收发 ----------
 
+// 发送锁：流式进行中禁止再次发送（防前后端历史错乱）
+let streaming = false;
+
+function setSendEnabled(on) {
+  const btn = document.querySelector("#input-form button");
+  if (btn) btn.disabled = !on;
+  document.getElementById("command-chips").style.pointerEvents = on ? "" : "none";
+}
+
 async function streamPost(url, text) {
+  if (streaming) { showToast("上一条回复生成中，请稍候…"); return; }
+  streaming = true;
+  setSendEnabled(false);
   addUserMessage(text);
   let bubble = addMessage("assistant", "思考中…");
   bubble.classList.add("thinking");
@@ -329,85 +341,103 @@ async function streamPost(url, text) {
     }
   }, 1000);
   let rawText = "";  // Markdown 原文累积器（禁止从 bubble.textContent 回读）
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
-  });
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const events = buffer.split("\n\n");
-    buffer = events.pop();
-    for (const ev of events) {
-      if (!ev.startsWith("data: ")) continue;
-      const payload = JSON.parse(ev.slice(6));
-      if (payload.type === "delta") {
-        if (bubble.classList.contains("thinking")) {
-          clearInterval(timer);
-          bubble.classList.remove("thinking");
-          bubble.textContent = "";
-          rawText = "";
-        }
-        rawText += payload.content;
-        throttledRender(bubble, rawText);
-      } else if (payload.type === "message") {
-        clearInterval(timer);
-        cancelThrottledRender();  // 防止旧气泡的迟到节流渲染覆盖模板
-        const wasThinking = bubble.classList.contains("thinking");
-        bubble.classList.remove("thinking");
-        if (bubble.textContent && !wasThinking) bubble = addMessage("assistant", "");
-        renderMarkdownInto(bubble, payload.content);
-        rawText = "";
-        // 模板渲染完后可能还有 LLM 流，继续保持等待提示
-        bubble = addMessage("assistant", "思考中…");
-        bubble.classList.add("thinking");
-      } else if (payload.type === "tool_read") {
-        // AI 触发读文件：封当前泡 → 插入读取 chip → 开新泡等续写
-        cancelThrottledRender();
-        const wasThinking = bubble.classList.contains("thinking");
-        bubble.classList.remove("thinking");
-        if (wasThinking && !rawText) {
-          bubble.parentElement.remove();  // READ 是首个输出，占位泡无内容
-        } else if (rawText) {
-          renderMarkdownInto(bubble, rawText);
-        }
-        addToolReadChip(payload);
-        rawText = "";
-        bubble = addMessage("assistant", "思考中…");
-        bubble.classList.add("thinking");
-      } else if (payload.type === "error") {
-        clearInterval(timer);
-        if (bubble.classList.contains("thinking") || !bubble.textContent) {
-          bubble.parentElement.remove();
-        }
-        bubble = addMessage("error", payload.content);
-      } else if (payload.type === "done") {
-        // 终渲染（流式期间是节流渲染）；先取消未触发的节流，防旧快照回退
-        cancelThrottledRender();
-        if (rawText && bubble.classList.contains("md")) {
-          renderMarkdownInto(bubble, rawText);
-        }
-      }
-      scrollToBottom();
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) {
+      const bodyText = await res.text().catch(() => "");
+      throw new Error(`HTTP ${res.status}${bodyText ? "：" + bodyText.slice(0, 200) : ""}`);
     }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split("\n\n");
+      buffer = events.pop();
+      for (const ev of events) {
+        if (!ev.startsWith("data: ")) continue;
+        const payload = JSON.parse(ev.slice(6));
+        if (payload.type === "delta") {
+          if (bubble.classList.contains("thinking")) {
+            clearInterval(timer);
+            bubble.classList.remove("thinking");
+            bubble.textContent = "";
+            rawText = "";
+          }
+          rawText += payload.content;
+          throttledRender(bubble, rawText);
+        } else if (payload.type === "message") {
+          clearInterval(timer);
+          cancelThrottledRender();  // 防止旧气泡的迟到节流渲染覆盖模板
+          const wasThinking = bubble.classList.contains("thinking");
+          bubble.classList.remove("thinking");
+          if (bubble.textContent && !wasThinking) bubble = addMessage("assistant", "");
+          renderMarkdownInto(bubble, payload.content);
+          rawText = "";
+          // 模板渲染完后可能还有 LLM 流，继续保持等待提示
+          bubble = addMessage("assistant", "思考中…");
+          bubble.classList.add("thinking");
+        } else if (payload.type === "tool_read") {
+          // AI 触发读文件：封当前泡 → 插入读取 chip → 开新泡等续写
+          cancelThrottledRender();
+          const wasThinking = bubble.classList.contains("thinking");
+          bubble.classList.remove("thinking");
+          if (wasThinking && !rawText) {
+            bubble.parentElement.remove();  // READ 是首个输出，占位泡无内容
+          } else if (rawText) {
+            renderMarkdownInto(bubble, rawText);
+          }
+          addToolReadChip(payload);
+          rawText = "";
+          bubble = addMessage("assistant", "思考中…");
+          bubble.classList.add("thinking");
+        } else if (payload.type === "error") {
+          clearInterval(timer);
+          if (bubble.classList.contains("thinking") || !bubble.textContent) {
+            bubble.parentElement.remove();
+          }
+          bubble = addMessage("error", payload.content);
+        } else if (payload.type === "done") {
+          // 终渲染（流式期间是节流渲染）；先取消未触发的节流，防旧快照回退
+          cancelThrottledRender();
+          if (rawText && bubble.classList.contains("md")) {
+            renderMarkdownInto(bubble, rawText);
+          }
+        }
+        scrollToBottom();
+      }
+    }
+    // 清理：无 LLM 流的指令（如 FAIL-FAST）会留下占位泡
+    if (!rawText && (!bubble.textContent || bubble.classList.contains("thinking"))) {
+      bubble.parentElement.remove();
+    }
+  } catch (err) {
+    // 协议外失败（断网/非 2xx/服务重启）：清占位泡并给出可见错误
+    cancelThrottledRender();
+    if (bubble && bubble.parentElement &&
+        (bubble.classList.contains("thinking") || !bubble.textContent)) {
+      bubble.parentElement.remove();
+    }
+    addMessage("error", `请求失败：${err.message || err}`);
+  } finally {
+    clearInterval(timer);
+    streaming = false;
+    setSendEnabled(true);
+    refreshState();
   }
-  // 清理：无 LLM 流的指令（如 FAIL-FAST）会留下占位泡
-  if (!rawText && (!bubble.textContent || bubble.classList.contains("thinking"))) {
-    bubble.parentElement.remove();
-  }
-  clearInterval(timer);
-  refreshState();
 }
 
 function sendCommand(text) { streamPost("/api/command", text); }
 
 form.addEventListener("submit", (e) => {
   e.preventDefault();
+  if (streaming) { showToast("上一条回复生成中，请稍候…"); return; }
   const text = inputEl.value.trim();
   if (!text) return;
   inputEl.value = "";

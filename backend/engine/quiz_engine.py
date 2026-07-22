@@ -28,7 +28,10 @@ class QuizEngine:
     @staticmethod
     def extract_score(text: str) -> float | None:
         m = SCORE_RE.search(text)
-        return float(m.group(1)) if m else None
+        if not m:
+            return None
+        score = float(m.group(1))
+        return score if 1.0 <= score <= 5.0 else None  # 超出契约范围视为无效标记
 
     def ask_and_score(self, messages: list[Message], max_retries: int = 1
                       ) -> tuple[str, float | None]:

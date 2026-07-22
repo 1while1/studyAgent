@@ -20,9 +20,10 @@ class JumpDayHandler(CommandHandler):
             return None  # 用户已确认重置
         m = re.search(r"(\d+)", args)
         if not m:
-            return "用法：[跳转天数] Day <X>（1-25）"
+            total = deps.config.workspace.total_days
+            return f"用法：[跳转天数] Day <X>（1-{total}）"
         x = int(m.group(1))
-        total = deps.config.get("total_days", 25)
+        total = deps.config.workspace.total_days
         if not 1 <= x <= total:
             return f"跳转天数超出范围，必须在 1-{total} 之间。"
         state = deps.state_store.load()
@@ -34,12 +35,13 @@ class JumpDayHandler(CommandHandler):
     def run(self, deps: Deps, session: SessionContext,
             args: str, mode: str = "") -> CommandResult:
         m = re.search(r"(\d+)", args)
+        if not m:
+            return CommandResult(
+                messages=["未识别到天数，请回复带数字的格式，如：[跳转天数] Day 3"])
         x = int(m.group(1))
         state = deps.state_store.load()
-        total = deps.config.get("total_days", 25)
 
         state["current_day"] = x
-        state["active_day_completed"] = False
         day_data = deps.state_store.ensure_day(state, x)
         if args.strip() in ("[是]", "是") or not day_data.get("units"):
             day_data["units"] = []

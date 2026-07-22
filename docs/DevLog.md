@@ -11,7 +11,7 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 76 个全绿；UI 走查 52 项全绿
+- 测试：`python -m unittest discover -s tests` → 92 个全绿；UI 走查 52 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步（已规划，见 docs/Roadmap.md）
@@ -90,6 +90,25 @@
 | 跨日递进必失败（[开始今日学习] 报 StudyMemory Day_N+1 not found / Study.md 天数不符） | start_day 递进 current_day 后**先单独落盘 JSON**，中间态（StudyMemory/Study.md 仍是旧天）必被 validate 拒绝回滚；另有游离垃圾键 `state["active_day_completed"]`（flag 实为 per-day） | 递进不单独落盘，JSON+StudyMemory+Study.md（update_header）末尾统一原子落盘；删游离键；test_flows 补跨日用例；清理 ragent 真实数据残留键 |
 | READ 标记泄漏到聊天（用户看到原始 `[READ:...]` 文本、无 chip 可点） | 模型把标记裹进反引号（`` `[READ:...]` ``）或写在行内，行缓冲正则只认整行 → 不截获；更糟的是模型随后**自己模拟注入**并编造代码 | 改增量扫描解析（任意位置/反引号/跨 delta 残片均截获，未闭合按文本下发）；prompt 规则 7 加固（禁包裹/输出标记后立即停止/禁模拟注入/用户要求读代码时必须 READ）；读取失败注入模糊候选文件 |
 | [验证代码] 报"未发现构建文件"（replica 项目） | ragent-replica 按日分模块（day01/day02 各自带 pom），验证根只查根目录；onecoupon 多模块项目根有 pom 却被子目录 pom 干扰判为多候选 | resolve_verify_root 三级解析：args 点名 > 当日 dayNN > 根/唯一候选；多模块根有构建文件时从根构建 |
+
+## 缺陷修复批（2026-07-22，双子智能体审查驱动，fix/review-batch）
+
+| 缺陷 | 修复 |
+|------|------|
+| `.env`/证书类文件可经代码浏览器读取、可经 AI READ 注入外发 LLM | code_browser 敏感文件黑名单（.env*/id_rsa/*.pem/*.key 等）：read_file 拒绝 + 索引排除 |
+| LLM 失败时用户消息不落盘（前后端历史分叉）、command 端点阶段已推进但无对话记录 | /api/chat 失败也 save session；/api/command LLM 失败整体回滚到 handler 前快照 |
+| atomic_persist 单槽 .bak 并发竞态 | 按备份目录分桶的进程内互斥锁 |
+| config_writer / session_store 裸 write_text（崩溃即截断 boot-critical 文件） | atomic_write 统一模式（临时文件 + os.replace）；session 损坏先备份 .corrupt.bak 再重置 |
+| 删除工作区 rmtree 守卫相等性漏洞（可误删整个 workspaces/） | 严格限定 study-web/workspaces/<slug> 同名目录，去掉 ignore_errors，越界即报错中止 |
+| end_day 零完成单元 FAIL-FAST 死循环 | 零完成分支同样放行「确定/跳过复盘」 |
+| jump_day 用全局 total_days、无数字崩溃、写脏键 | 走 workspace.total_days；无数字返回用法提示；删游离键写入 |
+| 前端 streamPost 无协议外失败兜底（断网计时器永久泄漏、气泡卡死） | try/catch/finally + res.ok 检查，失败清占位泡 + 可见错误泡 |
+| 流式中可重复发送（前后端历史双错乱） | 发送锁：进行中禁提交/禁指令胶囊，toast 提示 |
+| add_code_root 丢失 workspace 归属 | 写入时补当前工作区 slug |
+| LLM 客户端无超时（上游挂起死占线程） | OpenAI timeout（llm_timeout 默认 300 可配）+ max_retries=1 |
+| rescan 覆盖 Project.md 绕过规则 14 | 改走 BackupService.atomic_persist |
+| 评分越界（【评分：99】也判过） | extract_score 限定 [1.0, 5.0]，越界视为无标记 |
+| 阈值/总天数硬编码（3.0、25） | 统一走 mastery_pass_score / workspace.total_days |
 | mermaid.min.js 下载截断（"Unexpected end of input"） | 后台 curl 超时只下了 3MB（整文件 3.56MB），尾部恰好截断在函数体中 | 前台 curl `--retry 3` 重下 + `node --check` 校验语法 + 走查 Mermaid 断言 |
 
 ## UI 版本

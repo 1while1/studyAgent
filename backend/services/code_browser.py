@@ -14,6 +14,20 @@ MAX_FILE_BYTES = 1024 * 1024  # 1MB 上限
 INDEX_TTL = 60  # 文件索引缓存秒数（resolve 后缀搜索用）
 INDEX_CAP = 30000  # 单根索引文件数上限
 
+# 敏感文件：禁止读取/索引（防密钥经界面或 AI READ 注入外发 LLM）
+SENSITIVE_NAMES = {
+    ".env", ".env.local", ".env.production", ".env.development",
+    "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "credentials",
+}
+SENSITIVE_EXTS = {".pem", ".key", ".p12", ".pfx", ".jks", ".keystore", ".secret"}
+
+
+def _is_sensitive(name: str) -> bool:
+    low = name.lower()
+    if low in SENSITIVE_NAMES or low.startswith(".env."):
+        return True
+    return Path(low).suffix in SENSITIVE_EXTS
+
 TEXT_EXTS = {
     ".java", ".xml", ".yml", ".yaml", ".properties", ".md", ".txt", ".json",
     ".py", ".js", ".ts", ".html", ".css", ".sql", ".toml", ".gradle", ".vue",
@@ -93,6 +107,8 @@ class CodeBrowser:
     def read_file(self, root_name: str, rel: str) -> dict:
         root = self.root_path(root_name)
         target = self._safe_join(root, rel)
+        if _is_sensitive(target.name):
+            raise CodeBrowserError("敏感文件（密钥/证书类）不允许在线查看")
         if not target.is_file():
             raise CodeBrowserError(f"文件不存在: {rel}")
         size = target.stat().st_size
@@ -195,6 +211,8 @@ class CodeBrowser:
             dirnames[:] = [d for d in dirnames
                            if d not in SKIP_DIRS and not d.startswith(".")]
             for f in filenames:
+                if _is_sensitive(f):
+                    continue
                 files.append(str(Path(dirpath, f).relative_to(root))
                              .replace("\\", "/"))
             if len(files) >= INDEX_CAP:

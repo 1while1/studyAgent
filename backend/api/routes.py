@@ -81,6 +81,8 @@ def chat(body: TextIn):
         try:
             yield from streamer.stream(session, instruction)
         except Exception as e:
+            # 失败也把用户消息落盘（前后端历史不分叉），post_process 未执行无状态分裂
+            deps.session_store.save(session)
             yield sse({"type": "error", "content": f"LLM 调用失败：{e}"})
             return
         session.chat_history.append({"role": "assistant", "content": streamer.text})
@@ -111,6 +113,8 @@ def command(body: TextIn):
         entry, args = matched
         handler = entry["handler"]
         session = deps.session_store.load()
+        import copy
+        snapshot = copy.deepcopy(session)  # LLM 失败时整体回滚用
         try:
             stop = handler.fail_fast(deps, session, args, entry["mode"])
         except Exception as e:
@@ -135,6 +139,8 @@ def command(body: TextIn):
                 session.chat_history.append({"role": "user", "content": body.text})
                 yield from streamer.stream(session, result.llm_instruction, sop)
             except Exception as e:
+                # LLM 失败：handler 已推进的阶段不落盘，整轮回滚防状态分裂
+                deps.session_store.save(snapshot)
                 yield sse({"type": "error", "content": f"LLM 调用失败：{e}"})
                 return
             session.chat_history.append(
@@ -231,7 +237,8 @@ def add_code_root(body: dict):
     roots = _deps.config.code_roots
     if any(r["name"] == name for r in roots):
         return {"ok": False, "error": f"项目根已存在: {name}"}
-    new_roots = roots + [{"name": name, "path": raw_path}]
+    new_roots = roots + [{"name": name, "path": raw_path,
+                          "workspace": _deps.config.workspace.slug}]
     try:
         # 先验证目录存在再落盘
         cb = CodeBrowser(_deps.config)

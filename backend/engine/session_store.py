@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from ..domain.models import SessionContext
+from ..services.backup_service import atomic_write
 from ..services.config_service import WEB_ROOT
 
 RUNTIME_DIR = WEB_ROOT / "runtime"
@@ -23,10 +24,12 @@ class SessionStore:
             return SessionContext.from_dict(
                 json.loads(self._path.read_text(encoding="utf-8")))
         except (json.JSONDecodeError, TypeError):
+            # 损坏文件先备份再重置，避免无声丢历史
+            import shutil
+            shutil.copy2(self._path, self._path.with_suffix(".corrupt.bak"))
             return SessionContext()
 
     def save(self, session: SessionContext) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(
-            json.dumps(session.to_dict(), ensure_ascii=False, indent=2),
-            encoding="utf-8")
+        atomic_write(self._path,
+                     json.dumps(session.to_dict(), ensure_ascii=False, indent=2))

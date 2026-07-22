@@ -40,13 +40,14 @@ def collect_due(config: ConfigService, state_store: StateStore,
 
     if state_store.exists():
         state = state_store.load()
+        pass_line = float(config.get("mastery_pass_score", 3.0))
         for d_str, day_data in state.get("days", {}).items():
             d = int(d_str)
             if d >= day or (day - d) not in intervals:
                 continue
             for u in day_data.get("units", []):
                 rating = u.get("rating", 0) or 0
-                if u.get("status") == "completed" and 0 < rating < 3.0:
+                if u.get("status") == "completed" and 0 < rating < pass_line:
                     items.append({
                         "type": "回滚", "from_day": d,
                         "text": f"Day {d} 单元{u['id']}：{u['title']}"
