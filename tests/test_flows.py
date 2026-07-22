@@ -156,26 +156,19 @@ class TestFlows(unittest.TestCase):
         self.assertIn("## Day 2 | 2026-05-25（周一） ✅", study_md)
         reviews = list((self.tmp / "docx" / "StudyReview").glob("Day_02-*.md"))
         self.assertTrue(reviews, "StudyReview 未生成")
+        # 8b. 滚动细化：Day 3 粗纲（ragent 旧数据无细化小节）已由 MockLLM 自动细化
+        day3 = deps.study_plan.parse_day(3)
+        self.assertTrue(day3["units"], "end_day 未自动细化 Day 3")
         self._validate_tmp()
 
-        # 9. 跨日递进：补 Day 3 细化小节后 [开始今日学习] → current_day=3 原子落盘
-        study_path = self.tmp / "docx" / "Study.md"
-        smd = study_path.read_text(encoding="utf-8")
-        smd += (
-            "\n## Day 3 | 2026-05-26（周二）\n"
-            "**目标**：跨日递进测试\n"
-            "1. [ ] 单元A：递进测试单元（预计 40min）\n"
-            "   - 文档：无\n"
-            "**编码目标**：无\n"
-            "**面试话术目标**：无\n")
-        study_path.write_text(smd, encoding="utf-8")
+        # 9. 跨日递进：[开始今日学习] → current_day=3 原子落盘（Day 3 已自动细化）
         self.assertIsNone(start.fail_fast(deps, session, ""))  # 前一天已结束，不 FAIL-FAST
         result = start.run(deps, session, "")
         state = deps.state_store.load()
         self.assertEqual(state["current_day"], 3)
         self.assertNotIn("active_day_completed", state)  # 顶层不得有游离键
         self.assertTrue((self.tmp / "docx" / "StudyMemory" / "Day_03.md").exists())
-        smd = study_path.read_text(encoding="utf-8")
+        smd = (self.tmp / "docx" / "Study.md").read_text(encoding="utf-8")
         self.assertIn("当前天数：Day 3", smd)
         self.assertIn("---【单元 1 开始】---", "\n".join(result.messages))
         self.assertEqual(session.current_unit_id, "A")

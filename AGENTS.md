@@ -31,7 +31,7 @@ python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name] 
 | 层 | 职责 | 关键约束 |
 |----|------|---------|
 | `backend/domain/` | 纯模型零 IO（SessionContext / DayPhase / QuizMode / Workspace / paths 常量） | 禁止 import 其他任何层 |
-| `backend/services/` | 基础设施：state_store / memory_store / study_plan / template_service / backup_service / config_service / config_writer / code_browser / repo_scanner / doc_initializer / workspace_service | 各服务互不引用（workspace_service 只做编排除外） |
+| `backend/services/` | 基础设施：state_store / memory_store / study_plan / template_service / backup_service / config_service / config_writer / code_browser / repo_scanner / doc_initializer / workspace_service / review_scheduler（间隔复习采集） | 各服务互不引用（workspace_service 只做编排除外） |
 | `backend/llm/` | LLMClient 接口 + openai_compat / mock / fallback + factory 注册表 | 新渠道只加文件 + 注册 |
 | `backend/engine/` | stage_machine（配置驱动）/ orchestrator（聊天阶段驱动）/ quiz_engine（评分提取）/ prompt_builder / tool_use（AI 读文件 READ 标记截获+注入续写）/ commands（每 SOP 卡一个 handler）/ hooks（注册式钩子链） | commands 之间禁止互相 import |
 | `backend/api/` | FastAPI 路由 + SSE + 静态托管 | 只做编排，不写业务逻辑 |
@@ -69,7 +69,7 @@ python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name] 
 
 ## v1 已知边界
 
-- `[开始今日学习]` 依赖 Study.md 当日已有 `## Day N |` 细化小节（初始化向导生成的 Study.md 自带）
+- ~~`[开始今日学习]` 依赖 Study.md 当日已有 `## Day N |` 细化小节~~（已由增量细化解决：初始化自带前 3 天，`[结束今日学习]` 滚动细化次日；失败时需重发结束指令或手动细化）
 - 复盘拷打题量靠 prompt 约束，非硬断言
 - `[开始写代码]` 的编码启动模板由 LLM 填充（需模块信息）
 - 仓库校验（Step 2）简化为目录存在性检查

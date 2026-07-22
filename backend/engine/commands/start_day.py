@@ -45,7 +45,8 @@ class StartDayHandler(CommandHandler):
     # ---- Step 渲染 ----
 
     @staticmethod
-    def _render_step1(deps: Deps, state: dict, day: int) -> str:
+    def _render_step1(deps: Deps, state: dict, day: int,
+                      due: list[dict] | None = None) -> str:
         prev = state["days"].get(str(day - 1))
         prev_done = (sum(1 for u in prev.get("units", []) if u["status"] == "completed")
                      if prev else 0)
@@ -55,6 +56,9 @@ class StartDayHandler(CommandHandler):
                         for u in prev.get("units", [])
                         if u.get("status") == "completed" and 0 < u.get("rating", 0) < 3.0]
         rollback_text = "、".join(rollback) if rollback else "无"
+        due_lines = [f"- {i['type']}·Day {i['from_day']}：{i['text']}"
+                     for i in (due or [])]
+        due_text = "\n".join(due_lines) if due_lines else "无"
         text = deps.templates.get("step1_history")
         text = (text
                 .replace("<N>", str(day))
@@ -62,7 +66,7 @@ class StartDayHandler(CommandHandler):
                 .replace("<X>", str(prev_done))
                 .replace("<列表>", "无", 1)            # 昨日卡壳（v1 未跨日追踪）
                 .replace("<列表>", rollback_text, 1)   # 昨日 < 3 分回滚项
-                .replace("<列表>", rollback_text, 1))  # 将优先安排
+                .replace("<列表>", due_text, 1))       # 将优先安排（含间隔复习项）
         return text
 
     @staticmethod
@@ -149,6 +153,13 @@ class StartDayHandler(CommandHandler):
             incremented = True
         day = state["current_day"]
 
+        # 间隔复习项采集（失败不阻塞开始学习）
+        try:
+            from ...services.review_scheduler import collect_due
+            due = collect_due(deps.config, deps.state_store, deps.memory, day)
+        except Exception:
+            due = []
+
         # 双选项分支：[恢复学习] → 引导走恢复流程
         if any(k in args for k in RESUME_KEYWORDS):
             return CommandResult(messages=["请直接发送 [恢复学习]，我会从中断单元继续。"])
@@ -156,7 +167,7 @@ class StartDayHandler(CommandHandler):
         restart = any(k in args for k in RESTART_KEYWORDS)
 
         messages: list[str] = [
-            self._render_step1(deps, state, day),
+            self._render_step1(deps, state, day, due),
             self._render_step2(deps),
         ]
 
@@ -205,9 +216,18 @@ class StartDayHandler(CommandHandler):
         deps.session_store.save(session)
 
         messages.append(self._render_unit_open(deps, first, plan))
+        review_prefix = ""
+        if due:
+            lines = "\n".join(f"- {i['type']}·Day {i['from_day']}：{i['text']}"
+                              for i in due)
+            review_prefix = (
+                "【间隔复习】正式开讲前，用 ≤5 分钟快速回顾以下历史薄弱项"
+                "（逐条向用户提问确认是否还记得，答错用一句话纠正，不展开重讲）：\n"
+                f"{lines}\n回顾完毕后无缝进入单元开场讲解。\n")
         return CommandResult(
             messages=messages,
             llm_instruction=(
+                review_prefix +
                 f"请输出单元「{first['title']}」的开场「第一段」讲解（≤300字），"
                 f"然后按步骤一：文档带读，提炼本单元核心概念开始讲解。"
                 f"直接输出教学内容，不要复述任何流程模板或指令文字。"),

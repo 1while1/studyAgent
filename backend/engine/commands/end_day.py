@@ -1,4 +1,9 @@
-"""[结束今日学习]：6 步收尾（汇总 → StudyMemory → InterviewQA → StudyReview → Study.md → 明日预告）。"""
+"""[结束今日学习]：6 步收尾（汇总 → StudyMemory → InterviewQA → StudyReview → Study.md → 明日预告）。
+
+Step 5 内含「次日滚动细化」：若 Day N+1 在 Study.md 中还是粗纲，
+调用 LLM 生成细化小节（注入昨日学习反馈），与主批次同一原子落盘；
+失败保留粗纲并警告，不阻塞结束流程。
+"""
 
 from __future__ import annotations
 
@@ -6,6 +11,8 @@ import re
 
 from ...domain.enums import DayPhase
 from ...domain.models import SessionContext
+from ...services.config_service import PROMPTS_DIR
+from ...services.study_plan import StudyPlanError, parse_day_text
 from .base import CommandHandler, CommandResult, Deps
 
 
@@ -28,6 +35,81 @@ class EndDayHandler(CommandHandler):
             return ("今日尚未复盘，建议先 [开始今日复盘] 再结束。\n"
                     "要跳过复盘直接结束吗？回 [结束今日学习] 跳过复盘 / 先复盘")
         return None
+
+    # ---- 次日滚动细化 ----
+
+    @staticmethod
+    def _memory_excerpt(content: str) -> str:
+        """当日 StudyMemory 摘录：卡壳/疑问/AI 拷打评语/明日优先项。"""
+        parts = []
+        for field in ("卡壳", "疑问"):
+            m = re.search(rf"^-\s*{field}[:：]\s*(.+)$", content, re.MULTILINE)
+            if m and m.group(1).strip() not in ("", "无"):
+                parts.append(f"{field}：{m.group(1).strip()}")
+        for header in ("### AI 拷打评语", "### 明日优先项"):
+            m = re.search(rf"{re.escape(header)}\n(.*?)(?=\n### |\Z)",
+                          content, re.DOTALL)
+            if m and m.group(1).strip() and m.group(1).strip() != "- 待生成":
+                parts.append(f"{header[4:]}：{m.group(1).strip()}")
+        return "\n".join(parts) or "无"
+
+    def _detail_next_day(self, deps: Deps, day: int, study_content: str,
+                         memory_content: str) -> tuple[str, str | None]:
+        """Day day+1 为粗纲时生成细化小节并拼入。返回 (新内容, 警告或 None)。"""
+        ws = deps.config.workspace
+        if day + 1 > ws.total_days:
+            return study_content, None
+        try:
+            if deps.study_plan.parse_day(day + 1)["units"]:
+                return study_content, None  # 已细化，向后兼容跳过
+        except StudyPlanError:
+            pass
+
+        m = re.search(rf"^## Day {day + 1} \|.*?(?=^## Day \d+ \||\Z)",
+                      study_content, re.MULTILINE | re.DOTALL)
+        coarse = (m.group(0).strip() if m else
+                  f"## Day {day + 1} | （粗纲缺失，请依学习路径自定主题）")
+        neighbor_lines = []
+        for n in (day, day + 2):
+            nm = re.search(rf"^## Day {n} \|[^\n]*", study_content,
+                           re.MULTILINE)
+            if nm:
+                neighbor_lines.append(nm.group(0))
+        proj = deps.config.docx_dir / "Project.md"
+        project_md = (proj.read_text(encoding="utf-8")
+                      if proj.exists() else "（无 Project.md）")
+        prompt = (PROMPTS_DIR / "detail_day_md.md").read_text(encoding="utf-8")
+        prompt = (prompt
+                  .replace("<title>", ws.title)
+                  .replace("<goal>", ws.goal)
+                  .replace("<day>", str(day + 1))
+                  .replace("<total_days>", str(ws.total_days))
+                  .replace("<replica_name>", ws.replica_name)
+                  .replace("<coarse_section>", coarse)
+                  .replace("<neighbor_context>",
+                           "\n".join(neighbor_lines) or "无")
+                  .replace("<feedback>", self._memory_excerpt(memory_content))
+                  .replace("<project_md>", project_md))
+        max_tokens = int(deps.config.get("init_max_tokens", 8192))
+        errors = ""
+        for _ in range(2):  # 首次 + 带错重试 1 次
+            p = prompt if not errors else (
+                f"{prompt}\n\n【上次输出未通过程序校验】\n{errors}\n"
+                "请修正后重新完整输出（仍禁止任何前言后语）。")
+            text = deps.llm.chat([{"role": "user", "content": p}],
+                                 max_tokens=max_tokens).strip()
+            if text.startswith("```") and text.endswith("```"):
+                text = "\n".join(text.splitlines()[1:-1]).strip()
+            try:
+                if parse_day_text(text, day + 1, ws.replica_name)["units"]:
+                    return (deps.study_plan.replace_day_section(
+                        study_content, day + 1, text), None)
+                errors = "单元数为 0"
+            except StudyPlanError as e:
+                errors = str(e)
+        return study_content, (
+            f"⚠️ Day {day + 1} 细化小节生成失败（{errors}），已保留粗纲；"
+            "可重发 [结束今日学习] 触发重试，或手动细化 Study.md。")
 
     def run(self, deps: Deps, session: SessionContext,
             args: str, mode: str = "") -> CommandResult:
@@ -101,11 +183,15 @@ class EndDayHandler(CommandHandler):
         safe_name = re.sub(r"[\\/:*?\"<>|]", "_", module_name)[:30]
         review_path = review_dir / f"Day_{day:02d}-{safe_name}.md"
 
-        # ---- Step 5: Study.md ----
+        # ---- Step 5: Study.md（含次日滚动细化） ----
         study_content = deps.study_plan.read()
         study_content = deps.study_plan.mark_day_done(study_content, day)
         study_content = deps.study_plan.update_header(
             study_content, day, state["overall_completion_percentage"])
+        study_content, detail_warn = self._detail_next_day(
+            deps, day, study_content, content)
+        if detail_warn:
+            messages.append(detail_warn)
 
         # ---- 统一落盘（备份 → 写 → 校验 → 失败回滚） ----
         deps.backup.atomic_persist(

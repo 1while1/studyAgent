@@ -73,7 +73,19 @@ class StudyPlanStore:
             return parse_day_text(self.read(), day, self._replica)
         except StudyPlanError as e:
             raise StudyPlanError(
-                f"{e}（v1 要求该天已按 StudyFlow 第 13 节格式细化）") from e
+                f"{e}（该天通常由前一日 [结束今日学习] 自动滚动细化；"
+                f"可重发 [结束今日学习] 触发重试，或手动细化 Study.md）") from e
+
+    def replace_day_section(self, content: str, day: int,
+                            new_section: str) -> str:
+        """把 `## Day N |` 小节整体替换为 new_section；标题不存在则追加到文末。"""
+        m = re.search(rf"^## Day {day} \|.*$", content, re.MULTILINE)
+        if not m:
+            return content.rstrip() + "\n\n" + new_section.strip() + "\n"
+        nxt = re.search(r"^## Day \d+ \|", content[m.end():], re.MULTILINE)
+        end = m.end() + nxt.start() if nxt else len(content)
+        return (content[:m.start()] + new_section.strip() + "\n\n"
+                + content[end:].lstrip("\n"))
 
     def mark_day_done(self, content: str, day: int) -> str:
         """Day N 标题加 ✅（幂等）。"""

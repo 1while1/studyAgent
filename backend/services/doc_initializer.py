@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 from pathlib import Path
 
 from ..domain.workspace import Workspace
@@ -34,9 +35,11 @@ class InitError(Exception):
 
 
 class DocInitializer:
-    def __init__(self, llm, max_tokens: int = DEFAULT_INIT_MAX_TOKENS):
+    def __init__(self, llm, max_tokens: int = DEFAULT_INIT_MAX_TOKENS,
+                 detail_days: int = 3):
         self._llm = llm
         self._max_tokens = max_tokens
+        self._detail_days = detail_days
 
     # ---- 骨架模板 ----
 
@@ -71,6 +74,7 @@ class DocInitializer:
                   .replace("<title>", ws.title)
                   .replace("<goal>", ws.goal)
                   .replace("<total_days>", str(ws.total_days))
+                  .replace("<detail_days>", str(self._detail_days))
                   .replace("<replica_name>", ws.replica_name)
                   .replace("<scan_profile>", scan_profile))
         errors = ""
@@ -98,7 +102,7 @@ class DocInitializer:
         return True, ""
 
     @staticmethod
-    def _make_study_md_validator(ws: Workspace):
+    def _make_study_md_validator(ws: Workspace, detail_days: int = 3):
         def validate(text: str) -> tuple[bool, str]:
             if "当前天数：Day 1" not in text:
                 return False, "缺少头部「当前天数：Day 1」"
@@ -106,12 +110,18 @@ class DocInitializer:
                 return False, "缺少头部「整体完成度」"
             bad = []
             for day in range(1, ws.total_days + 1):
-                try:
-                    parsed = parse_day_text(text, day, ws.replica_name)
-                    if not parsed["units"]:
-                        bad.append(f"Day {day}: 单元数为 0")
-                except StudyPlanError:
-                    bad.append(f"Day {day}: 小节缺失或无法解析")
+                if day <= detail_days:
+                    # 细化天：必须完整解析且有单元
+                    try:
+                        parsed = parse_day_text(text, day, ws.replica_name)
+                        if not parsed["units"]:
+                            bad.append(f"Day {day}: 单元数为 0")
+                    except StudyPlanError:
+                        bad.append(f"Day {day}: 细化小节缺失或无法解析")
+                else:
+                    # 粗纲天：只要求小节标题存在
+                    if not re.search(rf"^## Day {day} \|", text, re.MULTILINE):
+                        bad.append(f"Day {day}: 粗纲小节标题缺失")
             return (not bad), "；".join(bad[:5])
         return validate
 
@@ -128,7 +138,7 @@ class DocInitializer:
             self._validate_project_md, "Project.md")
         files[ws.docx_dir / "Study.md"] = self._generate(
             "init_study_md.md", ws, scan_profile,
-            self._make_study_md_validator(ws), "Study.md")
+            self._make_study_md_validator(ws, self._detail_days), "Study.md")
 
         for path, content in files.items():
             path.parent.mkdir(parents=True, exist_ok=True)

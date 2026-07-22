@@ -37,21 +37,25 @@ PROJECT_MD = """# 项目架构
 """ + "补充说明。" * 60
 
 
-def make_study_md(days: int, replica: str = "test-replica") -> str:
+def make_study_md(days: int, replica: str = "test-replica",
+                  detail_days: int | None = None) -> str:
+    """detail_days=None 时全部细化；否则仅前 detail_days 天细化，其余粗纲。"""
+    if detail_days is None:
+        detail_days = days
     parts = ["当前天数：Day 1", "", "整体完成度：0%", ""]
     for d in range(1, days + 1):
-        parts += [
-            f"## Day {d} | 第{d}天主题",
-            "**目标**：当日目标",
-            "1. [ ] 单元A：概念学习（预计 40min）",
-            "   - 文档：无",
-            "2. [ ] 单元B：源码精读（预计 40min）",
-            "   - 文档：无",
-            f"**编码目标**：{replica} 完成 当日模块",
-            "**推荐论文**：《Test Paper》 — 重点读 Section 1",
-            '**面试话术目标**：产出"当日话题"的 30 秒/2 分钟版回答',
-            "",
-        ]
+        parts += [f"## Day {d} | 第{d}天主题", "**目标**：当日目标"]
+        if d <= detail_days:
+            parts += [
+                "1. [ ] 单元A：概念学习（预计 40min）",
+                "   - 文档：无",
+                "2. [ ] 单元B：源码精读（预计 40min）",
+                "   - 文档：无",
+                f"**编码目标**：{replica} 完成 当日模块",
+                "**推荐论文**：《Test Paper》 — 重点读 Section 1",
+                '**面试话术目标**：产出"当日话题"的 30 秒/2 分钟版回答',
+            ]
+        parts.append("")
     return "\n".join(parts)
 
 
@@ -187,6 +191,24 @@ class TestDocInitializer(unittest.TestCase):
         text = DocInitializer(llm).refresh_project_md(ws, "画像")
         self.assertIn("模块结构", text)
         self.assertEqual((ws.docx_dir / "Project.md").read_text("utf-8"), text)
+
+    def test_coarse_outline_accepted(self):
+        # 增量式：5 天计划只细化前 3 天，4-5 天仅标题+目标 → 校验通过
+        ws = self._ws(days=5)
+        llm = MockLLM(script=[PROJECT_MD, make_study_md(5, detail_days=3)])
+        DocInitializer(llm).initialize(ws, "扫描画像")
+        text = (ws.docx_dir / "Study.md").read_text("utf-8")
+        for d in (1, 2, 3):
+            self.assertTrue(parse_day_text(text, d, "test-replica")["units"])
+        self.assertIn("## Day 5 |", text)
+
+    def test_coarse_missing_header_rejected(self):
+        # 粗纲天缺标题 → 校验失败重试后仍失败 → InitError
+        ws = self._ws(days=5)
+        bad = make_study_md(5, detail_days=3).replace("## Day 5 | 第5天主题", "")
+        llm = MockLLM(script=[PROJECT_MD, bad, bad])
+        with self.assertRaises(InitError):
+            DocInitializer(llm).initialize(ws, "扫描画像")
 
 
 if __name__ == "__main__":

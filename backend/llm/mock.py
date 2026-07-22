@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Iterator
 
 from .base import LLMClient, Message
@@ -37,6 +38,16 @@ class MockLLM(LLMClient):
         if "【系统注入】" in last_user:
             return ("【Mock 续写】以上是真实文件内容，可以看到结构与前述分析一致，"
                     "讲解完毕。")
+        m_detail = re.search(r"请为 Day (\d+) 生成当日细化小节", last_user)
+        if m_detail:
+            n = m_detail.group(1)
+            return (f"## Day {n} | Mock 细化主题\n"
+                    f"**目标**：Mock 第 {n} 天细化目标\n"
+                    "1. [ ] 单元A：Mock 细化单元（预计 40min）\n"
+                    "   - 文档：无\n"
+                    "**编码目标**：完成 Mock 编码\n"
+                    "**推荐论文**：无\n"
+                    "**面试话术目标**：产出\"Mock 话题\"的 30 秒/2 分钟版回答\n")
         if "演示读代码" in last_user:
             return ("【Mock 讲解】我们先看一下这个文件的真实开头：\n"
                     "[READ:ragent原项目/frontend/index.html:L1-L5]\n"

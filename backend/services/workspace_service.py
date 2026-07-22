@@ -110,4 +110,5 @@ class WorkspaceService:
         return DocInitializer(
             self._llm,
             max_tokens=self._config.get("init_max_tokens",
-                                        DEFAULT_INIT_MAX_TOKENS))
+                                        DEFAULT_INIT_MAX_TOKENS),
+            detail_days=int(self._config.get("init_detail_days", 3)))
