@@ -43,6 +43,11 @@ class ConfigService:
         self._data: dict = {}
         self.reload()
 
+    @property
+    def path(self) -> Path:
+        """本实例的配置文件路径（测试可注入临时 settings）。"""
+        return self._path
+
     def reload(self) -> None:
         with open(self._path, "rb") as f:
             self._data = tomllib.load(f)

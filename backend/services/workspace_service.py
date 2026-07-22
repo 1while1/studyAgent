@@ -1,4 +1,4 @@
-"""工作区编排：列表 / 创建 / 切换 / 重新扫描。
+"""工作区编排：列表 / 创建 / 切换 / 删除 / 导出 / 重新扫描。
 
 只做编排——扫描委托 repo_scanner，文档生成委托 doc_initializer，
 settings 持久化委托 config_writer。
@@ -7,9 +7,10 @@ settings 持久化委托 config_writer。
 from __future__ import annotations
 
 import re
+import shutil
 
 from ..domain.workspace import Workspace
-from .config_service import SETTINGS_PATH, WEB_ROOT, ConfigService
+from .config_service import WEB_ROOT, ConfigService
 from .config_writer import update_code_roots, update_workspaces
 from .doc_initializer import DEFAULT_INIT_MAX_TOKENS, DocInitializer
 from .repo_scanner import scan
@@ -81,11 +82,11 @@ class WorkspaceService:
             "total_days": ws.total_days, "replica_name": ws.replica_name,
             **({"preset": ws.preset} if ws.preset else {}),
         })
-        update_workspaces(SETTINGS_PATH, all_ws, active=slug)
+        update_workspaces(self._config.path, all_ws, active=slug)
         roots = [dict(r) for r in self._config.data.get("code_roots", [])]
         roots.append({"name": ws.project_dir.name or slug,
                       "path": spec["project_dir"], "workspace": slug})
-        update_code_roots(SETTINGS_PATH, roots)
+        update_code_roots(self._config.path, roots)
         self._config.reload()
         return ws
 
@@ -94,9 +95,48 @@ class WorkspaceService:
     def switch(self, slug: str) -> Workspace:
         if not any(w.slug == slug for w in self._config.workspaces()):
             raise WorkspaceError(f"工作区不存在: {slug}")
-        update_workspaces(SETTINGS_PATH, self._settings_workspaces(), active=slug)
+        update_workspaces(self._config.path, self._settings_workspaces(), active=slug)
         self._config.reload()
         return self._config.workspace
+
+    # ---- 删除 / 导出 ----
+
+    def delete(self, slug: str, delete_data: bool = False) -> None:
+        if slug == self._config.workspace.slug:
+            raise WorkspaceError("不能删除当前激活的工作区，请先切换到其他工作区")
+        all_ws = self._settings_workspaces()
+        target = next((w for w in all_ws if w.get("slug") == slug), None)
+        if not target:
+            raise WorkspaceError(f"工作区不存在: {slug}")
+        if delete_data:
+            # 只允许删除 study-web/workspaces/ 内的目录，外部 docx_dir 永不删
+            ws = Workspace.from_dict(target, WEB_ROOT)
+            safe_root = (WEB_ROOT / "workspaces").resolve()
+            target_dir = ws.docx_dir.parent.resolve()
+            if safe_root == target_dir or safe_root in target_dir.parents:
+                shutil.rmtree(target_dir, ignore_errors=True)
+        update_workspaces(self._config.path,
+                          [w for w in all_ws if w.get("slug") != slug],
+                          active=self._config.workspace.slug)
+        roots = [dict(r) for r in self._config.data.get("code_roots", [])
+                 if r.get("workspace") != slug]
+        update_code_roots(self._config.path, roots)
+        self._config.reload()
+
+    def export_zip(self, slug: str) -> bytes:
+        import io
+        import zipfile
+        ws = next((w for w in self._config.workspaces() if w.slug == slug), None)
+        if not ws:
+            raise WorkspaceError(f"工作区不存在: {slug}")
+        if not ws.docx_dir.is_dir():
+            raise WorkspaceError(f"学习数据目录不存在: {ws.docx_dir}")
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for f in sorted(ws.docx_dir.rglob("*")):
+                if f.is_file() and "backup" not in f.parts:
+                    zf.write(f, f.relative_to(ws.docx_dir))
+        return buf.getvalue()
 
     # ---- 手动刷新 Project.md ----
 

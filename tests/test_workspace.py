@@ -187,6 +187,63 @@ class TestWorkspaceConfig(unittest.TestCase):
         self.assertEqual([s["name"] for s in cfg.stages], ["g1"])
 
 
+class TestWorkspaceDeleteExport(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="wsdel_"))
+        self.settings = self.tmp / "settings.toml"
+        # 两个工作区：a（激活）与 b，b 的 docx 在 study-web/workspaces 下才允许删数据
+        b_docx = WEB_ROOT / "workspaces" / "test-b-tmp" / "docx"
+        b_docx.mkdir(parents=True, exist_ok=True)
+        (b_docx / "StudyState.json").write_text(
+            '{"current_day": 1, "days": {}}', encoding="utf-8")
+        self.b_dir = b_docx.parent
+        self.settings.write_text(
+            'active_workspace = "a"\n'
+            '[[code_roots]]\nname = "ra"\npath = "/p"\nworkspace = "a"\n'
+            '[[code_roots]]\nname = "rb"\npath = "/p2"\nworkspace = "b"\n'
+            '[[workspaces]]\nslug = "a"\ntitle = "A"\n'
+            '[[workspaces]]\nslug = "b"\ntitle = "B"\n'
+            f'docx_dir = "{b_docx.as_posix()}"\n'
+            f'session_path = "{(self.tmp / "sb.json").as_posix()}"\n',
+            encoding="utf-8")
+        self.cfg = ConfigService(self.settings)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        shutil.rmtree(WEB_ROOT / "workspaces" / "test-b-tmp", ignore_errors=True)
+        # 测试写的是临时 settings，不影响真实 config/settings.toml
+
+    def test_delete_keeps_data_by_default(self):
+        from backend.services.workspace_service import (
+            WorkspaceError, WorkspaceService)
+        svc = WorkspaceService(self.cfg)
+        svc.delete("b")
+        self.assertTrue((self.b_dir / "docx" / "StudyState.json").exists())
+        self.assertEqual([w["slug"] for w in self.cfg.data["workspaces"]], ["a"])
+        self.assertEqual([r["name"] for r in self.cfg.code_roots], ["ra"])
+        with self.assertRaises(WorkspaceError):
+            svc.delete("b")  # 已不存在
+
+    def test_delete_active_rejected(self):
+        from backend.services.workspace_service import (
+            WorkspaceError, WorkspaceService)
+        with self.assertRaises(WorkspaceError):
+            WorkspaceService(self.cfg).delete("a")
+
+    def test_delete_with_data(self):
+        from backend.services.workspace_service import WorkspaceService
+        WorkspaceService(self.cfg).delete("b", delete_data=True)
+        self.assertFalse(self.b_dir.exists())
+
+    def test_export_zip(self):
+        import io
+        import zipfile
+        from backend.services.workspace_service import WorkspaceService
+        data = WorkspaceService(self.cfg).export_zip("b")
+        names = zipfile.ZipFile(io.BytesIO(data)).namelist()
+        self.assertIn("StudyState.json", names)
+
+
 class TestDocInitializer(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="init_"))

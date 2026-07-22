@@ -892,11 +892,27 @@ async function loadWorkspaces() {
     document.getElementById("ws-title").textContent = active ? active.title : "工作区";
     wsMenu.innerHTML = "";
     for (const w of data.workspaces) {
-      const item = document.createElement("button");
+      const item = document.createElement("div");
       item.className = "ws-item" + (w.active ? " active" : "");
-      item.innerHTML = `<span>${w.active ? "✓ " : ""}${escapeHtml(w.title)}</span>` +
-        `<span class="ws-slug">${escapeHtml(w.slug)}</span>`;
-      if (!w.active) item.onclick = () => switchWorkspace(w.slug);
+      item.innerHTML = `<span class="ws-label">${w.active ? "✓ " : ""}${escapeHtml(w.title)}</span>` +
+        `<span class="ws-slug">${escapeHtml(w.slug)}</span>` +
+        `<span class="ws-ops">` +
+        `<button class="ws-op" data-op="export" title="导出学习数据（zip）">⬇</button>` +
+        (w.active ? "" : `<button class="ws-op" data-op="delete" title="删除工作区">✕</button>`) +
+        `</span>`;
+      if (!w.active) {
+        item.querySelector(".ws-label").onclick = () => switchWorkspace(w.slug);
+        item.querySelector(".ws-slug").onclick = () => switchWorkspace(w.slug);
+      }
+      item.querySelector('[data-op="export"]').onclick = (e) => {
+        e.stopPropagation();
+        window.open(`/api/workspaces/export?slug=${encodeURIComponent(w.slug)}`);
+      };
+      const delBtn = item.querySelector('[data-op="delete"]');
+      if (delBtn) delBtn.onclick = (e) => {
+        e.stopPropagation();
+        deleteWorkspace(w.slug, w.title);
+      };
       wsMenu.appendChild(item);
     }
     const sep = document.createElement("div");
@@ -943,6 +959,19 @@ async function rescanWorkspace() {
   const res = await fetch("/api/workspaces/rescan", { method: "POST" });
   const r = await res.json();
   showToast(r.ok ? "Project.md 已刷新" : `刷新失败：${r.error}`);
+}
+
+async function deleteWorkspace(slug, title) {
+  if (!confirm(`确定删除工作区「${title}」？（默认保留磁盘上的学习数据）`)) return;
+  const alsoData = confirm("要同时删除磁盘上的学习数据吗？（不可恢复）\n确定 = 删除数据；取消 = 保留数据");
+  wsMenu.classList.add("hidden");
+  const res = await fetch("/api/workspaces/delete", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ slug, delete_data: alsoData }),
+  });
+  const r = await res.json();
+  if (r.ok) { showToast(`工作区「${title}」已删除`); loadWorkspaces(); }
+  else showToast(`删除失败：${r.error}`);
 }
 
 // ---- 初始化向导 ----
