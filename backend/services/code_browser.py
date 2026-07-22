@@ -152,6 +152,29 @@ class CodeBrowser:
         except CodeBrowserError:
             return False
 
+    def suggest(self, query: str, limit: int = 5) -> list[dict]:
+        """resolve 未命中时的模糊候选：按文件名/词干子串匹配索引，供 AI 纠正路径。"""
+        q = query.strip().strip("`").replace("\\", "/")
+        q = re.sub(r":L?\d+(?:-L?\d+)?$", "", q).lower()
+        base = q.split("/")[-1]
+        stem = base.rsplit(".", 1)[0]
+        hits: list[tuple[int, int, dict]] = []
+        for r in self._config.code_roots:
+            root = self._resolve_root(r["path"])
+            if not root or not root.is_dir():
+                continue
+            for rel in self._index(r["name"], root):
+                rl = rel.lower()
+                if base and base in rl:
+                    score = 0
+                elif stem and len(stem) >= 4 and stem in rl:
+                    score = 1
+                else:
+                    continue
+                hits.append((score, len(rel), {"root": r["name"], "path": rel}))
+        hits.sort(key=lambda h: (h[0], h[1]))
+        return [h[2] for h in hits[:limit]]
+
     def _index(self, name: str, root: Path) -> list[str]:
         now = time.time()
         ts, files = self._index_cache.get(name, (0.0, []))
