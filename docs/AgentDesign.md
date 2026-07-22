@@ -136,6 +136,25 @@ observe: 工具结果注入，循环直至产出用户可见回复
 - **SOP 的迁移**：现有 SOP 卡片从"代码强制的流程"改写为"教学策略 prompt"，状态机保留为**护栏**（FAIL-FAST、天数递进、规则 14 仍是代码强制）——策略归 LLM，纪律归代码
 - **兼容期**：v1 保留现有指令体系，agent 循环先在 `[导学]` 单指令内跑通，逐步收编
 
+## 8.5 上下文控制与模型适配
+
+### 上下文管理器（context_manager，会话级）
+
+- **三层上下文**：
+  - **钉住层**（永不压缩）：system prompt（角色+硬约束）+ 学习者模型摘要 + 当前单元卡片
+  - **窗口层**：最近 N 轮原始对话（N 按 token 预算动态伸缩，取代现在 max_turns 硬截断）
+  - **归档层**：更早对话的**压缩摘要**（结构化模板：已讲知识点/用户薄弱点/未决问题/待办/阶段进度）
+- **压缩触发**：token 估算 > 预算 × 0.8 时，把窗口层最旧一半压缩进归档层（LLM 任务，走便宜模型路由）；摘要按会话落盘，重开可续
+- **模式档案**：study/code 两种模式各有预算与钉住层模板（code 模式钉住脚手架结构+最近构建结果）
+- **工具产出瘦身**：read_code/read_doc/run_build 的注入内容单独记账，优先压缩工具注入而非对话
+
+### 模型适配（OpenAI 协议为主路径）
+
+- **协议基线**：全部渠道走 OpenAI 兼容协议（base_url/api_key/model 页面可配，已有）；新渠道只注册 `llm/` 实现
+- **quirk 层**（各厂商怪癖集中处理，不散落）：空 choices 心跳块（已处理）、reasoning 模型的思考字段剥离、各家 max_tokens 上限表、温度不支持值降级
+- **模型注册表**：`[llm.models.*]`——{provider, model, 能力标签(teach/compress/quiz), 成本档}；**任务路由**：教学讲解=强模型，上下文压缩/检验题生成=便宜模型，fallback 链沿用
+- **Token 计量**：usage 有则精确记、无则按字符估算，全部进 agent.log；压缩触发与成本统计共用
+
 ## 9. 工具注册表（v1 清单）
 
 | 工具 | 权限 | 说明 |
@@ -151,10 +170,11 @@ observe: 工具结果注入，循环直至产出用户可见回复
 | update_model | 写（规则14） | 证据写入 |
 | persist_state | 写（规则14） | 阶段/进度落盘 |
 | quiz_generate | LLM | 基于知识点+薄弱证据出题 |
+| mcp_call | 视目标定 | 通过 MCP 协议调用外部工具/服务（工具生态不重复造轮子） |
 
 ## 10. 可观测性
 
-- `runtime/agent.log`（JSONL）：每次 LLM 调用（渠道/耗时/token/失败）、工具调用（参数/结果码/耗时）、plan 决策（动作+理由）、subagent 派生链
+- `runtime/agent.log`（JSONL）：每次 LLM 调用（渠道/耗时/token/失败）、工具调用（参数/结果码/耗时）、plan 决策（动作+理由）、subagent 派生链；日志记录每轮使用的 prompt 版本/hash（行为变更可回溯复盘）
 - UI 状态条：当前 LLM 渠道、最近调用耗时、失败原因
 - 回放：测试可从日志重放决策序列（MockLLM 注入相同工具结果）
 
@@ -171,10 +191,10 @@ observe: 工具结果注入，循环直至产出用户可见回复
 | 期 | 内容 | 验收 |
 |----|------|------|
 | M1 资料库 | materials 注册/解析(docx/pdf)/索引 + READ_DOC 工具 + 教材驱动带读 | ragent 工作区单元带读真实引用教材段落 |
-| M2 可观测 | agent.log + UI 状态条 | 任何"没反应"可从日志定位 |
+| M2 可观测 | agent.log（含 token 计量）+ UI 状态条 | 任何"没反应"可从日志定位 |
 | M3 学习者模型 | schema + 迁移脚本 + evidence 写入（quiz/sync/code_verify 三路） | 掌握度不再只靠 LLM 自评 |
 | M4 笔记管理 | notes 三层 + 整理动作 + 笔记页 | 卡壳销账、日志蒸馏自动化 |
-| M5 Agent 循环 + subagent | planner + tool_registry + subagent 派生 + SOP 策略化迁移 | [导学] 单指令跑通 plan-act-observe |
+| M5 Agent 循环 + 上下文控制 | context_manager（三层上下文+压缩）+ planner + tool_registry + subagent 派生 + SOP 策略化迁移 + 模型任务路由 | 长会话 50+ 轮不断片；[导学] 单指令跑通 plan-act-observe |
 | M6 实战工坊 | 脚手架 + Monaco 编辑器 + process_mgr 运行管理 + study/code 模式分离 | 平台内建 demo → 构建 → 启动看效果 |
 | M7 课程本体 | 知识点图谱 + 感召式复习 + 拓扑计划 | 复习按相关性而非日历 |
 
@@ -184,6 +204,7 @@ observe: 工具结果注入，循环直至产出用户可见回复
 
 - 不做 debug（断点/变量查看）——IDE 的职责
 - 不做视频订阅/转播——媒体平台功能；video_link 仅登记+内嵌播放
+- 不造私有工具协议——工具生态兼容 MCP
 - 不上向量数据库（条目量级用不上，文本粗排足够；留接口）
 - 不多用户/多租户（单用户本地部署，架构预留 user 维度）
 - 不做桌面打包（暂缓项不变）
