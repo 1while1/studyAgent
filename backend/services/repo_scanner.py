@@ -20,23 +20,28 @@ FILE_HEAD_CHARS = 800
 
 ENTRY_NAMES = {"main.py", "__main__.py", "app.py", "manage.py", "main.go",
                "index.js", "Program.cs"}
-ENTRY_SCAN_DEPTH = 6
+ENTRY_SCAN_DEPTH = 10         # Maven 标准布局 + 包名层级较深
+ENTRY_VISIT_CAP = 20000       # 入口扫描最多访问的文件数（防巨型仓库拖慢）
 ENTRY_CAP = 15
 DEP_EDGE_CAP = 30
 CONFIG_CAP = 3
 CONFIG_HEAD_CHARS = 400
 
 
-def _walk_files(root: Path, depth: int):
-    """深度受限的文件遍历（跳过 SKIP_DIRS 与点目录）。"""
+def _walk_files(root: Path, depth: int, budget: list[int] | None = None):
+    """深度受限的文件遍历（跳过 SKIP_DIRS 与点目录），budget 为剩余访问量。"""
     def walk(d: Path, level: int):
-        if level > depth:
+        if level > depth or (budget is not None and budget[0] <= 0):
             return
         try:
             children = sorted(d.iterdir(), key=lambda c: c.name.lower())
         except (PermissionError, OSError):
             return
         for c in children:
+            if budget is not None:
+                budget[0] -= 1
+                if budget[0] <= 0:
+                    return
             if c.name.startswith(".") or c.name in SKIP_DIRS:
                 continue
             if c.is_dir():
@@ -49,7 +54,7 @@ def _walk_files(root: Path, depth: int):
 def _find_entries(root: Path) -> list[str]:
     """入口识别：SpringBoot 启动类 / 常见脚本入口，返回相对路径（≤ENTRY_CAP）。"""
     hits = []
-    for f in _walk_files(root, ENTRY_SCAN_DEPTH):
+    for f in _walk_files(root, ENTRY_SCAN_DEPTH, [ENTRY_VISIT_CAP]):
         if f.name in ENTRY_NAMES:
             hits.append(str(f.relative_to(root)).replace("\\", "/"))
         elif f.suffix == ".java" and f.stem.endswith("Application"):
