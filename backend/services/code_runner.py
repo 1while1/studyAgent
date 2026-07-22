@@ -26,6 +26,47 @@ def detect_build_tool(root: Path) -> str | None:
     return None
 
 
+def find_build_candidates(root: Path) -> list[Path]:
+    """验证根候选：root 本身或其一级子目录中含构建文件的目录（按名称排序）。"""
+    candidates = []
+    if root.is_dir() and detect_build_tool(root):
+        candidates.append(root)
+    if root.is_dir():
+        for child in sorted(root.iterdir(), key=lambda c: c.name.lower()):
+            if child.is_dir() and not child.name.startswith(".") \
+                    and detect_build_tool(child):
+                candidates.append(child)
+    return candidates
+
+
+def resolve_verify_root(base_dir: Path, replica_name: str, project_dir: Path,
+                        day: int, args: str = ""
+                        ) -> tuple[Path | None, list[Path], Path]:
+    """选出实际验证根。返回 (选中目录或 None, 候选列表, 搜索根)。
+
+    优先级：args 中点名的子目录 > 当日目录 day<NN>/day<N> > 唯一候选 > None。
+    """
+    root = base_dir / replica_name if replica_name else project_dir
+    if not root.is_dir():
+        root = project_dir
+    candidates = find_build_candidates(root)
+    if not candidates:
+        return None, [], root
+    for token in args.split():
+        for c in candidates:
+            if c.name == token:
+                return c, candidates, root
+    day_names = {f"day{day:02d}", f"day{day}"}
+    for c in candidates:
+        if c.name.lower() in day_names:
+            return c, candidates, root
+    if detect_build_tool(root):
+        return root, candidates, root  # 根有构建文件 = 多模块项目，从根构建
+    if len(candidates) == 1:
+        return candidates[0], candidates, root
+    return None, candidates, root
+
+
 def _mvn_bin() -> str:
     for name in ("mvn", "mvn.cmd", "mvn.bat"):
         hit = shutil.which(name)
