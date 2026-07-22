@@ -138,14 +138,15 @@ class StartDayHandler(CommandHandler):
             args: str, mode: str = "") -> CommandResult:
         state = deps.state_store.load()
         # 天数递进：前一天已结束 → current_day +1（AGENTS.md 执行约束 2）
+        # 不在此单独落盘：递进后的 JSON 必须与 StudyMemory/Study.md 在末尾
+        # 统一原子落盘——否则中间态（JSON=Day N+1，StudyMemory/Study.md 仍是
+        # Day N）必被 validate 拒绝并回滚，跨日永远失败（已踩坑）
         prev_day_data = state["days"].get(str(state["current_day"]), {})
+        incremented = False
         if prev_day_data.get("active_day_completed"):
             state["current_day"] += 1
-            state["active_day_completed"] = False
             deps.state_store.ensure_day(state, state["current_day"])
-            deps.backup.atomic_persist(
-                {deps.state_store.path: deps.state_store.dump(state)},
-                validator=deps.validator())
+            incremented = True
         day = state["current_day"]
 
         # 双选项分支：[恢复学习] → 引导走恢复流程
@@ -185,7 +186,12 @@ class StartDayHandler(CommandHandler):
                                                  paper=plan["paper"] or None)
         deps.backup.atomic_persist(
             {deps.state_store.path: deps.state_store.dump(state),
-             deps.memory.path_for(day): mem_content},
+             deps.memory.path_for(day): mem_content,
+             **({deps.config.docx_dir / "Study.md":
+                 deps.study_plan.update_header(
+                     deps.study_plan.read(), day,
+                     state["overall_completion_percentage"])}
+                if incremented else {})},
             validator=deps.validator())
 
         first = plan["units"][0]
