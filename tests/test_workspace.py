@@ -90,6 +90,39 @@ class TestRepoScanner(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             scan(self.tmp / "nope")
 
+    def test_entry_detection(self):
+        # 已有 src/core/main.py → 入口识别；再补一个 SpringBoot 启动类
+        boot = self.proj / "engine" / "src" / "main" / "java" / "com" / "x"
+        boot.mkdir(parents=True)
+        (boot / "EngineApplication.java").write_text(
+            "@SpringBootApplication\npublic class EngineApplication {}",
+            encoding="utf-8")
+        profile = scan(self.proj)
+        self.assertIn("入口识别", profile)
+        self.assertIn("src/core/main.py", profile)
+        self.assertIn("EngineApplication.java", profile)
+
+    def test_module_dependency_edges(self):
+        (self.proj / "engine").mkdir(exist_ok=True)
+        (self.proj / "web").mkdir(exist_ok=True)
+        (self.proj / "engine" / "pom.xml").write_text(
+            "<project><artifactId>engine</artifactId></project>", encoding="utf-8")
+        (self.proj / "web" / "pom.xml").write_text(
+            "<project><dependency>engine</dependency></project>", encoding="utf-8")
+        profile = scan(self.proj)
+        self.assertIn("模块依赖线索", profile)
+        self.assertIn("web → engine", profile)
+        self.assertNotIn("engine → web", profile)
+
+    def test_key_configs(self):
+        cfg = self.proj / "src" / "main" / "resources"
+        cfg.mkdir(parents=True)
+        (cfg / "application.yml").write_text("server:\n  port: 8080",
+                                             encoding="utf-8")
+        profile = scan(self.proj)
+        self.assertIn("关键配置", profile)
+        self.assertIn("application.yml", profile)
+
 
 class TestWorkspaceConfig(unittest.TestCase):
     def setUp(self):

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from ..domain.paths import SKIP_DIRS
 
-MAX_PROFILE_CHARS = 6000      # 画像总长度封顶（控制 prompt 体积）
+MAX_PROFILE_CHARS = 9000      # 画像总长度封顶（控制 prompt 体积）
 MAX_TREE_LINES = 120          # 目录树行数封顶
 TREE_DEPTH = 3                # 目录树层数
 BUILD_FILES = ["pom.xml", "build.gradle", "build.gradle.kts", "package.json",
@@ -17,6 +17,77 @@ BUILD_FILES = ["pom.xml", "build.gradle", "build.gradle.kts", "package.json",
                "composer.json", "Gemfile"]
 README_NAMES = ["README.md", "README.zh-CN.md", "README.txt", "README"]
 FILE_HEAD_CHARS = 800
+
+ENTRY_NAMES = {"main.py", "__main__.py", "app.py", "manage.py", "main.go",
+               "index.js", "Program.cs"}
+ENTRY_SCAN_DEPTH = 6
+ENTRY_CAP = 15
+DEP_EDGE_CAP = 30
+CONFIG_CAP = 3
+CONFIG_HEAD_CHARS = 400
+
+
+def _walk_files(root: Path, depth: int):
+    """深度受限的文件遍历（跳过 SKIP_DIRS 与点目录）。"""
+    def walk(d: Path, level: int):
+        if level > depth:
+            return
+        try:
+            children = sorted(d.iterdir(), key=lambda c: c.name.lower())
+        except (PermissionError, OSError):
+            return
+        for c in children:
+            if c.name.startswith(".") or c.name in SKIP_DIRS:
+                continue
+            if c.is_dir():
+                yield from walk(c, level + 1)
+            else:
+                yield c
+    yield from walk(root, 1)
+
+
+def _find_entries(root: Path) -> list[str]:
+    """入口识别：SpringBoot 启动类 / 常见脚本入口，返回相对路径（≤ENTRY_CAP）。"""
+    hits = []
+    for f in _walk_files(root, ENTRY_SCAN_DEPTH):
+        if f.name in ENTRY_NAMES:
+            hits.append(str(f.relative_to(root)).replace("\\", "/"))
+        elif f.suffix == ".java" and f.stem.endswith("Application"):
+            head = _read_head(f, 2000)
+            if "@SpringBootApplication" in head:
+                hits.append(str(f.relative_to(root)).replace("\\", "/"))
+        if len(hits) >= ENTRY_CAP:
+            break
+    return hits
+
+
+def _module_edges(root: Path, module_dirs: list[str]) -> list[str]:
+    """模块依赖线索：模块 a 的构建文件文本中出现模块 b 的名字 → a → b。"""
+    edges = []
+    for a in module_dirs:
+        for bf in BUILD_FILES:
+            f = root / a / bf
+            if not f.is_file():
+                continue
+            text = _read_head(f, 20000)
+            for b in module_dirs:
+                if a != b and b in text:
+                    edges.append(f"{a} → {b}")
+            break  # 每模块只看第一个命中的构建文件
+        if len(edges) >= DEP_EDGE_CAP:
+            break
+    return edges[:DEP_EDGE_CAP]
+
+
+def _find_configs(root: Path) -> list[Path]:
+    hits = []
+    for f in _walk_files(root, 5):
+        if f.name.startswith("application") and \
+                f.suffix in (".yml", ".yaml", ".properties"):
+            hits.append(f)
+            if len(hits) >= CONFIG_CAP:
+                break
+    return hits
 
 
 def _tree(root: Path) -> list[str]:
@@ -87,6 +158,27 @@ def scan(project_dir: str | Path) -> str:
         if p.is_file():
             parts += ["", "## README", _read_head(p, 1000)]
             break
+
+    entries = _find_entries(root)
+    if entries:
+        parts += ["", "## 入口识别"]
+        parts += [f"- {e}" for e in entries]
+
+    module_dirs = [c.name for c in sorted(root.iterdir())
+                   if c.is_dir() and not c.name.startswith(".")
+                   and c.name not in SKIP_DIRS
+                   and any((c / bf).is_file() for bf in BUILD_FILES)]
+    edges = _module_edges(root, module_dirs)
+    if edges:
+        parts += ["", "## 模块依赖线索（构建文件交叉引用）"]
+        parts += [f"- {e}" for e in edges]
+
+    configs = _find_configs(root)
+    if configs:
+        parts += ["", "## 关键配置"]
+        for c in configs:
+            rel = str(c.relative_to(root)).replace("\\", "/")
+            parts += [f"### {rel}", "```", _read_head(c, CONFIG_HEAD_CHARS), "```"]
 
     profile = "\n".join(parts)
     if len(profile) > MAX_PROFILE_CHARS:
