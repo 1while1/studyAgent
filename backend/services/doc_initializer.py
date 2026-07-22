@@ -13,7 +13,7 @@ from pathlib import Path
 
 from ..domain.workspace import Workspace
 from .config_service import PROMPTS_DIR, TEMPLATES_DIR
-from .study_plan import StudyPlanError, parse_day_text
+from .study_plan import StudyPlanError, check_unit_docs, parse_day_text
 
 # 骨架模板 → 目标文件（固定内容，不经 LLM）
 SKELETON_DOCS = {
@@ -111,11 +111,14 @@ class DocInitializer:
             bad = []
             for day in range(1, ws.total_days + 1):
                 if day <= detail_days:
-                    # 细化天：必须完整解析且有单元
+                    # 细化天：必须完整解析且有单元，文档路径必须真实存在
                     try:
                         parsed = parse_day_text(text, day, ws.replica_name)
                         if not parsed["units"]:
                             bad.append(f"Day {day}: 单元数为 0")
+                        else:
+                            bad += [f"Day {day}: {e}" for e in check_unit_docs(
+                                parsed["units"], ws.project_dir)]
                     except StudyPlanError:
                         bad.append(f"Day {day}: 细化小节缺失或无法解析")
                 else:

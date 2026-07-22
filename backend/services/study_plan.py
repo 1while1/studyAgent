@@ -12,6 +12,32 @@ class StudyPlanError(Exception):
     pass
 
 
+_DOC_SKIP = {"无", "见 DocIndex", "见DocIndex", "无。", ""}
+_PATH_TOKEN_RE = re.compile(r"^[\w.\-\u4e00-\u9fff()]+(?:/[\w.\-\u4e00-\u9fff()]+)+$"
+                            r"|^[\w\-()]+\.\w{1,6}$")
+
+
+def extract_doc_paths(doc: str) -> list[str]:
+    """从单元「文档」字段提取路径形 token（非路径的描述性文字自动忽略）。"""
+    doc = (doc or "").strip().strip("`")
+    if doc in _DOC_SKIP:
+        return []
+    tokens = re.split(r"[\s、，,；;]+", doc)
+    return [t for t in tokens if _PATH_TOKEN_RE.match(t)]
+
+
+def check_unit_docs(units: list[dict], project_dir) -> list[str]:
+    """校验细化单元的「文档」字段引用的路径在项目目录中真实存在。"""
+    from pathlib import Path
+    root = Path(project_dir)
+    errors = []
+    for u in units:
+        for token in extract_doc_paths(u.get("doc", "")):
+            if not (root / token).exists():
+                errors.append(f"单元{u['id']} 文档路径不存在: {token}")
+    return errors
+
+
 def parse_day_text(text: str, day: int, replica_name: str = "replica") -> dict:
     """解析文本中 `## Day N | ...` 小节。返回 {date, goal, units, code_goal, paper, qa_goal}。
 

@@ -210,6 +210,27 @@ class TestDocInitializer(unittest.TestCase):
         with self.assertRaises(InitError):
             DocInitializer(llm).initialize(ws, "扫描画像")
 
+    def test_doc_path_must_exist(self):
+        # P0-3：细化单元「文档」字段引用不存在的路径 → 校验失败
+        ws = self._ws(days=2)
+        bad = make_study_md(2).replace("   - 文档：无",
+                                       "   - 文档：no/such/File.java", 1)
+        llm = MockLLM(script=[PROJECT_MD, bad, bad])
+        with self.assertRaises(InitError) as ctx:
+            DocInitializer(llm).initialize(ws, "扫描画像")
+        self.assertIn("文档路径不存在", str(ctx.exception))
+
+    def test_doc_path_exists_passes(self):
+        # P0-3：路径真实存在（文件或目录）→ 通过
+        (self.tmp / "src").mkdir(exist_ok=True)
+        (self.tmp / "src" / "main.py").write_text("print(1)", encoding="utf-8")
+        ws = self._ws(days=2)
+        good = make_study_md(2).replace("   - 文档：无",
+                                        "   - 文档：src/main.py", 1)
+        llm = MockLLM(script=[PROJECT_MD, good])
+        DocInitializer(llm).initialize(ws, "扫描画像")
+        self.assertTrue((ws.docx_dir / "Study.md").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
