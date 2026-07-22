@@ -58,9 +58,14 @@ class LLMStreamer:
         max_turns = self._deps.config.get("chat_history_max_turns", 20)
         history = session.chat_history[-max_turns * 2:]
         messages = [{"role": "system", "content": system}] + history
-        for delta in self._deps.llm.chat_stream(messages):
-            self.full.append(delta)
-            yield sse({"type": "delta", "content": delta})
+        from ..engine.tool_use import ToolUseLoop
+        from ..services.code_browser import CodeBrowser
+        loop = ToolUseLoop(self._deps.config, self._deps.llm,
+                           CodeBrowser(self._deps.config))
+        for ev in loop.run(messages):
+            if ev["type"] == "delta":
+                self.full.append(ev["content"])
+            yield sse(ev)
 
 
 @router.post("/api/chat")

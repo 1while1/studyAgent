@@ -252,6 +252,25 @@ body[data-layout="pair"] .mode-switch button.active { box-shadow: 0 2px 8px rgba
   border-bottom-left-radius: 5px; box-shadow: var(--shadow);
 }
 .msg.error .bubble { background: var(--error-bg); color: var(--error-text); border: 1px solid var(--error-text); }
+
+/* AI 读文件 tool-use 指示 chip */
+.msg.tool { display: flex; }
+.tool-chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 92%;
+  font-size: 12px; padding: 4px 12px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent);
+  border: 1px dashed var(--accent); cursor: pointer;
+  font-family: "JetBrains Mono", monospace; word-break: break-all;
+}
+.tool-chip:hover { border-style: solid; }
+.tool-chip.fail { color: var(--text-dim); border-color: var(--border); background: transparent; cursor: default; }
+/* chip 复用 .code-ref 点击逻辑时，压制其行内芯片样式（高优先级） */
+.msg.tool .tool-chip.code-ref { padding: 4px 12px; font-size: 12px; border-bottom: none; border-radius: 999px; }
+.msg.tool .tool-chip.code-ref:hover { background: var(--accent); color: #fff; }
+
+/* mermaid 图容器 */
+.mermaid { margin: 10px 0; text-align: center; overflow-x: auto; }
+.mermaid svg { max-width: 100%; }
 .bubble.thinking { color: var(--text-dim); font-style: italic; animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 

@@ -16,8 +16,8 @@
 
 ## P0 — 教学真实性（先做，① 是违和感根源）
 
-- [ ] **P0-1 AI 读文件 tool-use 闭环**：导师输出中允许 `[READ:路径:L起始-结束]` 标记 → 后端截获、注入真实文件内容 → 续写讲解。SSE 流中途暂停-注入-续流；防死循环（单次回复限 3 次 READ）；读取走 code_browser 的只读+穿越防护
-- [ ] **P0-2 Mermaid 图渲染**：前端 vendor mermaid.min.js，` ```mermaid ` 代码块渲染为图；prompt 引导导师在讲架构/流程时输出图
+- [x] **P0-1 AI 读文件 tool-use 闭环**（2026-07-22 完成）：导师输出 `[READ:路径:L起-止]`（独立一行）→ `engine/tool_use.ToolUseLoop` 行缓冲截获 → code_browser 只读注入真实代码 → 续写。限 3 次/回复（超限静默丢弃）、单次注入 ≤200 行；SSE 新事件 `tool_read`，前端渲染可点击 chip（跳转代码浏览器行高亮）；标记与注入内容均不进 chat_history
+- [x] **P0-2 Mermaid 图渲染**（2026-07-22 完成）：vendor mermaid@11（`frontend/vendor/mermaid.min.js`），```mermaid 块终渲染为 SVG，主题随布局（pair=dark/tutor=default），渲染失败回退代码块；prompt 硬约束第 8 条引导导师画图
 - [ ] **P0-3 Study.md 路径存在性校验**：初始化验证管线增加——单元"文档"字段中形如路径的条目必须在 project_dir 中存在，否则带错重试
 
 ## P1 — 学习闭环

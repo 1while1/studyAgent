@@ -56,6 +56,8 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 - 目录树懒加载 + 行号 gutter + 语法高亮（只读，路径穿越防护）；树折叠、长行换行、树宽拖拽记忆
 - **片段提问**：选中代码 → 浮动按钮 → 自动填入「`路径:L行号` + 代码块」到输入框；聊天中渲染为片段卡片，点 📎 跳回代码浏览器定位 + 行高亮
 - **代码引用芯片**：AI 回答中的反引号路径（如 `` `项目/路径/File.java:L4-L11` ``）自动变可点击芯片，点击跳转打开 + 行高亮；路径写错时按文件名回退定位，找不到明确提示
+- **AI 读文件 tool-use**：导师讲解中可输出 `[READ:路径:L起-止]` 主动读取真实代码（后端截获注入后续写，单回复限 3 次），前端显示 📖 chip 可点击跳转定位——讲解基于真实代码，杜绝虚构
+- **Mermaid 图**：AI 回答中的 ```mermaid 代码块渲染为架构图/时序图，主题随模式（源码学习=深色）
 
 **模型管理**
 - 「模型配置」页面：主/备渠道切换、模型 ID、Base URL、API Key（掩码显示）、测试连接、保存热生效
@@ -67,8 +69,8 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 
 ```bash
 cd study-web
-python -m unittest discover -s tests    # 36 个后端测试，stdlib，无需真实 LLM
-python scripts/ui_walkthrough.py        # UI 真实点击走查（需服务运行中）
+python -m unittest discover -s tests    # 42 个后端测试，stdlib，无需真实 LLM
+python scripts/ui_walkthrough.py        # UI 真实点击走查 49 项（需服务运行中）
 python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name]
 ```
 

@@ -1,7 +1,8 @@
 """UI 全功能走查（Playwright 无头浏览器真实点击）。
 
 用法：服务运行中（8765）执行  python scripts/ui_walkthrough.py
-覆盖：加载/指令/聊天/主题/侧栏/双布局/代码浏览器/片段卡片/弹窗/面板控件。
+覆盖：加载/指令/聊天/主题/侧栏/双布局/代码浏览器/片段卡片/弹窗/面板控件/
+Mermaid 渲染/AI 读文件 tool-use（Mock 渠道全链路）。
 """
 import sys
 import time
@@ -23,6 +24,23 @@ def check(name, ok, detail=""):
 
 
 def main():
+    import urllib.request
+    import json as _json
+
+    def api(path, payload=None):
+        req = urllib.request.Request(
+            BASE + path,
+            data=_json.dumps(payload).encode() if payload is not None else None,
+            headers={"Content-Type": "application/json"},
+            method="POST" if payload is not None else "GET")
+        return _json.loads(urllib.request.urlopen(req).read())
+
+    # 走查固定 ragent 工作区（依赖其单元数与代码根），结束后还原
+    ws_list = api("/api/workspaces")
+    orig_ws = next((w["slug"] for w in ws_list["workspaces"] if w["active"]), None)
+    if orig_ws != "ragent":
+        api("/api/workspaces/switch", {"slug": "ragent"})
+
     with sync_playwright() as p:
         b = p.chromium.launch(headless=True)
         page = b.new_page(viewport={"width": 1500, "height": 820})
@@ -197,6 +215,55 @@ def main():
         check("无 LLM 错误泡", page.locator(".msg.error").count() == 0,
               page.locator(".msg.error .bubble").first.text_content()[:100] if page.locator(".msg.error").count() else "")
 
+        # ---- 9b. Mermaid 渲染（前端确定性注入，不依赖 LLM 发挥） ----
+        page.evaluate("""(() => {
+          const div = document.createElement('div');
+          div.id = 'mermaid-test';
+          document.body.appendChild(div);
+          renderMarkdownInto(div, '```mermaid\\nflowchart LR\\n  A-->B\\n```', true);
+        })()""")
+        page.wait_for_timeout(2500)
+        check("Mermaid 渲染为 SVG",
+              page.locator("#mermaid-test svg").count() >= 1)
+        page.evaluate("document.getElementById('mermaid-test').remove()")
+
+        # ---- 9c. AI 读文件 tool-use 全链路（临时切 Mock 渠道，事后还原） ----
+        orig_cfg = page.request.get(BASE + "/api/llm-config").json()
+        mock_cfg = {"provider": "mock",
+                    "fallback_provider": orig_cfg.get("fallback_provider", ""),
+                    "warmup_on_start": False, "sections": {}}
+        page.request.post(BASE + "/api/llm-config", data=mock_cfg)
+        before = page.locator("#messages .bubble").count()
+        page.fill("#input", "演示读代码")
+        page.locator("#input-form button").click()
+        ok = False
+        for i in range(30):
+            page.wait_for_timeout(1000)
+            if page.locator(".tool-chip").count() >= 1:
+                last = page.locator("#messages .bubble").last.text_content() or ""
+                if "思考中" not in last and len(last.strip()) > 0:
+                    ok = True
+                    break
+        check("tool-use chip 出现且续写完成", ok)
+        check("tool-use 无错误泡", page.locator(".msg.error").count() == 0,
+              page.locator(".msg.error .bubble").first.text_content()[:100]
+              if page.locator(".msg.error").count() else "")
+        # chip 点击 → 跳转代码浏览器定位行
+        if page.locator(".tool-chip.code-ref").count() >= 1:
+            page.locator(".tool-chip.code-ref").first.click()
+            page.wait_for_timeout(2000)
+            check("chip 跳转打开文件",
+                  "index.html" in page.locator("#code-file-path").text_content())
+            check("chip 跳转行高亮", page.locator(".line-flash").count() >= 1)
+            page.locator("#mode-tutor").click()
+            page.wait_for_timeout(600)
+        # 还原真实渠道配置
+        page.request.post(BASE + "/api/llm-config", data={
+            "provider": orig_cfg.get("provider", "openai_compat"),
+            "fallback_provider": orig_cfg.get("fallback_provider", ""),
+            "warmup_on_start": orig_cfg.get("warmup_on_start", True),
+            "sections": {}})
+
         # ---- 汇总 ----
         check("全程零 JS 错误", len(errors) == 0, "; ".join(errors[:3]))
         page.screenshot(path="/tmp/walkthrough_final.png")
@@ -206,6 +273,13 @@ def main():
         except Exception:
             pass
         b.close()
+
+    # 还原用户原工作区
+    if orig_ws and orig_ws != "ragent":
+        try:
+            api("/api/workspaces/switch", {"slug": orig_ws})
+        except Exception:
+            pass
 
     print()
     if ISSUES:

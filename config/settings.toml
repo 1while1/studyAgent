@@ -14,6 +14,8 @@ status_enum = ["not_started", "in_progress", "completed", "postponed"]
 review_min_questions = 8
 study_review_min_chars = 3000
 chat_history_max_turns = 20
+ai_read_max_per_reply = 3   # AI 读文件 tool-use：单条回复最多 READ 次数
+ai_read_max_lines = 200     # 单次注入给 AI 的最大行数
 
 [llm]
 provider = "openai_compat"
