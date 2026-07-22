@@ -29,7 +29,7 @@ class EndDayHandler(CommandHandler):
         if not deps.memory.exists(day):
             return "今日还没 [开始今日学习]，无内容可结束。"
         checks = deps.memory.unit_checks(deps.memory.read(day))
-        if not any(checks.values()):
+        if not any(checks.values()) and args.strip() not in ("确定", "跳过复盘"):
             return "今天还没完成任何单元，确定结束？如确定请回 [结束今日学习] 确定。"
         day_data = deps.state_store.day(state)
         if not day_data.get("review_completed") and args.strip() not in ("跳过复盘", "确定"):
@@ -217,9 +217,10 @@ class EndDayHandler(CommandHandler):
             next_paper = next_plan["paper"] or "见大纲"
         except Exception:
             next_title, next_units, next_code, next_paper = f"Day {day + 1}", "?", "见大纲", "见大纲"
+        total = deps.config.workspace.total_days
         step6 = (deps.templates.get("end_step6")
                  .replace("<N> 完成", f"{day} 完成")
-                 .replace("<X> / 25", f"{state['overall_completion_percentage'] * 25 // 100} / 25")
+                 .replace("<X> / 25", f"{state['overall_completion_percentage'] * total // 100} / {total}")
                  .replace("<Y>%", f"{state['overall_completion_percentage']}%")
                  .replace("<完成 X / 计划 Y>", f"完成 {done_n} / 计划 {len(units)}")
                  .replace("<完成 X 个>", f"完成 {counts.get('代码完成', 0)} 个")

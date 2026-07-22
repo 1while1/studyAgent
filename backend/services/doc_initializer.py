@@ -154,5 +154,10 @@ class DocInitializer:
                               self._validate_project_md, "Project.md")
         path = ws.docx_dir / "Project.md"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+        # 覆盖已有学习数据同样走规则 14（备份 → 原子写，失败可恢复）
+        from .backup_service import BackupService
+
+        class _WS:  # BackupService 只用到 docx_dir
+            docx_dir = ws.docx_dir
+        BackupService(_WS()).atomic_persist({path: text})
         return text

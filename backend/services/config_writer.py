@@ -9,6 +9,8 @@ import os
 import re
 from pathlib import Path
 
+from .backup_service import atomic_write
+
 
 class ConfigWriteError(Exception):
     pass
@@ -36,7 +38,7 @@ def update_toml_sections(path: Path, sections: dict[str, list[str]]) -> None:
     missing = set(sections) - replaced
     if missing:
         raise ConfigWriteError(f"settings.toml 中未找到节区: {missing}")
-    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    atomic_write(path, "\n".join(out) + "\n")
 
 
 def update_env_file(path: Path, values: dict[str, str]) -> None:
@@ -55,7 +57,7 @@ def update_env_file(path: Path, values: dict[str, str]) -> None:
     for key, value in values.items():
         if key not in done:
             out.append(f"{key}={value}")
-    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    atomic_write(path, "\n".join(out) + "\n")
     for key, value in values.items():  # 运行时立即生效
         os.environ[key] = value
 
@@ -94,7 +96,7 @@ def update_code_roots(path: Path, roots: list[dict]) -> None:
         out.append(f'path = "{_esc(root["path"])}"')
         if root.get("workspace"):
             out.append(f'workspace = "{_esc(root["workspace"])}"')
-    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    atomic_write(path, "\n".join(out) + "\n")
 
 
 def _esc(value) -> str:
@@ -139,4 +141,4 @@ def update_workspaces(path: Path, workspaces: list[dict], active: str) -> None:
                 out.append(f"{key} = {value}")
             else:
                 out.append(f'{key} = "{_esc(value)}"')
-    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    atomic_write(path, "\n".join(out) + "\n")

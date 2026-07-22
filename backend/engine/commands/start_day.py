@@ -52,9 +52,10 @@ class StartDayHandler(CommandHandler):
                      if prev else 0)
         rollback = []
         if prev:
+            pass_line = deps.config.get("mastery_pass_score", 3.0)
             rollback = [f"单元{u['id']}：{u['title']}"
                         for u in prev.get("units", [])
-                        if u.get("status") == "completed" and 0 < u.get("rating", 0) < 3.0]
+                        if u.get("status") == "completed" and 0 < u.get("rating", 0) < pass_line]
         rollback_text = "、".join(rollback) if rollback else "无"
         due_lines = [f"- {i['type']}·Day {i['from_day']}：{i['text']}"
                      for i in (due or [])]

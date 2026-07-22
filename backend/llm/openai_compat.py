@@ -32,7 +32,10 @@ class OpenAICompatClient(LLMClient):
         self._model = params.get("model", "deepseek-ai/DeepSeek-V3")
         self._max_tokens = params.get("max_tokens", 4096)
         self._temperature = params.get("temperature", 0.7)
-        self._client = OpenAI(base_url=base_url, api_key=api_key)
+        timeout = float(params.get("timeout")
+                        or config.get("llm_timeout", 300))
+        self._client = OpenAI(base_url=base_url, api_key=api_key,
+                              timeout=timeout, max_retries=1)
 
     def chat_stream(self, messages: list[Message],
                     max_tokens: int | None = None) -> Iterator[str]:

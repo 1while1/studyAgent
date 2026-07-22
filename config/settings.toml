@@ -3,7 +3,7 @@
 
 total_days = 25
 docx_dir = "../docx"
-active_workspace = "onecoupon"
+active_workspace = "ragent"
 init_max_tokens = 8192
 code_line_limit = 20
 code_line_exemption_days = [21]

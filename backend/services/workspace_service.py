@@ -109,12 +109,18 @@ class WorkspaceService:
         if not target:
             raise WorkspaceError(f"工作区不存在: {slug}")
         if delete_data:
-            # 只允许删除 study-web/workspaces/ 内的目录，外部 docx_dir 永不删
+            # 只允许删除 study-web/workspaces/<slug> 目录本身，外部 docx_dir 永不删
             ws = Workspace.from_dict(target, WEB_ROOT)
             safe_root = (WEB_ROOT / "workspaces").resolve()
             target_dir = ws.docx_dir.parent.resolve()
-            if safe_root == target_dir or safe_root in target_dir.parents:
-                shutil.rmtree(target_dir, ignore_errors=True)
+            if (target_dir != safe_root
+                    and safe_root in target_dir.parents
+                    and target_dir.name == slug):
+                shutil.rmtree(target_dir)
+            else:
+                raise WorkspaceError(
+                    f"学习数据目录 {target_dir} 不在 study-web/workspaces/{slug} 下，"
+                    "为防误删已中止（数据未动，工作区条目仍可删除）")
         update_workspaces(self._config.path,
                           [w for w in all_ws if w.get("slug") != slug],
                           active=self._config.workspace.slug)
