@@ -295,6 +295,7 @@ class WorkspaceCreateIn(BaseModel):
     goal: str = ""
     total_days: int = 25
     replica_name: str = ""
+    preset: str = ""
 
 
 class WorkspaceSwitchIn(BaseModel):
@@ -304,6 +305,21 @@ class WorkspaceSwitchIn(BaseModel):
 @router.get("/api/workspaces")
 def workspaces_list():
     return WorkspaceService(_deps.config).list()
+
+
+@router.get("/api/workspaces/presets")
+def workspaces_presets():
+    """可选学习模式预设（resources/presets/*.toml）。"""
+    import tomllib
+    from ..services.config_service import PRESETS_DIR
+    out = [{"name": "", "description": "标准（跟随全局 stages 配置）"}]
+    for f in sorted(PRESETS_DIR.glob("*.toml")):
+        try:
+            desc = tomllib.load(open(f, "rb")).get("description", "")
+        except Exception:
+            desc = ""
+        out.append({"name": f.stem, "description": desc or f.stem})
+    return {"presets": out}
 
 
 @router.get("/api/workspaces/scan-preview")
@@ -334,6 +350,33 @@ def workspaces_switch(body: WorkspaceSwitchIn):
     if _rebind:
         _rebind()
     return {"ok": True, "slug": ws.slug, "title": ws.title}
+
+
+class WorkspaceDeleteIn(BaseModel):
+    slug: str
+    delete_data: bool = False
+
+
+@router.post("/api/workspaces/delete")
+def workspaces_delete(body: WorkspaceDeleteIn):
+    try:
+        WorkspaceService(_deps.config).delete(body.slug, body.delete_data)
+    except WorkspaceError as e:
+        return {"ok": False, "error": str(e)}
+    return {"ok": True}
+
+
+@router.get("/api/workspaces/export")
+def workspaces_export(slug: str):
+    from fastapi.responses import Response
+    try:
+        data = WorkspaceService(_deps.config).export_zip(slug)
+    except WorkspaceError as e:
+        return {"ok": False, "error": str(e)}
+    return Response(
+        content=data, media_type="application/zip",
+        headers={"Content-Disposition":
+                 f'attachment; filename="{slug}-docx.zip"'})
 
 
 @router.post("/api/workspaces/rescan")

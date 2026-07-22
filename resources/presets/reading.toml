@@ -1,0 +1,37 @@
+description = "阅读实验型（文档带读 → 源码对照 → 考核，无编码与论文环节）"
+
+[[stages]]
+name = "teaching"
+next = "source_review"
+sop_step = "步骤一：文档带读"
+instruction = "提炼当天文档/知识的核心要点进行带读讲解，单次回复正文控制在 1000 字以内，杜绝超前引入未学过的概念。"
+
+[[stages]]
+name = "source_review"
+next = "quiz_r1"
+sop_step = "步骤三：源码深度对照"
+instruction = "用户跑通 Demo 后，引导阅读 ragent原项目 源码，按 Why（架构权衡）/ Where（类名方法名定位）/ QA（面试三连问）三要素深度讲解。"
+
+[[stages]]
+name = "quiz_r1"
+next = "quiz_r2"
+sop_step = "步骤五-1：第一轮追问"
+instruction = "发起第一轮检验提问，考点为基础概念/参数意义（What/How）。只出一道题，出题后停止，等待用户回答。用户提交答案后先专业点评、纠正偏差、给出面试口径，然后立即进入第二轮。"
+
+[[stages]]
+name = "quiz_r2"
+next = "scored"
+sop_step = "步骤五-2：第二轮追问"
+instruction = "发起第二轮深度追问，必须触及底层原理（数学逻辑、源码类与方法定位、业务决策 Why/Where）。只出一道题，出题后停止。用户提交答案后点评并给出终期量化评分，评分必须以【评分：X.X】标记输出（1.0-5.0）。"
+
+[[stages]]
+name = "scored"
+next = "completed"
+sop_step = "终期评分与推进征求"
+instruction = "根据评分输出跳转预告（及格）或拒绝推进（不及格），等待用户确认。"
+
+[[stages]]
+name = "completed"
+next = ""
+sop_step = "单元完成"
+instruction = "单元已完成，输出下一单元开场或当日总结。"

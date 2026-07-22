@@ -18,6 +18,7 @@ from .next_content import NextContentHandler
 from .resume import ResumeHandler
 from .start_day import StartDayHandler
 from .sync import SyncHandler
+from .verify_code import VerifyCodeHandler
 
 _CODE_HANDLERS: dict[str, type[CommandHandler]] = {
     "start_day": StartDayHandler,
@@ -28,6 +29,7 @@ _CODE_HANDLERS: dict[str, type[CommandHandler]] = {
     "day_review": DayReviewHandler,
     "end_day": EndDayHandler,
     "jump_day": JumpDayHandler,
+    "verify_code": VerifyCodeHandler,
     "declarative": DeclarativeHandler,
 }
 

@@ -12,7 +12,8 @@ import re
 from ...domain.enums import DayPhase
 from ...domain.models import SessionContext
 from ...services.config_service import PROMPTS_DIR
-from ...services.study_plan import StudyPlanError, parse_day_text
+from ...services.study_plan import (StudyPlanError, check_unit_docs,
+                                    parse_day_text)
 from .base import CommandHandler, CommandResult, Deps
 
 
@@ -101,10 +102,16 @@ class EndDayHandler(CommandHandler):
             if text.startswith("```") and text.endswith("```"):
                 text = "\n".join(text.splitlines()[1:-1]).strip()
             try:
-                if parse_day_text(text, day + 1, ws.replica_name)["units"]:
-                    return (deps.study_plan.replace_day_section(
-                        study_content, day + 1, text), None)
-                errors = "单元数为 0"
+                parsed = parse_day_text(text, day + 1, ws.replica_name)
+                if parsed["units"]:
+                    doc_errors = check_unit_docs(parsed["units"],
+                                                 ws.project_dir)
+                    if not doc_errors:
+                        return (deps.study_plan.replace_day_section(
+                            study_content, day + 1, text), None)
+                    errors = "；".join(doc_errors[:3])
+                else:
+                    errors = "单元数为 0"
             except StudyPlanError as e:
                 errors = str(e)
         return study_content, (

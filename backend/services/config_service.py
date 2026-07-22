@@ -21,6 +21,7 @@ SOP_DIR = RESOURCES_DIR / "sop"
 HOOKS_DIR = RESOURCES_DIR / "hooks"
 TEMPLATES_DIR = RESOURCES_DIR / "templates"
 PROMPTS_DIR = RESOURCES_DIR / "prompts"
+PRESETS_DIR = RESOURCES_DIR / "presets"
 
 
 def _load_env_file(path: Path) -> None:
@@ -41,6 +42,11 @@ class ConfigService:
         self._mtime: float = 0.0
         self._data: dict = {}
         self.reload()
+
+    @property
+    def path(self) -> Path:
+        """本实例的配置文件路径（测试可注入临时 settings）。"""
+        return self._path
 
     def reload(self) -> None:
         with open(self._path, "rb") as f:
@@ -102,6 +108,23 @@ class ConfigService:
 
     @property
     def stages(self) -> list[dict]:
+        """当前工作区的阶段机定义。
+
+        工作区配了 preset（resources/presets/<name>.toml）时用预设的
+        [[stages]]，文件缺失/解析失败回退全局 settings.toml。
+        """
+        preset = getattr(self.workspace, "preset", "")
+        if preset:
+            path = PRESETS_DIR / f"{preset}.toml"
+            if path.is_file():
+                try:
+                    import tomllib
+                    with open(path, "rb") as f:
+                        stages = tomllib.load(f).get("stages", [])
+                    if stages:
+                        return stages
+                except Exception:
+                    pass
         return self._data.get("stages", [])
 
     def stage_names(self) -> list[str]:

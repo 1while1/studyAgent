@@ -65,6 +65,8 @@ python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name] 
 | 新落盘校验规则 | `app.py` 中 `hooks.register_post_persist(...)` |
 | 新初始化文档类型 | `resources/templates/` 加模板 + `doc_initializer.SKELETON_DOCS` 注册一行 |
 | 改初始化生成风格 | 改 `resources/prompts/init_*.md`，零代码 |
+| 新增学习模式预设 | `resources/presets/` 加 toml（[[stages]] + description），向导自动出现 |
+| 调构建验证（超时/离线） | 改 `settings.toml` 的 `verify_timeout` / `verify_offline`，零代码 |
 | 调阈值（行数/及格分/题量） | 改 `settings.toml`，零代码 |
 
 ## v1 已知边界
