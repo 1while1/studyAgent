@@ -83,6 +83,7 @@
 | 向导按钮触发空指针 | 「扫描预览」复用了 `.cfg-test` 样式类，被模型配置的全局委托 handler 接住，`data-section` 为空 → `getElementById("test-undefined")` = null | cfg-test 委托加 `#provider-sections` 作用域守卫（样式类与行为钩子分离的教训） |
 | 25 天 Study.md 初始化必失败 | LLM 默认 max_tokens=4096，25 天计划需 5-6k token，输出截断在 Day 19 左右 → 校验缺 Day 20-24 | 初始化生成走 `init_max_tokens`（settings 可配，默认 8192 = DeepSeek 输出硬顶） |
 | opencode 401 | 账号被上游风控（非程序问题） | fallback 到 DeepSeek 官方 |
+| 跨日递进必失败（[开始今日学习] 报 StudyMemory Day_N+1 not found / Study.md 天数不符） | start_day 递进 current_day 后**先单独落盘 JSON**，中间态（StudyMemory/Study.md 仍是旧天）必被 validate 拒绝回滚；另有游离垃圾键 `state["active_day_completed"]`（flag 实为 per-day） | 递进不单独落盘，JSON+StudyMemory+Study.md（update_header）末尾统一原子落盘；删游离键；test_flows 补跨日用例；清理 ragent 真实数据残留键 |
 | mermaid.min.js 下载截断（"Unexpected end of input"） | 后台 curl 超时只下了 3MB（整文件 3.56MB），尾部恰好截断在函数体中 | 前台 curl `--retry 3` 重下 + `node --check` 校验语法 + 走查 Mermaid 断言 |
 
 ## UI 版本
