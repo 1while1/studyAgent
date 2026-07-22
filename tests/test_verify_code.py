@@ -111,11 +111,69 @@ class TestVerifyCodeHandler(unittest.TestCase):
         self.assertIn("✅ 成功", result.messages[0])
 
     def test_verify_root_prefers_replica(self):
-        # replica 目录（WEB_ROOT 同级 / replica_name）存在时优先
-        handler = VerifyCodeHandler()
-        root = handler.verify_root(self.deps)
-        # 测试环境不存在 t-replica → 回退 project_dir
+        # replica 目录（WEB_ROOT 同级 / replica_name）不存在时回退 project_dir
+        chosen, _, _ = self.deps and VerifyCodeHandler._resolve(self.deps, "")
+        self.assertEqual(chosen, self.proj)
+
+
+class TestResolveVerifyRoot(unittest.TestCase):
+    """按日模块 replica（dayNN 子目录）场景的验证根解析。"""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="vroot_"))
+        self.proj = self.tmp / "proj"
+        self.proj.mkdir()
+        self.replica = self.tmp / "ragent-replica"
+        (self.replica / "day01").mkdir(parents=True)
+        (self.replica / "day02").mkdir(parents=True)
+        (self.replica / "day01" / "pom.xml").write_text("<xml/>", encoding="utf-8")
+        (self.replica / "day02" / "pom.xml").write_text("<xml/>", encoding="utf-8")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _resolve(self, day=2, args="", replica_name="ragent-replica"):
+        return code_runner.resolve_verify_root(
+            self.tmp, replica_name, self.proj, day, args)
+
+    def test_day_matched_subdir(self):
+        chosen, candidates, root = self._resolve(day=2)
+        self.assertEqual(chosen, self.replica / "day02")
+        self.assertEqual(len(candidates), 2)
+
+    def test_args_named_subdir_wins(self):
+        chosen, _, _ = self._resolve(day=2, args="day01")
+        self.assertEqual(chosen, self.replica / "day01")
+
+    def test_multiple_candidates_no_day_match(self):
+        chosen, candidates, _ = self._resolve(day=5)
+        self.assertIsNone(chosen)
+        self.assertEqual(len(candidates), 2)
+
+    def test_single_candidate(self):
+        shutil.rmtree(self.replica / "day01")
+        chosen, _, _ = self._resolve(day=9)
+        self.assertEqual(chosen, self.replica / "day02")
+
+    def test_no_candidates(self):
+        shutil.rmtree(self.replica)
+        chosen, candidates, root = self._resolve()
+        self.assertIsNone(chosen)
+        self.assertEqual(candidates, [])
         self.assertEqual(root, self.proj)
+
+    def test_root_itself_has_build_file(self):
+        (self.proj / "pom.xml").write_text("<xml/>", encoding="utf-8")
+        chosen, _, _ = self._resolve(replica_name="no-such-replica")
+        self.assertEqual(chosen, self.proj)
+
+    def test_multi_module_root_wins_over_children(self):
+        # 根有构建文件且子模块也有 → 多模块项目从根构建（除非 args 点名）
+        (self.replica / "pom.xml").write_text("<xml/>", encoding="utf-8")
+        chosen, candidates, _ = self._resolve(day=9)
+        self.assertEqual(chosen, self.replica)
+        chosen, _, _ = self._resolve(day=9, args="day01")
+        self.assertEqual(chosen, self.replica / "day01")
 
 
 if __name__ == "__main__":
