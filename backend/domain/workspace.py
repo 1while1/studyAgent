@@ -19,6 +19,7 @@ class Workspace:
     session_path: Path       # 聊天会话文件
     total_days: int = 25     # 学习计划总天数
     replica_name: str = "replica"  # 复现项目名（编码目标/StudyMemory 小节前缀）
+    preset: str = ""         # 学习模式预设（resources/presets/<name>.toml），空=全局 stages
 
     @classmethod
     def from_dict(cls, data: dict, web_root: Path) -> "Workspace":
@@ -37,4 +38,5 @@ class Workspace:
             session_path=_path("session_path", f"workspaces/{slug}/session.json"),
             total_days=int(data.get("total_days", 25)),
             replica_name=data.get("replica_name") or "replica",
+            preset=data.get("preset") or "",
         )

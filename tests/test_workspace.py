@@ -164,6 +164,28 @@ class TestWorkspaceConfig(unittest.TestCase):
         cfg.reload()
         self.assertEqual([r["name"] for r in cfg.code_roots], ["r2"])
 
+    def test_preset_stages_override(self):
+        # 工作区配 preset=reading → stages 用预设（无 coding/paper）
+        self.settings.write_text(
+            'active_workspace = "a"\n'
+            '[[stages]]\nname = "g1"\nnext = ""\n'
+            '[[workspaces]]\nslug = "a"\ntitle = "A"\npreset = "reading"\n',
+            encoding="utf-8")
+        cfg = ConfigService(self.settings)
+        names = [s["name"] for s in cfg.stages]
+        self.assertIn("source_review", names)
+        self.assertNotIn("coding", names)
+        self.assertNotIn("paper", names)
+
+    def test_unknown_preset_falls_back(self):
+        self.settings.write_text(
+            'active_workspace = "a"\n'
+            '[[stages]]\nname = "g1"\nnext = ""\n'
+            '[[workspaces]]\nslug = "a"\ntitle = "A"\npreset = "no-such"\n',
+            encoding="utf-8")
+        cfg = ConfigService(self.settings)
+        self.assertEqual([s["name"] for s in cfg.stages], ["g1"])
+
 
 class TestDocInitializer(unittest.TestCase):
     def setUp(self):

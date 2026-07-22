@@ -63,6 +63,7 @@ class WorkspaceService:
             "session_path": f"workspaces/{slug}/session.json",
             "total_days": int(spec.get("total_days", 25)),
             "replica_name": spec.get("replica_name") or f"{slug}-replica",
+            "preset": spec.get("preset") or "",
         }, WEB_ROOT)
         if not ws.project_dir.is_dir():
             raise WorkspaceError(f"项目目录不存在: {ws.project_dir}")
@@ -78,6 +79,7 @@ class WorkspaceService:
             "project_dir": spec["project_dir"],
             "session_path": f"workspaces/{slug}/session.json",
             "total_days": ws.total_days, "replica_name": ws.replica_name,
+            **({"preset": ws.preset} if ws.preset else {}),
         })
         update_workspaces(SETTINGS_PATH, all_ws, active=slug)
         roots = [dict(r) for r in self._config.data.get("code_roots", [])]

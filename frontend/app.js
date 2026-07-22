@@ -947,9 +947,24 @@ async function rescanWorkspace() {
 
 // ---- 初始化向导 ----
 
+async function loadPresetOptions() {
+  const sel = document.getElementById("ws-preset");
+  if (sel.options.length) return;
+  try {
+    const r = await (await fetch("/api/workspaces/presets")).json();
+    for (const p of r.presets) {
+      const opt = document.createElement("option");
+      opt.value = p.name;
+      opt.textContent = p.name ? `${p.name} — ${p.description}` : p.description;
+      sel.appendChild(opt);
+    }
+  } catch (e) { /* 预设加载失败时留空，创建按默认模式 */ }
+}
+
 function openWsWizard() {
   document.getElementById("ws-status").textContent = "";
   document.getElementById("ws-scan-preview").classList.add("hidden");
+  loadPresetOptions();
   wsModal.classList.remove("hidden");
 }
 document.getElementById("ws-close").onclick = () => wsModal.classList.add("hidden");
@@ -977,6 +992,7 @@ document.getElementById("ws-create").onclick = async () => {
     goal: document.getElementById("ws-goal").value.trim(),
     total_days: parseInt(document.getElementById("ws-days").value) || 25,
     replica_name: document.getElementById("ws-replica").value.trim(),
+    preset: document.getElementById("ws-preset").value,
   };
   if (!body.project_dir || !body.slug) {
     status.textContent = "项目目录与标识为必填项。";
