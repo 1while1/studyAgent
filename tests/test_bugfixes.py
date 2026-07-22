@@ -1,5 +1,6 @@
 """bug 修复回归测试：评分正则变体 / 重新开始保留记录 / 指令别名 / unit_open 时长渲染。"""
 
+import re
 import shutil
 import sys
 import tempfile
@@ -52,6 +53,9 @@ class TestRestartAndAlias(unittest.TestCase):
         settings = settings.replace(
             'docx_dir = "../docx"',
             f'docx_dir = "{(self.tmp / "docx").as_posix()}"')
+        # 固定激活工作区为 ragent（其 docx_dir 已被替换为临时副本）
+        settings = re.sub(r'active_workspace = ".*?"',
+                          'active_workspace = "ragent"', settings)
         self.settings_path = self.tmp / "settings.toml"
         self.settings_path.write_text(settings, encoding="utf-8")
         self.config = ConfigService(self.settings_path)

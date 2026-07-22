@@ -3,6 +3,7 @@
 在 docx 的临时副本上运行，不触碰真实数据。
 """
 
+import re
 import shutil
 import subprocess
 import sys
@@ -56,6 +57,10 @@ class TestFlows(unittest.TestCase):
         settings = settings_src.replace(
             'docx_dir = "../docx"',
             f'docx_dir = "{(cls.tmp / "docx").as_posix()}"')
+        # 固定激活工作区为 ragent（其 docx_dir 已被替换为临时副本），
+        # 与当前用户实际激活的工作区解耦
+        settings = re.sub(r'active_workspace = ".*?"',
+                          'active_workspace = "ragent"', settings)
         cls.settings_path = cls.tmp / "settings.toml"
         cls.settings_path.write_text(settings, encoding="utf-8")
         cls.config = ConfigService(cls.settings_path)
