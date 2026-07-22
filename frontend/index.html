@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ragent 学习助手</title>
+<link rel="stylesheet" href="vendor/github-dark.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-layout="tutor">
+<button id="expand-sidebar" class="hidden" title="展开侧边栏">☰</button>
+<div id="layout">
+  <aside id="sidebar">
+    <div class="sidebar-head">
+      <h1>Ragent 学习助手</h1>
+      <button id="toggle-sidebar" title="收起/展开侧边栏">⇤</button>
+    </div>
+    <div id="progress-box">
+      <div id="progress-line">
+        <span id="day-label">Day - / 25</span>
+        <span id="percentage">0%</span>
+      </div>
+      <div id="progress-bar"><div id="progress-fill"></div></div>
+      <div id="session-info">-</div>
+    </div>
+    <section>
+      <h2>今日单元</h2>
+      <ul id="units"></ul>
+    </section>
+    <section>
+      <h2>同步速览</h2>
+      <div id="sync-counts">-</div>
+    </section>
+  </aside>
+  <main id="chat-panel">
+    <header id="chat-topbar">
+      <div class="mode-switch" role="tablist">
+        <button id="mode-tutor" data-mode="tutor" class="active">📖 知识学习</button>
+        <button id="mode-pair" data-mode="pair">&lt;/&gt; 源码学习</button>
+      </div>
+      <div class="ws-switch">
+        <button id="ws-current" title="切换 / 新建工作区"><span id="ws-title">…</span> ▾</button>
+        <div id="ws-menu" class="hidden"></div>
+      </div>
+      <div class="topbar-actions">
+        <button id="open-docs" title="学习资料（StudyMemory / 面试话术库）">📚</button>
+        <button id="open-llm-config" title="模型配置">⚙</button>
+        <button id="reset-history" title="清空对话历史（不影响学习数据）">🗑</button>
+      </div>
+    </header>
+    <div id="messages"></div>
+    <button id="scroll-bottom" class="hidden" title="回到底部">↓ 回到底部</button>
+    <div id="command-chips"></div>
+    <div id="cmd-menu" class="hidden"></div>
+    <form id="input-form">
+      <textarea id="input" rows="1" placeholder="输入消息…（Enter 发送，Shift+Enter 换行，键入 [ 快速唤起指令）"></textarea>
+      <button type="submit">发送</button>
+    </form>
+  </main>
+  <aside id="code-panel" class="hidden">
+    <div class="code-panel-head">
+      <span class="code-panel-title">源码学习</span>
+    </div>
+    <div class="code-toolbar">
+      <button id="code-tree-toggle" title="收起/展开目录树">«</button>
+      <select id="code-root-select"></select>
+      <button id="code-root-add" title="添加项目/文件夹作为代码根">+ 添加项目</button>
+      <button id="code-root-del" title="删除当前代码根（仅移除配置，不删文件）">- 删除</button>
+      <div id="code-root-form" class="hidden">
+        <input id="code-root-name" placeholder="名称（如 my-project）">
+        <input id="code-root-path" placeholder="路径（绝对路径或相对 study-web）">
+        <button id="code-root-save">确定</button>
+        <button id="code-root-cancel">取消</button>
+      </div>
+    </div>
+    <div class="code-main">
+      <div class="code-tree" id="code-tree"><div class="code-hint">加载中…</div></div>
+      <div id="tree-resizer" title="拖拽调整目录树宽度"></div>
+      <div class="code-view">
+        <div class="code-file-head">
+          <span id="code-file-path">← 从左侧目录树选择文件</span>
+          <button id="code-wrap-toggle" title="自动换行（长行免横向滚动）">换行: 关</button>
+        </div>
+        <div class="code-content" id="code-content">
+          <div class="code-hint">支持 Java / XML / YAML / Markdown 等文本文件，选中代码片段即可「插入提问」</div>
+        </div>
+        <div id="code-statusbar">
+          <span id="csb-path">未打开文件</span>
+          <span id="csb-meta"></span>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+<button id="snippet-float" class="hidden">插入提问</button>
+
+<div id="llm-modal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2>模型配置</h2>
+      <button id="llm-close">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <label>主渠道</label>
+        <select id="llm-provider"></select>
+      </div>
+      <div class="form-row">
+        <label>备用渠道</label>
+        <select id="llm-fallback"></select>
+      </div>
+      <div class="form-row">
+        <label>启动预热</label>
+        <input id="llm-warmup" type="checkbox">
+      </div>
+      <div id="provider-sections"></div>
+      <div id="llm-status"></div>
+    </div>
+    <div class="modal-foot">
+      <button id="llm-save" class="primary">保存并生效</button>
+    </div>
+  </div>
+</div>
+
+<div id="doc-modal" class="modal hidden">
+  <div class="modal-box wide doc-box">
+    <div class="doc-hero">
+      <div class="doc-hero-text">
+        <div class="doc-hero-kicker">学习沉淀 · STUDY ARCHIVE</div>
+        <h2 id="doc-title">学习资料</h2>
+      </div>
+      <button id="doc-close">×</button>
+    </div>
+    <div class="doc-tabbar">
+      <button class="doc-tab active" data-doc="memory">当日 StudyMemory</button>
+      <button class="doc-tab" data-doc="interview_qa">面试话术库</button>
+    </div>
+    <div class="doc-body markdown-body" id="doc-content"></div>
+  </div>
+</div>
+
+<div id="ws-modal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2>新建工作区（初始化学习助手）</h2>
+      <button id="ws-close">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <label>项目目录 *</label>
+        <input id="ws-project-dir" type="text" placeholder="目标代码项目路径（绝对或相对 study-web）">
+      </div>
+      <div class="form-row">
+        <label>标识 *</label>
+        <input id="ws-slug" type="text" placeholder="英文标识，如 tinyrag（字母/数字/-/_）">
+      </div>
+      <div class="form-row">
+        <label>名称</label>
+        <input id="ws-title-input" type="text" placeholder="显示名称，如 TinyRAG 面试冲刺">
+      </div>
+      <div class="form-row">
+        <label>学习目标</label>
+        <input id="ws-goal" type="text" placeholder="如：21 天掌握该项目架构并在面试中讲解">
+      </div>
+      <div class="form-row">
+        <label>总天数</label>
+        <input id="ws-days" type="text" value="25">
+      </div>
+      <div class="form-row">
+        <label>复现项目名</label>
+        <input id="ws-replica" type="text" placeholder="留空默认为 <标识>-replica">
+      </div>
+      <div class="form-row">
+        <label></label>
+        <button id="ws-preview-btn" class="cfg-test">扫描预览项目</button>
+      </div>
+      <pre id="ws-scan-preview" class="hidden"></pre>
+      <div id="ws-status"></div>
+    </div>
+    <div class="modal-foot">
+      <button id="ws-create" class="primary">开始初始化</button>
+    </div>
+  </div>
+</div>
+
+<script src="vendor/marked.min.js"></script>
+<script src="vendor/purify.min.js"></script>
+<script src="vendor/highlight.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,221 @@
+"""UI 全功能走查（Playwright 无头浏览器真实点击）。
+
+用法：服务运行中（8765）执行  python scripts/ui_walkthrough.py
+覆盖：加载/指令/聊天/主题/侧栏/双布局/代码浏览器/片段卡片/弹窗/面板控件。
+"""
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from playwright.sync_api import sync_playwright
+
+BASE = "http://127.0.0.1:8765"
+ISSUES = []
+
+
+def check(name, ok, detail=""):
+    mark = "PASS" if ok else "FAIL"
+    print(f"[{mark}] {name}" + (f" — {detail}" if detail else ""))
+    if not ok:
+        ISSUES.append(f"{name}: {detail}")
+
+
+def main():
+    with sync_playwright() as p:
+        b = p.chromium.launch(headless=True)
+        page = b.new_page(viewport={"width": 1500, "height": 820})
+        errors = []
+        page.on("pageerror", lambda e: errors.append(
+            (str(e)[:150] + " | " + str(getattr(e, "stack", ""))[:250])))
+
+        # ---- 1. 加载 ----
+        page.goto(BASE, wait_until="networkidle")
+        page.wait_for_timeout(2000)
+        check("页面加载-侧栏可见", page.locator("#sidebar").is_visible())
+        check("页面加载-单元列表", page.locator("#units li").count() == 3)
+        check("页面加载-指令胶囊 10 个", page.locator("#command-chips .chip").count() == 10)
+        check("消息容器就绪", page.locator("#messages").is_visible())
+
+        # ---- 2. 指令：FAIL-FAST ----
+        page.locator("#command-chips .chip", has_text="开始今日学习").click()
+        page.wait_for_timeout(3000)
+        texts = page.locator("#messages .bubble").all_text_contents()
+        check("FAIL-FAST 双选项输出", any("FAIL-FAST" in t for t in texts))
+        check("FAIL-FAST 无残留思考泡", page.locator(".bubble.thinking").count() == 0)
+
+        # ---- 3. 「[」指令补全菜单 ----
+        page.fill("#input", "[恢复")
+        page.wait_for_timeout(400)
+        check("指令补全弹出", page.locator("#cmd-menu").is_visible())
+        page.locator("#cmd-menu button").first.click()
+        page.wait_for_timeout(300)
+        check("补全回填输入框", page.locator("#input").input_value().startswith("[恢复学习]"))
+        # ---- 3b. 工作区切换器 + 初始化向导 ----
+        check("工作区下拉可见", page.locator("#ws-current").is_visible())
+        page.locator("#ws-current").click()
+        page.wait_for_timeout(400)
+        check("工作区菜单项", page.locator("#ws-menu .ws-item").count() >= 3)
+        page.locator("#ws-menu .ws-item", has_text="新建工作区").click()
+        page.wait_for_timeout(400)
+        check("向导弹窗打开", page.locator("#ws-modal").is_visible())
+        page.fill("#ws-project-dir", "../ragent-replica")
+        page.locator("#ws-preview-btn").click()
+        page.wait_for_timeout(1200)
+        check("扫描预览输出", len(page.locator("#ws-scan-preview").text_content()) > 50)
+        page.locator("#ws-close").click()
+        page.wait_for_timeout(300)
+
+        # ---- 4. 侧栏收起/展开 ----
+        page.locator("#toggle-sidebar").click()
+        page.wait_for_timeout(400)
+        check("侧栏收起后悬浮按钮", page.locator("#expand-sidebar").is_visible())
+        page.locator("#expand-sidebar").click()
+        page.wait_for_timeout(400)
+        check("侧栏恢复", page.locator("#sidebar").is_visible())
+
+        # ---- 5. 学习资料弹窗 ----
+        page.locator("#open-docs").click()
+        page.wait_for_timeout(1200)
+        check("资料弹窗-标题", "StudyMemory" in page.locator("#doc-title").text_content())
+        check("资料弹窗-渲染", page.locator("#doc-content h2, #doc-content h3").count() > 0)
+        page.locator(".doc-tab[data-doc='interview_qa']").click()
+        page.wait_for_timeout(800)
+        page.locator("#doc-close").click()
+        page.wait_for_timeout(400)
+
+        # ---- 6. 模型配置弹窗 ----
+        page.locator("#open-llm-config").click()
+        page.wait_for_timeout(1200)
+        check("配置弹窗可见", page.locator("#llm-modal").is_visible())
+        check("配置弹窗-渠道数", page.locator(".provider-fieldset").count() == 2)
+        page.locator("#llm-close").click()
+        page.wait_for_timeout(400)
+
+        # ---- 7. 源码学习模式 + 代码浏览器 ----
+        page.locator("#mode-pair").click()
+        page.wait_for_timeout(1500)
+        check("源码学习-布局切换", page.evaluate("document.body.dataset.layout") == "pair")
+        check("源码学习-侧栏隐藏", not page.locator("#sidebar").is_visible())
+        check("代码面板打开", page.locator("#code-panel").is_visible())
+        h1 = page.locator("#chat-topbar").evaluate("el=>el.offsetHeight")
+        h2 = page.locator(".code-panel-head").evaluate("el=>el.offsetHeight")
+        check("双头部对齐", h1 == h2, f"{h1} vs {h2}")
+        page.locator("#code-root-select").select_option("ragent-replica")
+        page.wait_for_timeout(800)
+        page.evaluate("openCodeFile('ragent-replica','day01/src/main/java/com/my/ragent/day01/StreamingChatClient.java')")
+        page.wait_for_timeout(1500)
+        check("文件打开-行号", page.locator(".code-gutter").text_content().strip() != "")
+        check("文件打开-高亮", page.locator(".code-body code span").count() > 5)
+        check("IDE 状态栏", "行" in page.locator("#csb-meta").text_content())
+        # 选中 → 浮动按钮 → 插入
+        page.locator(".code-body").evaluate("""el => {
+          const r = document.createRange();
+          const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+          let first = walker.nextNode(), last = first, n = 0;
+          while (walker.nextNode() && n < 5) { last = walker.nextNode() || last; n++; }
+          r.setStart(first, 0); r.setEnd(last, (last.textContent||'').length);
+          const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+          document.dispatchEvent(new MouseEvent('mouseup', {clientX: 800, clientY: 350}));
+          document.dispatchEvent(new Event('selectionchange'));
+        }""")
+        page.wait_for_timeout(400)
+        check("浮动插入按钮", page.locator("#snippet-float").is_visible())
+        page.locator("#snippet-float").click()
+        page.wait_for_timeout(300)
+        check("插入输入框", ":L" in page.locator("#input").input_value())
+        # 换行保留（textarea 回归守卫：旧的单行 input 会吞掉 \n）
+        check("片段换行保留", "\n" in page.locator("#input").input_value())
+        # 面板控件
+        page.locator("#code-tree-toggle").click()
+        page.wait_for_timeout(300)
+        check("树折叠", page.locator(".code-tree").evaluate("el => el.classList.contains('collapsed')"))
+        page.locator("#code-tree-toggle").click()
+        page.locator("#code-wrap-toggle").click()
+        page.wait_for_timeout(300)
+        check("换行模式-gutter 隐藏", not page.locator(".code-gutter").is_visible())
+        page.locator("#code-wrap-toggle").click()
+
+        # ---- 7c. 代码引用芯片（AI 回答中的路径 → 点击跳转 + 高亮） ----
+        page.evaluate("addMessage('assistant', '请看 `ragent-replica/day01/pom.xml:L1-L3` 这个文件', true)")
+        page.wait_for_timeout(300)
+        check("代码引用芯片渲染", page.locator(".code-ref").count() >= 1)
+        page.locator(".code-ref").last.click()
+        page.wait_for_timeout(1500)
+        check("引用跳转-文件打开", "pom.xml" in page.locator("#code-file-path").text_content())
+        check("引用跳转-行高亮", page.locator(".line-flash").count() >= 1)
+        page.evaluate("addMessage('assistant', '再看 `no/such/File.java`', true)")
+        page.wait_for_timeout(300)
+        page.locator(".code-ref").last.click()
+        page.wait_for_timeout(600)
+        check("引用未找到-toast", page.locator(".toast").is_visible())
+
+        # ---- 7b. 发送片段提问 → 卡片渲染 → 刷新历史回填 ----
+        page.locator("#input").press("End")
+        page.type("#input", "只回复OK", delay=5)
+        page.locator("#input-form button").click()
+        page.wait_for_timeout(800)
+        check("片段卡片渲染", page.locator(".snippet-jump").count() >= 1)
+        ok = False
+        for i in range(40):
+            page.wait_for_timeout(4000)
+            last = page.locator("#messages .bubble").last.text_content() or ""
+            if "思考中" not in last and len(last.strip()) > 0:
+                ok = True
+                break
+        check("片段提问流式完成", ok)
+        check("片段提问无错误泡", page.locator(".msg.error").count() == 0,
+              page.locator(".msg.error .bubble").first.text_content()[:100] if page.locator(".msg.error").count() else "")
+        page.goto(BASE, wait_until="networkidle")
+        page.wait_for_timeout(2000)
+        check("历史回填渲染卡片", page.locator(".snippet-jump").count() >= 1)
+
+        # ---- 8. 片段跳转 + 切回知识学习 ----
+        page.locator(".snippet-jump").first.click()
+        page.wait_for_timeout(2500)
+        check("片段跳转-行高亮", page.locator(".line-flash").count() >= 1)
+        page.locator("#mode-tutor").click()
+        page.wait_for_timeout(800)
+        check("切回知识学习", page.evaluate("document.body.dataset.layout") == "tutor")
+        check("知识学习-侧栏恢复", page.locator("#sidebar").is_visible())
+        check("知识学习-代码面板隐藏", not page.locator("#code-panel").is_visible())
+
+        # ---- 9. 聊天（真实 LLM，短请求） ----
+        before = page.locator("#messages .bubble").count()
+        page.fill("#input", "回复OK即可")
+        page.locator("#input-form button").click()
+        ok = False
+        for i in range(40):
+            page.wait_for_timeout(4000)
+            n = page.locator("#messages .bubble").count()
+            last = page.locator("#messages .bubble").last.text_content() or ""
+            if n >= before + 2 and "思考中" not in last and len(last) > 0:
+                ok = True
+                break
+        check("聊天流式完成", ok, f"bubbles {before}→{n}")
+        check("无 LLM 错误泡", page.locator(".msg.error").count() == 0,
+              page.locator(".msg.error .bubble").first.text_content()[:100] if page.locator(".msg.error").count() else "")
+
+        # ---- 汇总 ----
+        check("全程零 JS 错误", len(errors) == 0, "; ".join(errors[:3]))
+        page.screenshot(path="/tmp/walkthrough_final.png")
+        # 走查产生的测试消息自清理，不给用户留垃圾历史
+        try:
+            page.request.post(BASE + "/api/session/reset")
+        except Exception:
+            pass
+        b.close()
+
+    print()
+    if ISSUES:
+        print(f"发现 {len(ISSUES)} 个问题：")
+        for i in ISSUES:
+            print(" -", i)
+        return 1
+    print("全部通过 OK")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

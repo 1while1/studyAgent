@@ -1,0 +1,85 @@
+"""system prompt 组装管线：角色 + 硬约束 + 当前 SOP 卡 + 状态摘要 + 当前阶段指令。"""
+
+from __future__ import annotations
+
+from ..domain.models import SessionContext
+from ..services.config_service import ConfigService
+from ..services.memory_store import MemoryStore
+from ..services.state_store import StateStore
+from .stage_machine import StageMachine
+
+
+def _state_summary(state: dict, current_day: int, memory: MemoryStore) -> str:
+    day = state["days"].get(str(current_day), {})
+    lines = [f"当前进度：Day {current_day}（完成度 {state.get('overall_completion_percentage', 0)}%）",
+             "当日单元："]
+    for u in day.get("units", []):
+        rating = f"，评分 {u['rating']}" if u.get("rating") else ""
+        lines.append(f"- 单元{u['id']}：{u['title']}（{u['status']}{rating}）")
+    if memory.exists(current_day):
+        counts = memory.sync_counts(memory.read(current_day))
+        lines.append(f"[同步] 统计：{counts}")
+    return "\n".join(lines)
+
+
+def _project_structure(cfg: ConfigService) -> str:
+    """读取 docx/Project.md（真实项目架构），供模型引用代码时对照，防虚构路径。"""
+    try:
+        p = cfg.docx_dir / "Project.md"
+        if p.exists():
+            return p.read_text(encoding="utf-8")
+    except Exception:
+        pass
+    return ""
+
+
+class PromptBuilder:
+    def __init__(self, config: ConfigService, state_store: StateStore,
+                 memory: MemoryStore, stages: StageMachine):
+        self._config = config
+        self._state_store = state_store
+        self._memory = memory
+        self._stages = stages
+
+    def build(self, session: SessionContext, sop_card: str = "",
+              extra_instruction: str = "") -> str:
+        cfg = self._config
+        roots = "、".join(r["name"] for r in cfg.code_roots) or "（未配置）"
+        example_root = cfg.code_roots[0]["name"] if cfg.code_roots else "项目根"
+        ws = cfg.workspace
+        parts = [
+            f"你是「{ws.title}」的 AI 导学助手，负责带用户深度学习。",
+            f"学习目标：{ws.goal}" if ws.goal else "",
+            "",
+            "## 硬约束（违反即违规）",
+            f"1. 单次连续代码输出 ≤ {cfg.get('code_line_limit', 20)} 行"
+            f"（Day {cfg.get('code_line_exemption_days', [21])} 除外）。",
+            "2. 禁止替用户做决定：阶段推进必须由系统状态机执行，你只负责讲解、提问、点评。",
+            "3. 评价类输出（单元考核/复盘）必须给出量化评分，格式严格为【评分：X.X】（1.0-5.0），否则系统无法识别。",
+            "4. 讲解单次回复正文控制在 1000 字以内；出题后必须停止，等待用户回答。",
+            "5. 用户说「继续/嗯/好」不等于推进单元，按当前阶段继续讲解即可。",
+            "6. 提及项目代码文件时，必须用反引号包裹完整路径，可附行号范围，"
+            f"格式如 `{example_root}/路径/文件名:L4-L11`（行号不确定可省略）。"
+            f"当前可用代码根：{roots}。用户可点击该引用跳转查看源码；"
+            "引用前必须对照下方「项目真实结构」，禁止编造不存在的类与路径，不确定时只引用到模块/包目录级别。",
+            "",
+        ]
+        project = _project_structure(cfg)
+        if project:
+            parts += ["## 项目真实结构（引用代码文件以此为准）", project, ""]
+        if sop_card:
+            parts += ["## 当前流程的 SOP 卡（必须严格遵守）", sop_card, ""]
+        if self._state_store.exists():
+            state = self._state_store.load()
+            parts += ["## 当前学习状态",
+                      _state_summary(state, state["current_day"], self._memory), ""]
+        if session.current_stage and self._stages.exists(session.current_stage):
+            parts += [
+                "## 当前阶段指令（最高优先级）",
+                f"当前阶段：{session.current_stage}（{self._stages.sop_step(session.current_stage)}）",
+                self._stages.instruction(session.current_stage),
+                "",
+            ]
+        if extra_instruction:
+            parts += ["## 本次回复的附加指令", extra_instruction, ""]
+        return "\n".join(parts)

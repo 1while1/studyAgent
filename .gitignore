@@ -1,0 +1,18 @@
+# ---- 密钥与本地私密配置（绝不入库） ----
+.env
+opencode.txt
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# ---- 运行时数据（会话/工作区学习数据，非代码） ----
+runtime/
+workspaces/
+
+# ---- IDE / 系统 ----
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
