@@ -102,6 +102,21 @@ class TestToolUseLoop(unittest.TestCase):
         self.assertIn("未找到", llm.calls[1][-1]["content"])
         self.assertIn("跳过该文件继续", loop.text)
 
+    def test_missing_file_with_suggestions(self):
+        # 文件名接近时有候选：no-such.txt vs 真实 a.txt？词干太短不命中，
+        # 用接近真实文件的假路径验证候选机制
+        (self.tmp / "projA" / "CouponTypeEnum.java").write_text(
+            "enum X {}", encoding="utf-8")
+        llm, loop, events = self._run([
+            "[READ:projA/enums/CouponTypeEnum.java:L1-L1]\n", "用候选重读",
+        ])
+        reads = self._reads(events)
+        self.assertFalse(reads[0]["ok"])
+        self.assertIn("CouponTypeEnum.java", reads[0]["suggestions"][0])
+        injected = llm.calls[1][-1]["content"]
+        self.assertIn("候选文件", injected)
+        self.assertIn("projA/CouponTypeEnum.java", injected)
+
     def test_read_limit_silent_drop(self):
         script = ["[READ:projA/a.txt:L1-L1]\n"] * 3 + \
                  ["[READ:projA/a.txt:L1-L1]\n超限后的尾巴"]
@@ -133,6 +148,40 @@ class TestToolUseLoop(unittest.TestCase):
         _, loop, events = self._run(["纯讲解文本\n第二行"])
         self.assertEqual(self._reads(events), [])
         self.assertEqual(loop.text, "纯讲解文本\n第二行")
+
+    def test_backtick_wrapped_marker(self):
+        # 模型把标记裹进反引号（线上真实踩坑）→ 照样截获，反引号也不残留
+        llm, loop, events = self._run([
+            "先读取这个类。\n\n`[READ:projA/a.txt:L1-L2]`\n\n",
+            "基于真实代码讲完",
+        ])
+        self.assertEqual(len(self._reads(events)), 1)
+        self.assertNotIn("READ:", loop.text)
+        self.assertNotIn("`", loop.text)
+        self.assertIn("l1\nl2", llm.calls[1][-1]["content"])
+
+    def test_inline_marker_mid_sentence(self):
+        # 行内出现的标记也能截获：前文照常下发
+        _, loop, events = self._run([
+            "先读取 [READ:projA/a.txt] 这个文件再讲", "完",
+        ])
+        self.assertEqual(len(self._reads(events)), 1)
+        self.assertIn("先读取 ", loop.text)
+        self.assertNotIn("READ:", loop.text)
+
+    def test_unclosed_marker_flushed_as_text(self):
+        # 流结束标记未闭合 → 按普通文本下发，不丢内容
+        _, loop, events = self._run(["前面 [READ:projA/a.txt 没闭合"])
+        self.assertEqual(self._reads(events), [])
+        self.assertIn("[READ:projA/a.txt 没闭合", loop.text)
+
+    def test_marker_prefix_split_tiny_chunks(self):
+        # 逐字符到达的标记也能识别（hold-back 前缀残片）
+        _, loop, events = self._run(
+            ["看 `[READ:projA/a.txt:L2-L2]` 吧", "完"], chunk=1)
+        self.assertEqual(len(self._reads(events)), 1)
+        self.assertEqual(self._reads(events)[0]["lines"], "L2-L2")
+        self.assertNotIn("READ:", loop.text)
 
 
 if __name__ == "__main__":

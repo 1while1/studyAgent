@@ -1,14 +1,15 @@
 """AI 读文件 tool-use 闭环：截获导师输出中的 [READ:路径:Lx-y] 标记并注入真实代码。
 
-协议：导师在讲解中**独立一行**输出 `[READ:路径:L起-止]`（行号可省），
-本模块以「行缓冲」方式截获该标记（不下发给前端），经 code_browser 只读读取
-真实文件内容后，以 user 消息注入上下文并续写讲解。
+协议：导师在讲解中输出 `[READ:路径:L起-止]`（行号可省，要求独立一行、
+禁止反引号包裹——但解析对反引号/行内出现均容错），本模块以「增量扫描」
+方式截获该标记（不下发给前端），经 code_browser 只读读取真实文件内容后，
+以 user 消息注入上下文并续写讲解。
 
 安全与边界：
 - 读取走 CodeBrowser.resolve + read_file（只读 + 穿越防护 + 1MB 上限）
 - 单次回复 READ 上限 ai_read_max_per_reply（默认 3），超限标记静默丢弃
 - 单次注入行数上限 ai_read_max_lines（默认 200），超出截断并标注
-- 注入的文件内容只用于续写调用，不进 chat_history；标记行不进最终文本
+- 注入的文件内容只用于续写调用，不进 chat_history；标记不进最终文本
 """
 
 from __future__ import annotations
@@ -20,9 +21,13 @@ from ..llm.base import LLMClient, Message
 from ..services.code_browser import CodeBrowser
 from ..services.config_service import ConfigService
 
-# [READ:路径] / [READ:路径:L10] / [READ:路径:L10-L40]（独立一行）
-READ_RE = re.compile(
-    r"^\[READ:([^:\]\n]+?)(?::L?(\d+)(?:-L?(\d+))?)?\]\s*$")
+# 完整标记（可带反引号包裹）：`[READ:路径:L10-L40]` / [READ:路径] 等
+MARK_RE = re.compile(
+    r"`?\[READ:([^:\]`\n]+?)(?::L?(\d+)(?:-L?(\d+))?)?\]`?")
+# 标记可能出现的起点前缀（用于跨 delta 残片hold-back）
+_MARK_PREFIXES = ("`[READ:", "[READ:")
+# 等待 "]" 闭合的缓冲上限：超过即按普通文本下发（防模型忘闭合卡死输出）
+_MARKER_BUF_CAP = 2000
 
 
 class ToolUseLoop:
@@ -46,7 +51,7 @@ class ToolUseLoop:
                 if ev["type"] == "delta":
                     self.text += ev["content"]
                     yield ev
-                elif ev["type"] == "_read_marker":
+                elif ev["type"] == "_marker":
                     pending_read = ev
                     break
             if pending_read is None:
@@ -59,33 +64,80 @@ class ToolUseLoop:
                 {"role": "user", "content": injection},
             ]
 
-    # ---- 单轮流式输出，行缓冲截获标记 ----
+    # ---- 单轮流式输出，增量扫描截获标记 ----
 
     def _stream_round(self, messages: list[Message],
                       allow_read: bool) -> Iterator[dict]:
         buf = ""
         for delta in self._llm.chat_stream(messages):
             buf += delta
-            while "\n" in buf:
-                line, buf = buf.split("\n", 1)
-                m = READ_RE.match(line)
-                if m:
-                    if not allow_read:
-                        continue  # 超限静默丢弃，流照常继续
-                    yield {"type": "_read_marker", "path": m.group(1),
-                           "start": m.group(2), "end": m.group(3)}
+            for ev in self._drain(buf, final=False, allow_read=allow_read):
+                if ev["type"] == "_marker":
+                    yield ev
                     return
-                yield {"type": "delta", "content": line + "\n"}
-        # 流结束：flush 暂存的最后一行（也要过标记匹配）
-        if buf:
-            m = READ_RE.match(buf)
-            if m:
-                if not allow_read:
+                buf = ev.pop("_rest")
+                if ev["content"]:
+                    yield ev
+        for ev in self._drain(buf, final=True, allow_read=allow_read):
+            if ev["type"] == "_marker":
+                yield ev
+                return
+            if ev["content"]:
+                yield ev
+
+    def _drain(self, buf: str, final: bool,
+               allow_read: bool) -> Iterator[dict]:
+        """从缓冲中榨取可下发内容。
+
+        产出 {"type":"delta","content":...,"_rest":剩余缓冲}；
+        截获标记时产出 {"type":"_marker", ...}（调用方应中断本轮流）。
+        """
+        while buf:
+            i = buf.find("[READ:")
+            if i == -1:
+                if final:
+                    yield {"type": "delta", "content": buf, "_rest": ""}
                     return
-                yield {"type": "_read_marker", "path": m.group(1),
+                # 尾部可能是不完整标记前缀（含可选反引号），hold 住等后续
+                hold = 0
+                for p in _MARK_PREFIXES:
+                    for n in range(1, len(p)):
+                        if buf.endswith(p[:n]):
+                            hold = max(hold, n)
+                if hold:
+                    head, buf = buf[:-hold], buf[-hold:]
+                    if head:
+                        yield {"type": "delta", "content": head, "_rest": buf}
+                        return
+                yield {"type": "delta", "content": "", "_rest": buf}
+                return
+            # 标记起点前的文本（连同可能的包裹反引号一起剥离）
+            start = i - 1 if i > 0 and buf[i - 1] == "`" else i
+            if start > 0:
+                yield {"type": "delta", "content": buf[:start], "_rest": buf[start:]}
+                return
+            j = buf.find("]", i + 6)
+            if j == -1:
+                if not final and len(buf) < _MARKER_BUF_CAP:
+                    yield {"type": "delta", "content": "", "_rest": buf}
+                    return  # 等 "]" 到达
+                # 流结束/超长仍未闭合：按普通文本下发
+                yield {"type": "delta", "content": buf, "_rest": ""}
+                return
+            token = buf[i:j + 1]
+            rest = buf[j + 1:]
+            if rest.startswith("`"):
+                token += "`"
+                rest = rest[1:]
+            m = MARK_RE.fullmatch(token)
+            if not m:  # 非法标记按原文下发
+                yield {"type": "delta", "content": token, "_rest": rest}
+                return
+            if allow_read:
+                yield {"type": "_marker", "path": m.group(1),
                        "start": m.group(2), "end": m.group(3)}
                 return
-            yield {"type": "delta", "content": buf}
+            buf = rest  # 超限静默丢弃，继续扫描后续内容
 
     # ---- 读取文件并构造注入文本 ----
 
@@ -97,9 +149,20 @@ class ToolUseLoop:
         hit = self._browser.resolve(path)
         if not hit:
             event["error"] = "文件未找到"
-            return event, (f"【系统注入】读取失败：未找到文件 `{path}`。"
-                           "请对照「项目真实结构」修正路径后继续讲解，"
-                           "禁止编造文件内容。")
+            tips = self._browser.suggest(path)
+            if tips:
+                event["suggestions"] = [f"{t['root']}/{t['path']}" for t in tips]
+                cand = "\n".join(f"- `{t['root']}/{t['path']}`" for t in tips)
+                return event, (
+                    f"【系统注入】读取失败：未找到文件 `{path}`。"
+                    f"索引中最接近的候选文件：\n{cand}\n"
+                    "若其中有目标文件，请用候选路径重新发起读取；"
+                    "若都不相关，说明该文件可能不存在，禁止编造其内容，"
+                    "请明确告知用户并换用真实存在的文件讲解。")
+            return event, (f"【系统注入】读取失败：未找到文件 `{path}`，"
+                           "索引中也没有相似文件，该文件很可能不存在。"
+                           "禁止编造其内容，请对照「项目真实结构」换用真实存在的文件，"
+                           "或明确告知用户该文件不存在。")
         try:
             data = self._browser.read_file(hit["root"], hit["path"])
         except Exception as e:
