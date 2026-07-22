@@ -1,19 +1,24 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-22（多工作区通用化 + 任意项目自动初始化，走查全绿）
+> 最近更新：2026-07-22（Git 初始化完成 + Roadmap 落盘，待开工 P0）
 
 ## 当前运行状态
 
+- **Git**：`study-web/.git`（main），root commit `2acc324`（90 文件）。密钥 `.env`/`opencode.txt` 与数据 `runtime/`、`workspaces/` 已 gitignore。提交流程：分支 + 三件套验证（单测/validate/走查）全绿才 commit
 - 启动：`cd study-web && python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765`
 - LLM：主渠道 `openai_compat`（OpenCode Go / deepseek-v4-pro，**被上游 401 风控拦截，待解封**）；
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
-- 学习进度：ragent 工作区 Day 2（数据在 `../docx/`，与 CLI 助手同一事实源）；
-  tinyrag 测试工作区（`workspaces/tinyrag/`，验证初始化用，可删）
-- 测试：`python -m unittest discover -s tests` → 36 个全绿
-- **UI 走查：`python scripts/ui_walkthrough.py`（需服务运行中），每次前端交付前必跑**
+- 工作区：ragent（默认，`../docx`，Day 2 学习中）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
+- 测试：`python -m unittest discover -s tests` → 36 个全绿；UI 走查 46 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
+
+## 下一步（已规划，见 docs/Roadmap.md）
+
+**P0 教学真实性**：① AI 读文件 tool-use 闭环（`[READ:路径:Lx-y]` → 后端注入真实代码续写，是"导学不瞎讲"的关键，涉及 SSE 协议变更）② Mermaid 图渲染 ③ Study.md 路径存在性校验
+**P1 学习闭环**：④ 编码验证（跑用户代码测试）⑤ 增量式 Study.md ⑥ 卡壳/疑问间隔复习
+**P2 形态**：⑦ 桌面打包 ⑧ 初始化深度 ⑨ 阶段可配置 ⑩ 工作区删除/导出
 
 ## 多工作区机制（v4）
 
@@ -90,8 +95,8 @@
 
 ## 上下文恢复指引（新会话）
 
-1. 读本文件 + `AGENTS.md` + `docs/InteractionModel.md`
-2. 跑 `python -m unittest discover -s tests` 与 `python ../docx/hooks/validate_study.py` 确认基线
+1. 读本文件 + `AGENTS.md` + `docs/InteractionModel.md`；接开发任务再读 `docs/Roadmap.md`
+2. 跑 `python -m unittest discover -s tests` 与 `python resources/hooks/validate_study.py ../docx 25 ragent-replica` 确认基线
 3. 服务若在跑（8765）：`python scripts/ui_walkthrough.py` 全量 UI 走查
-4. 前端改动后必须 Playwright 点击走查再交付
+4. 前端改动后必须 Playwright 点击走查再交付；提交走分支 + 三件套全绿
 
