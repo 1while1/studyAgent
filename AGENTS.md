@@ -33,7 +33,7 @@ python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name] 
 | `backend/domain/` | 纯模型零 IO（SessionContext / DayPhase / QuizMode / Workspace / paths 常量） | 禁止 import 其他任何层 |
 | `backend/services/` | 基础设施：state_store / memory_store / study_plan / template_service / backup_service / config_service / config_writer / code_browser / repo_scanner / doc_initializer / workspace_service | 各服务互不引用（workspace_service 只做编排除外） |
 | `backend/llm/` | LLMClient 接口 + openai_compat / mock / fallback + factory 注册表 | 新渠道只加文件 + 注册 |
-| `backend/engine/` | stage_machine（配置驱动）/ orchestrator（聊天阶段驱动）/ quiz_engine（评分提取）/ prompt_builder / commands（每 SOP 卡一个 handler）/ hooks（注册式钩子链） | commands 之间禁止互相 import |
+| `backend/engine/` | stage_machine（配置驱动）/ orchestrator（聊天阶段驱动）/ quiz_engine（评分提取）/ prompt_builder / tool_use（AI 读文件 READ 标记截获+注入续写）/ commands（每 SOP 卡一个 handler）/ hooks（注册式钩子链） | commands 之间禁止互相 import |
 | `backend/api/` | FastAPI 路由 + SSE + 静态托管 | 只做编排，不写业务逻辑 |
 
 ## 铁律（违反即破坏系统）
@@ -45,8 +45,9 @@ python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name] 
 5. **sop_card 三态**：`CommandResult.sop_card` = None（用注册卡）/ `""`（明确不带）/ 文件名。纯教学内容生成（讲解开场等）**必须不带卡**——带卡会导致模型复读卡片模板。
 6. **评分契约**：LLM 评价类输出必须含 `【评分：X.X】`，由 `quiz_engine.SCORE_RE` 提取（兼容加粗/半角冒号/带"分"字变体）；无标记不推进。
 7. **密钥边界**：key 只进 `.env`（经 `config_writer.update_env_file`），接口只返回掩码（前 4 后 4），禁止日志/响应回显完整 key。
-8. **前端渲染**：流式累积用独立 `rawText` 变量 + 节流渲染读 `bubble._pendingText` 最新值（禁止旧快照回退），message/done 事件先取消未触发节流；静态资源必须带 `Cache-Control: no-cache`（中间件已加，勿删）。
-9. **交接文档**：功能/架构/约定变化后，同步更新 `AGENTS.md`、`README.md`、`docs/DevLog.md`（bug 史与决策记录）。
+8. **前端渲染**：流式累积用独立 `rawText` 变量 + 节流渲染读 `bubble._pendingText` 最新值（禁止旧快照回退），message/done 事件先取消未触发节流；静态资源必须带 `Cache-Control: no-cache`（中间件已加，勿删）。SSE 事件类型：`delta` / `message` / `tool_read`（AI 读文件，chip 封泡模式）/ `error` / `done`；mermaid 只在终渲染执行。
+9. **tool-use 边界**：READ 标记独立一行、单次回复限 `ai_read_max_per_reply`（默认 3）次、单次注入限 `ai_read_max_lines`（默认 200）行；标记与注入内容**不进 chat_history**；读取走 code_browser 只读防护。
+10. **交接文档**：功能/架构/约定变化后，同步更新 `AGENTS.md`、`README.md`、`docs/DevLog.md`（bug 史与决策记录）。
 
 ## 动态配置
 

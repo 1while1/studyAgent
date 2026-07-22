@@ -1,7 +1,7 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-22（Git 初始化完成 + Roadmap 落盘，待开工 P0）
+> 最近更新：2026-07-22（P0-1 tool-use 闭环 + P0-2 Mermaid 完成，走查 49 项全绿）
 
 ## 当前运行状态
 
@@ -11,12 +11,13 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 36 个全绿；UI 走查 46 项全绿
+- 测试：`python -m unittest discover -s tests` → 42 个全绿；UI 走查 49 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步（已规划，见 docs/Roadmap.md）
 
-**P0 教学真实性**：① AI 读文件 tool-use 闭环（`[READ:路径:Lx-y]` → 后端注入真实代码续写，是"导学不瞎讲"的关键，涉及 SSE 协议变更）② Mermaid 图渲染 ③ Study.md 路径存在性校验
+~~P0-1 tool-use 闭环~~、~~P0-2 Mermaid~~ 已完成（2026-07-22）。
+**P0 剩余**：③ Study.md 路径存在性校验
 **P1 学习闭环**：④ 编码验证（跑用户代码测试）⑤ 增量式 Study.md ⑥ 卡壳/疑问间隔复习
 **P2 形态**：⑦ 桌面打包 ⑧ 初始化深度 ⑨ 阶段可配置 ⑩ 工作区删除/导出
 
@@ -43,6 +44,8 @@
 | 代码浏览器 | 源码学习模式内：roots 持久化（settings.toml `[[code_roots]]` 按工作区过滤）、树懒加载、行号+高亮、标签页式文件头、**IDE 状态栏**（路径·语言·行数·UTF-8）、树折叠/换行开关/树宽拖拽记忆 |
 | 片段提问 | 选区浮动按钮 → textarea（换行保留）；聊天渲染为展开式片段卡片；**点 📎 引用跳转代码浏览器打开文件 + 滚动定位 + 黄色行高亮** |
 | 代码引用芯片 | AI 回答中反引号路径自动转为可点击芯片；`/api/code/resolve` 三级解析（根前缀→直接相对→后缀索引，60s 缓存）；点击 → 源码学习模式打开文件 + 行高亮；完整路径失败时**按文件名回退定位**；找不到弹 toast。prompt 硬约束第 6 条 + system prompt 注入当前工作区 `Project.md` 防虚构路径 |
+| AI 读文件 tool-use | 导师输出 `[READ:路径:L起-止]`（独立一行）→ `engine/tool_use.ToolUseLoop` 行缓冲截获（标记不进 SSE/历史）→ code_browser 只读注入真实代码（≤200 行）→ 续写；单回复限 3 次（`ai_read_max_per_reply`，超限静默丢弃）；SSE 事件 `tool_read` → 前端 chip，点击跳转代码浏览器行高亮；读取失败注入纠错提示由模型修正 |
+| Mermaid 图 | vendor mermaid@11；```mermaid 块终渲染为 SVG（流式中不渲染）；主题随布局 pair=dark/tutor=default；`securityLevel: strict`；渲染失败回退代码块 |
 | 模型配置页 | 主/备渠道、模型/URL/Key（掩码）、测试连接、保存热生效 |
 
 ## 关键设计决策（不要回退）
@@ -56,6 +59,8 @@
 7. **模式绑定主题**：知识学习=暖纸浅色，源码学习=IDE 深色，无独立深浅切换按钮；主题变量按 `body[data-layout]` 分两套（v3 起，`data-theme` 已废弃）
 8. **三区分离**（v3 用户拍板）：状态在侧栏、模式与工具在顶栏、指令贴输入框；模式切换唯一入口 = 顶栏分段控件 `#mode-tutor/#mode-pair`，不再设悬浮胶囊/侧栏按钮
 9. **代码面板专属源码学习模式**：tutor 下隐藏；v2 的面板宽屏/拖拽调宽已随旧双布局移除（pair 下面板自适应充满）
+10. **tool-use 标记行缓冲截获**：READ 标记必须独立一行；截获后中断当前 LLM 流、注入真实代码后**重新调用**续写；注入内容以 transient user 消息只存在于续写调用，不进 chat_history；超限标记静默丢弃（不注入、不下发）
+11. **Mermaid 只终渲染**：流式节流渲染跳过 mermaid（块未闭合无法渲染），done/message/历史回填走 final 渲染；vendor 文件缺失时静默保留代码块原样
 
 ## Bug 史（重要，防重犯）
 
@@ -78,9 +83,11 @@
 | 向导按钮触发空指针 | 「扫描预览」复用了 `.cfg-test` 样式类，被模型配置的全局委托 handler 接住，`data-section` 为空 → `getElementById("test-undefined")` = null | cfg-test 委托加 `#provider-sections` 作用域守卫（样式类与行为钩子分离的教训） |
 | 25 天 Study.md 初始化必失败 | LLM 默认 max_tokens=4096，25 天计划需 5-6k token，输出截断在 Day 19 左右 → 校验缺 Day 20-24 | 初始化生成走 `init_max_tokens`（settings 可配，默认 8192 = DeepSeek 输出硬顶） |
 | opencode 401 | 账号被上游风控（非程序问题） | fallback 到 DeepSeek 官方 |
+| mermaid.min.js 下载截断（"Unexpected end of input"） | 后台 curl 超时只下了 3MB（整文件 3.56MB），尾部恰好截断在函数体中 | 前台 curl `--retry 3` 重下 + `node --check` 校验语法 + 走查 Mermaid 断言 |
 
 ## UI 版本
 
+- **v5（2026-07-22）**：P0 教学真实性 —— AI 读文件 tool-use 闭环（`[READ:路径:Lx-y]` 行缓冲截获 → 真实代码注入续写，前端 📖 chip 可点击跳转行高亮，限 3 次/回复）；Mermaid 图渲染（vendor mermaid@11，主题随布局，失败回退代码块）；prompt 硬约束扩到 8 条；走查 49 项全绿（新增 mermaid/tool-use 5 项）。
 - **v4（2026-07-22）**：多工作区通用化 —— 顶栏工作区下拉（切换/新建/重新扫描），初始化向导（表单→扫描预览→LLM 生成→验证管线→自动切换），品牌与代码根随工作区隔离。走查 46 项全绿。
 - **v3（2026-07-22）**：双模式重构 —— 「知识学习」暖纸书房风（米白 #f5f0e6 + 赭石 #bc6c3b + 衬线标题 + 深棕侧栏）；「源码学习」IDE 风（#1e1e1e 编辑器底 + #0e86d8 状态蓝 + 标签页文件头 + 底部状态栏）。三区分离布局：侧栏纯仪表盘（单元改状态圆点、同步计数并为一行）、顶栏分段模式控件 + 工具图标、输入框上方指令胶囊条 + `[` 补全菜单。移除：深色切换按钮、layout-toggle 悬浮胶囊、面板宽屏/拖拽。
 - **v2（2026-07-22）**：整体视觉打磨 —— 靛蓝品牌色系 + 渐变强调、侧栏分区卡片化、聊天气泡居中栏（≤880px）+ 渐变用户泡、悬浮胶囊输入条、全局滚动条/选区/焦点环样式、表格斑马纹、代码复制按钮悬停显现。

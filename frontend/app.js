@@ -7,7 +7,42 @@ marked.setOptions({ breaks: true, gfm: true });
 
 // ---------- Markdown 渲染 ----------
 
-function renderMarkdownInto(el, text) {
+// mermaid 主题随布局：源码学习=IDE 深色，知识学习=暖纸浅色
+function mermaidTheme() {
+  return document.body.dataset.layout === "pair" ? "dark" : "default";
+}
+
+// 将 ```mermaid 代码块渲染为图（仅终渲染时调用，流式中块未闭合不渲染）
+function renderMermaidBlocks(el) {
+  if (typeof mermaid === "undefined") return;  // vendor 缺失时保留代码块原样
+  const blocks = el.querySelectorAll("pre code.language-mermaid");
+  if (!blocks.length) return;
+  const nodes = [];
+  blocks.forEach(code => {
+    const pre = code.closest("pre");
+    const div = document.createElement("div");
+    div.className = "mermaid";
+    div.textContent = code.textContent;
+    pre.replaceWith(div);
+    nodes.push(div);
+  });
+  mermaid.initialize({
+    startOnLoad: false, securityLevel: "strict", theme: mermaidTheme(),
+  });
+  mermaid.run({ nodes }).catch(() => {
+    // 语法错误等：回退为代码块展示，不炸整个气泡
+    nodes.forEach(div => {
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      code.className = "language-mermaid";
+      code.textContent = div.textContent;
+      pre.appendChild(code);
+      div.replaceWith(pre);
+    });
+  });
+}
+
+function renderMarkdownInto(el, text, isFinal = true) {
   el.innerHTML = DOMPurify.sanitize(marked.parse(text));
   el.querySelectorAll("pre code").forEach(block => hljs.highlightElement(block));
   el.querySelectorAll("pre").forEach(pre => {
@@ -22,6 +57,7 @@ function renderMarkdownInto(el, text) {
     };
     pre.appendChild(btn);
   });
+  if (isFinal) renderMermaidBlocks(el);
   linkifyCodeRefs(el);
 }
 
@@ -114,6 +150,26 @@ function escapeHtml(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// AI 读文件 tool-use 指示 chip（点击跳转代码浏览器定位行）
+function addToolReadChip(p) {
+  const div = document.createElement("div");
+  div.className = "msg tool";
+  const chip = document.createElement("span");
+  chip.className = "tool-chip" + (p.ok ? "" : " fail");
+  if (p.ok) {
+    chip.textContent = `📖 AI 读取了 ${p.path}${p.lines ? ":" + p.lines : ""}`;
+    chip.dataset.path = p.path;
+    const lm = (p.lines || "").match(/^L(\d+)-L(\d+)$/);
+    if (lm) { chip.dataset.s = lm[1]; chip.dataset.e = lm[2]; }
+    chip.classList.add("code-ref");  // 复用引用芯片的点击跳转逻辑
+    chip.title = "在代码浏览器中打开";
+  } else {
+    chip.textContent = `📖 读取失败：${p.path}${p.error ? "（" + p.error + "）" : ""}`;
+  }
+  div.appendChild(chip);
+  messagesEl.appendChild(div);
+}
+
 function addMessage(role, text, isMarkdown) {
   const div = document.createElement("div");
   div.className = `msg ${role}`;
@@ -151,7 +207,7 @@ function throttledRender(bubble, text) {
   if (renderTimer) return;
   renderTimer = setTimeout(() => {
     renderTimer = null;
-    renderMarkdownInto(bubble, bubble._pendingText);
+    renderMarkdownInto(bubble, bubble._pendingText, false);  // 流式中不渲染 mermaid
     scrollToBottom();
   }, 200);
 }
@@ -308,6 +364,20 @@ async function streamPost(url, text) {
         renderMarkdownInto(bubble, payload.content);
         rawText = "";
         // 模板渲染完后可能还有 LLM 流，继续保持等待提示
+        bubble = addMessage("assistant", "思考中…");
+        bubble.classList.add("thinking");
+      } else if (payload.type === "tool_read") {
+        // AI 触发读文件：封当前泡 → 插入读取 chip → 开新泡等续写
+        cancelThrottledRender();
+        const wasThinking = bubble.classList.contains("thinking");
+        bubble.classList.remove("thinking");
+        if (wasThinking && !rawText) {
+          bubble.parentElement.remove();  // READ 是首个输出，占位泡无内容
+        } else if (rawText) {
+          renderMarkdownInto(bubble, rawText);
+        }
+        addToolReadChip(payload);
+        rawText = "";
         bubble = addMessage("assistant", "思考中…");
         bubble.classList.add("thinking");
       } else if (payload.type === "error") {
