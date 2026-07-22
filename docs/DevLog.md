@@ -1,11 +1,11 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-22（P0-3/P1-1/P2-2/3/4 完成，Roadmap 仅剩 P2-1 桌面打包暂缓；76 单测/52 走查全绿）
+> 最近更新：2026-07-22（架构设计 v3 封板，见 docs/AgentDesign.md；92 单测/52 走查全绿；已推送 GitHub）
 
 ## 当前运行状态
 
-- **Git**：`study-web/.git`（main），root commit `2acc324`（90 文件）。密钥 `.env`/`opencode.txt` 与数据 `runtime/`、`workspaces/` 已 gitignore。提交流程：分支 + 三件套验证（单测/validate/走查）全绿才 commit
+- **Git**：`study-web/.git`（main）→ GitHub <https://github.com/1while1/studyAgent>。密钥 `.env`/`opencode.txt` 与数据 `runtime/`、`workspaces/` 已 gitignore。提交流程：分支 + 三件套验证（单测/validate/走查）全绿才 commit
 - 启动：`cd study-web && python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765`
 - LLM：主渠道 `openai_compat`（OpenCode Go / deepseek-v4-pro，**被上游 401 风控拦截，待解封**）；
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
@@ -14,13 +14,13 @@
 - 测试：`python -m unittest discover -s tests` → 92 个全绿；UI 走查 52 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
-## 下一步（已规划，见 docs/Roadmap.md）
+## 下一步
 
-~~P0~~、~~P1~~ 全部完成（2026-07-22）。**仅剩 P2-1 桌面打包**（用户暂缓，备选 PyInstaller+pywebview）。
+v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。**后续演进以 `docs/AgentDesign.md` v3 封板版为准：M1 资料库 → M2 可观测 → M3 学习者模型 → M4 笔记 → M5a/b/c Agent 核心 → M6 实战工坊 → M7 课程本体。下一步 = M1。**
 
 ## 多工作区机制（v4）
 
-- **Workspace 值对象**（`domain/workspace.py`）：slug/title/goal/docx_dir/project_dir/session_path/total_days/replica_name
+- **Workspace 值对象**（`domain/workspace.py`）：slug/title/goal/docx_dir/project_dir/session_path/total_days/replica_name/preset
 - settings.toml：`active_workspace` + `[[workspaces]]`；code_roots 带 `workspace` 字段过滤；无 [[workspaces]] 时旧配置自动合成默认工作区（向后兼容）
 - 切换：`POST /api/workspaces/switch` → `app.assemble()` 重建 deps；聊天会话按工作区隔离
 - **初始化向导**（顶栏工作区下拉 → 新建工作区）：填项目目录/目标/天数 → 扫描预览 → `repo_scanner` 生成画像 → LLM 生成 Project.md + Study.md → **验证管线**（Project.md 结构检查、Study.md 逐天 `parse_day_text` 解析）→ 失败带错重试 1 次不过不写盘 → 骨架模板写 StudyState/ReplicaPlan/DocIndex/InterviewQA → 注册 settings + code_root + 自动切换
@@ -128,7 +128,7 @@
 
 ## 上下文恢复指引（新会话）
 
-1. 读本文件 + `AGENTS.md` + `docs/InteractionModel.md`；接开发任务再读 `docs/Roadmap.md`
+1. 读本文件 + `AGENTS.md` + `docs/InteractionModel.md`；接开发任务读 `docs/AgentDesign.md`（v3 封板，M1-M7 分期与全部硬规）
 2. 跑 `python -m unittest discover -s tests` 与 `python resources/hooks/validate_study.py ../docx 25 ragent-replica` 确认基线
 3. 服务若在跑（8765）：`python scripts/ui_walkthrough.py` 全量 UI 走查
 4. 前端改动后必须 Playwright 点击走查再交付；提交走分支 + 三件套全绿
