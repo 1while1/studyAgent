@@ -30,17 +30,20 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 
 - 每个工作区独立：学习数据（`workspaces/<slug>/docx/`）、聊天会话、代码根
 - 切换即热重载（deps 重建 + 页面刷新）；「↻ 重新扫描项目结构」手动刷新 Project.md
+- 菜单每项带 ⬇ 导出学习数据 zip / ✕ 删除工作区（默认保留磁盘数据，激活中的工作区不可删）
+- 新建时可选「学习模式预设」（标准 / 阅读实验 / 改 bug / 技术文章，对应 `resources/presets/*.toml`）
 - 行为资源单源：`resources/sop/`（SOP 卡）、`resources/templates/`（初始化骨架）、`resources/prompts/`（生成提示词）——改行为改文件，不改代码
 
 ## 功能一览
 
 **学习流程**（与 SOP 体系完全一致）
-- 10 个触发指令：输入框上方胶囊条点击 / 输入 `[` 唤起补全菜单 / 直接输入
-- 五步导学循环状态机（文档带读 → Replica 编码 → 源码对照 → 论文带读 → 掌握度考核）
+- 11 个触发指令：输入框上方胶囊条点击 / 输入 `[` 唤起补全菜单 / 直接输入
+- 五步导学循环状态机（文档带读 → Replica 编码 → 源码对照 → 论文带读 → 掌握度考核），可按工作区选学习模式预设（阅读实验/改 bug/技术文章）
 - 掌握度 2 回合连环追问 → `【评分：X.X】` 自动提取落盘；不及格拒绝推进
 - FAIL-FAST 双选项、「重新开始」保留 [同步] 记录、天数自动递进
 - 增量式学习计划：初始化生成全量粗纲 + 前 3 天细化，每天结束时 AI 结合当日反馈自动细化次日
 - 间隔复习：按 1/3/7 天间隔自动把历史卡壳/待解答疑问/低分单元插入当日开头快速回顾
+- **`[验证代码]`**：一键在 replica/项目目录跑 Maven/Gradle/npm 编译或测试，AI 基于真实输出点评
 - 所有进度实时写入当前工作区并过 `validate_study.py` 校验
 
 **双模式 UI**
@@ -71,8 +74,8 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 
 ```bash
 cd study-web
-python -m unittest discover -s tests    # 42 个后端测试，stdlib，无需真实 LLM
-python scripts/ui_walkthrough.py        # UI 真实点击走查 49 项（需服务运行中）
+python -m unittest discover -s tests    # 76 个后端测试，stdlib，无需真实 LLM
+python scripts/ui_walkthrough.py        # UI 真实点击走查 52 项（需服务运行中）
 python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name]
 ```
 

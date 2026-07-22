@@ -53,7 +53,7 @@ def main():
         page.wait_for_timeout(2000)
         check("页面加载-侧栏可见", page.locator("#sidebar").is_visible())
         check("页面加载-单元列表", page.locator("#units li").count() == 3)
-        check("页面加载-指令胶囊 10 个", page.locator("#command-chips .chip").count() == 10)
+        check("页面加载-指令胶囊 11 个", page.locator("#command-chips .chip").count() == 11)
         check("消息容器就绪", page.locator("#messages").is_visible())
 
         # ---- 2. 指令：FAIL-FAST ----
@@ -75,9 +75,12 @@ def main():
         page.locator("#ws-current").click()
         page.wait_for_timeout(400)
         check("工作区菜单项", page.locator("#ws-menu .ws-item").count() >= 3)
+        check("工作区导出按钮", page.locator('#ws-menu .ws-op[data-op="export"]').count() >= 1)
+        check("工作区删除按钮", page.locator('#ws-menu .ws-op[data-op="delete"]').count() >= 1)
         page.locator("#ws-menu .ws-item", has_text="新建工作区").click()
-        page.wait_for_timeout(400)
+        page.wait_for_timeout(800)
         check("向导弹窗打开", page.locator("#ws-modal").is_visible())
+        check("学习模式预设选项", page.locator("#ws-preset option").count() >= 4)
         page.fill("#ws-project-dir", "../ragent-replica")
         page.locator("#ws-preview-btn").click()
         page.wait_for_timeout(1200)
