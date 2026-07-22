@@ -20,6 +20,7 @@ from ..engine.stage_machine import StageMachine
 from ..llm.factory import create_llm
 from ..services.backup_service import BackupService
 from ..services.config_service import get_config
+from ..services.materials_service import MaterialsService
 from ..services.memory_store import MemoryStore
 from ..services.state_store import StateStore
 from ..services.study_plan import StudyPlanStore
@@ -47,7 +48,8 @@ def build_deps() -> Deps:
         stages=stages,
         llm=llm,
         quiz=quiz,
-        prompts=PromptBuilder(config, state_store, memory, stages),
+        prompts=PromptBuilder(config, state_store, memory, stages,
+                              MaterialsService(config)),
         hooks=hooks,
         session_store=SessionStore(config.workspace.session_path),
     )

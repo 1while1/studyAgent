@@ -55,7 +55,15 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 - AI 回复 Markdown 渲染（标题/加粗/表格/引用），代码块语法高亮 + 一键复制
 - SSE 流式输出 + "思考中… Ns" 等待指示（长提示词首包约 20s 属正常）
 - 多行输入框（Enter 发送 / Shift+Enter 换行 / 自动增高）、回到底部按钮、聊天历史刷新回填
-- 学习资料弹窗：当日 StudyMemory / 面试话术库 在线查看（阅读版式）
+- 学习资料弹窗：当日 StudyMemory / 面试话术库 / **资料库** 在线查看（阅读版式）
+
+**资料库（M1）**
+- 工作区配置 `materials_dir` 后自动扫描注册（txt/md/docx/pdf），注册表 + 解析缓存落工作区数据目录
+- docx 按标题样式切段（python-docx，损坏关系包自动回退裸 XML 解析）、pdf 按页切段（pypdf），统一文本清理（移植 ragent TextCleanupUtil 规则）
+- **备课确定性预取**：讲解回合开始前，后端自动按当前单元的「文档」引用把教材真实节选注入 LLM 上下文（transient，不进聊天历史），前端显示 📚 备课 chip——讲解有根据，不靠 LLM 自觉
+- **AI 读教材 tool-use**：导师可输出 `[READ_DOC:资料id#章节]` 主动读取教材（与 READ 同一管线同一限流），省略章节先返回章节目录自导航，前端显示 📄 chip
+- 资料库弹窗：清单（类型/章节数/状态）+ 预览（目录+开头节选）+ 重新扫描 + 手工注册外部文件/视频链接
+- 敏感文件（.env/证书类）不注册不解析
 
 **代码浏览器与联动提问**
 - 目录树懒加载 + 行号 gutter + 语法高亮（只读，路径穿越防护）；树折叠、长行换行、树宽拖拽记忆
@@ -74,8 +82,8 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 
 ```bash
 cd study-web
-python -m unittest discover -s tests    # 92 个后端测试，stdlib，无需真实 LLM
-python scripts/ui_walkthrough.py        # UI 真实点击走查 52 项（需服务运行中）
+python -m unittest discover -s tests    # 124 个后端测试，stdlib，无需真实 LLM
+python scripts/ui_walkthrough.py        # UI 真实点击走查 55 项（需服务运行中）
 python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name]
 ```
 

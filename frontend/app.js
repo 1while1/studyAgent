@@ -156,7 +156,21 @@ function addToolReadChip(p) {
   div.className = "msg tool";
   const chip = document.createElement("span");
   chip.className = "tool-chip" + (p.ok ? "" : " fail");
-  if (p.ok) {
+  if (p.kind === "doc") {
+    // 资料库读取（备课预取 / READ_DOC）：展示 chip，不跳转代码浏览器
+    chip.classList.add("doc-chip");
+    if (p.prefetch) {
+      const n = (p.sources || []).length;
+      chip.textContent = `📚 已备课：${n} 份教材节选`;
+      chip.title = (p.sources || []).join("\n");
+    } else if (p.ok) {
+      chip.textContent = `📄 AI 阅读了《${p.title || p.doc}》` +
+        (p.section ? `·「${p.section}」` : "·章节目录");
+      chip.title = p.doc;
+    } else {
+      chip.textContent = `📄 资料读取失败：${p.doc}${p.error ? "（" + p.error + "）" : ""}`;
+    }
+  } else if (p.ok) {
     chip.textContent = `📖 AI 读取了 ${p.path}${p.lines ? ":" + p.lines : ""}`;
     chip.dataset.path = p.path;
     const lm = (p.lines || "").match(/^L(\d+)-L(\d+)$/);
@@ -497,6 +511,7 @@ document.querySelectorAll(".doc-tab").forEach(tab => {
 async function openDoc(name) {
   document.querySelectorAll(".doc-tab").forEach(t =>
     t.classList.toggle("active", t.dataset.doc === name));
+  if (name === "materials") { openMaterials(); return; }
   const box = document.getElementById("doc-content");
   box.textContent = "加载中…";
   docModal.classList.remove("hidden");
@@ -504,6 +519,91 @@ async function openDoc(name) {
   const r = await res.json();
   document.getElementById("doc-title").textContent = r.title || "学习资料";
   renderMarkdownInto(box, r.ok ? r.content : `加载失败：${r.error}`);
+}
+
+// ---------- 资料库 ----------
+
+async function openMaterials() {
+  const box = document.getElementById("doc-content");
+  box.textContent = "加载中…";
+  docModal.classList.remove("hidden");
+  document.getElementById("doc-title").textContent = "资料库";
+  const res = await fetch("/api/materials");
+  const r = await res.json();
+  box.innerHTML = "";
+  if (!r.ok) { box.textContent = `加载失败：${r.error || "未知错误"}`; return; }
+  if (!r.configured) {
+    box.textContent = "当前工作区未配置资料目录（settings.toml 工作区的 materials_dir 键）。";
+    return;
+  }
+  // 工具条：重新扫描 + 手工注册
+  const bar = document.createElement("div");
+  bar.className = "mat-toolbar";
+  const rs = document.createElement("button");
+  rs.textContent = "↻ 重新扫描";
+  rs.onclick = async () => {
+    rs.disabled = true; rs.textContent = "扫描中…";
+    await fetch("/api/materials/rescan", { method: "POST" });
+    openMaterials();
+  };
+  const inp = document.createElement("input");
+  inp.type = "text";
+  inp.placeholder = "注册外部文件路径或视频链接…";
+  const regBtn = document.createElement("button");
+  regBtn.textContent = "注册";
+  regBtn.onclick = async () => {
+    const source = inp.value.trim();
+    if (!source) return;
+    const rr = await fetch("/api/materials/register", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source }),
+    });
+    const rj = await rr.json();
+    if (!rj.ok) { showToast(rj.error || "注册失败"); return; }
+    showToast(`已注册：${rj.id}`);
+    openMaterials();
+  };
+  bar.append(rs, inp, regBtn);
+  box.appendChild(bar);
+  // 资料列表
+  const list = document.createElement("div");
+  list.className = "mat-list";
+  if (!r.materials.length) list.textContent = "（资料目录为空）";
+  for (const m of r.materials) {
+    const item = document.createElement("div");
+    item.className = "mat-item" + (m.status === "error" ? " err" : "");
+    const status = m.status === "parsed" ? `${m.headings} 章`
+      : m.status === "error" ? "解析失败" : "未解析";
+    const type = document.createElement("span");
+    type.className = "mat-type"; type.textContent = m.type;
+    const title = document.createElement("span");
+    title.className = "mat-name"; title.textContent = m.id;
+    const st = document.createElement("span");
+    st.className = "mat-status"; st.textContent = status;
+    item.append(type, title, st);
+    item.title = m.error || m.indexed_at || m.id;
+    if (m.status === "parsed") item.onclick = () => openMaterialPreview(m.id);
+    list.appendChild(item);
+  }
+  box.appendChild(list);
+}
+
+async function openMaterialPreview(id) {
+  const box = document.getElementById("doc-content");
+  box.textContent = "加载中…";
+  const res = await fetch(`/api/materials/preview?id=${encodeURIComponent(id)}`);
+  const r = await res.json();
+  box.innerHTML = "";
+  const back = document.createElement("button");
+  back.className = "mat-back";
+  back.textContent = "← 返回资料列表";
+  back.onclick = openMaterials;
+  box.appendChild(back);
+  const body = document.createElement("div");
+  body.className = "markdown-body";
+  box.appendChild(body);
+  document.getElementById("doc-title").textContent = r.title || "资料预览";
+  renderMarkdownInto(body, r.ok ? r.content : `加载失败：${r.error}`);
 }
 
 // ---------- 代码浏览器（源码学习模式面板） ----------

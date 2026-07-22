@@ -267,6 +267,24 @@ def main():
             "warmup_on_start": orig_cfg.get("warmup_on_start", True),
             "sections": {}})
 
+        # ---- 9d. 资料库（M1）：API + 弹窗列表 + 预览 ----
+        mats = page.request.get(BASE + "/api/materials").json()
+        check("资料库 API 非空", mats.get("ok") and len(mats.get("materials", [])) >= 1)
+        page.locator("#open-docs").click()
+        page.wait_for_timeout(600)
+        page.locator('.doc-tab[data-doc="materials"]').click()
+        page.wait_for_timeout(1500)
+        check("资料库弹窗有条目", page.locator(".mat-item").count() >= 1)
+        parsed = page.locator(".mat-item:not(.err)").first
+        if parsed.count() >= 1:
+            parsed.click()
+            page.wait_for_timeout(1200)
+            check("资料预览有内容",
+                  page.locator(".mat-back").is_visible() and
+                  len(page.locator("#doc-content").text_content()) > 50)
+        page.locator("#doc-close").click()
+        page.wait_for_timeout(400)
+
         # ---- 汇总 ----
         check("全程零 JS 错误", len(errors) == 0, "; ".join(errors[:3]))
         page.screenshot(path="/tmp/walkthrough_final.png")
