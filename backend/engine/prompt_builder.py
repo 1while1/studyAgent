@@ -35,11 +35,12 @@ def _project_structure(cfg: ConfigService) -> str:
 
 class PromptBuilder:
     def __init__(self, config: ConfigService, state_store: StateStore,
-                 memory: MemoryStore, stages: StageMachine):
+                 memory: MemoryStore, stages: StageMachine, materials=None):
         self._config = config
         self._state_store = state_store
         self._memory = memory
         self._stages = stages
+        self._materials = materials  # MaterialsService | None（None 跳过资料清单）
 
     def build(self, session: SessionContext, sop_card: str = "",
               extra_instruction: str = "") -> str:
@@ -62,14 +63,18 @@ class PromptBuilder:
             f"格式如 `{example_root}/路径/文件名:L4-L11`（行号不确定可省略）。"
             f"当前可用代码根：{roots}。用户可点击该引用跳转查看源码；"
             "引用前必须对照下方「项目真实结构」，禁止编造不存在的类与路径，不确定时只引用到模块/包目录级别。",
-            "7. 讲解中需要查看某文件的真实代码时，**独立一行**输出读取标记，"
-            "格式严格为 `[READ:路径:L起-L止]`（行号不确定可省略为 `[READ:路径]`），"
-            f"路径写法同第 6 条，**禁止用反引号包裹标记**。"
-            "**输出标记后立即停止该条回复**，系统会自动注入真实内容供你继续；"
-            "禁止自己模拟注入过程、禁止在未见真实内容时编造代码。"
-            "用户明确要求读取/查看真实代码时必须使用 READ 标记，禁止凭记忆作答。"
-            f"单条回复最多读取 {cfg.get('ai_read_max_per_reply', 3)} 次；"
-            "读取失败时对照「项目真实结构」修正，仍失败则跳过该文件，禁止编造内容。",
+            "7. 讲解中需要查看真实内容时，**独立一行**输出读取标记，"
+            "**禁止用反引号包裹标记**，**输出标记后立即停止该条回复**，"
+            "系统会自动注入真实内容供你继续；禁止自己模拟注入过程、"
+            "禁止在未见真实内容时编造代码或教材文字。两种标记："
+            "① 读代码：`[READ:路径:L起-L止]`（行号不确定可省略为 `[READ:路径]`），"
+            f"路径写法同第 6 条。用户明确要求读取/查看真实代码时必须使用。"
+            "② 读教材：`[READ_DOC:资料id#章节名]`（章节不确定可省略为 "
+            "`[READ_DOC:资料id]`，系统会先返回章节目录供你选择），"
+            "资料 id 必须取自下方「可用学习资料」清单，禁止编造 id。"
+            "讲解涉及教材具体内容、用户追问资料原文时必须使用。"
+            f"单条回复两种标记合计最多 {cfg.get('ai_read_max_per_reply', 3)} 次；"
+            "读取失败时按系统注入的候选修正，仍失败则跳过并如实告知，禁止编造内容。",
             "8. 讲架构、流程、时序、状态流转时，优先用 ```mermaid 代码块画图"
             "（flowchart / sequenceDiagram / stateDiagram），前端会渲染成图，图比长段文字更直观。",
             "",
@@ -77,6 +82,14 @@ class PromptBuilder:
         project = _project_structure(cfg)
         if project:
             parts += ["## 项目真实结构（引用代码文件以此为准）", project, ""]
+        if self._materials is not None:
+            try:
+                catalog = self._materials.catalog()
+            except Exception:
+                catalog = ""
+            if catalog:
+                parts += ["## 可用学习资料（用 [READ_DOC:资料id#章节] 读取原文）",
+                          catalog, ""]
         if sop_card:
             parts += ["## 当前流程的 SOP 卡（必须严格遵守）", sop_card, ""]
         if self._state_store.exists():

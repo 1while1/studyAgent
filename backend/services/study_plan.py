@@ -13,16 +13,21 @@ class StudyPlanError(Exception):
 
 
 _DOC_SKIP = {"无", "见 DocIndex", "见DocIndex", "无。", ""}
-_PATH_TOKEN_RE = re.compile(r"^[\w.\-\u4e00-\u9fff()]+(?:/[\w.\-\u4e00-\u9fff()]+)+$"
-                            r"|^[\w\-()]+\.\w{1,6}$")
+# 路径允许空格与 &（中文资料目录常见，如 "AI & RAG 基础扫盲"）
+_PATH_TOKEN_RE = re.compile(
+    r"^[\w.\-一-鿿()& ]+(?:/[\w.\-一-鿿()& ]+)+$"
+    r"|^[\w\-() ]+\.\w{1,6}$")
 
 
 def extract_doc_paths(doc: str) -> list[str]:
-    """从单元「文档」字段提取路径形 token（非路径的描述性文字自动忽略）。"""
+    """从单元「文档」字段提取路径形 token（非路径的描述性文字自动忽略）。
+
+    多份资料用 、，,；; 分隔；**不按空格切分**（路径本身可含空格）。
+    """
     doc = (doc or "").strip().strip("`")
     if doc in _DOC_SKIP:
         return []
-    tokens = re.split(r"[\s、，,；;]+", doc)
+    tokens = [t.strip() for t in re.split(r"[、，,；;\n]+", doc)]
     return [t for t in tokens if _PATH_TOKEN_RE.match(t)]
 
 

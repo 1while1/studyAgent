@@ -9,24 +9,16 @@ from pathlib import Path
 
 from .config_service import ConfigService, WEB_ROOT
 from ..domain.paths import SKIP_DIRS
+from ..domain.sensitive import is_sensitive
 
 MAX_FILE_BYTES = 1024 * 1024  # 1MB 上限
 INDEX_TTL = 60  # 文件索引缓存秒数（resolve 后缀搜索用）
 INDEX_CAP = 30000  # 单根索引文件数上限
 
-# 敏感文件：禁止读取/索引（防密钥经界面或 AI READ 注入外发 LLM）
-SENSITIVE_NAMES = {
-    ".env", ".env.local", ".env.production", ".env.development",
-    "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "credentials",
-}
-SENSITIVE_EXTS = {".pem", ".key", ".p12", ".pfx", ".jks", ".keystore", ".secret"}
-
 
 def _is_sensitive(name: str) -> bool:
-    low = name.lower()
-    if low in SENSITIVE_NAMES or low.startswith(".env."):
-        return True
-    return Path(low).suffix in SENSITIVE_EXTS
+    """兼容别名：实现已迁至 domain.sensitive（materials 等共用）。"""
+    return is_sensitive(name)
 
 TEXT_EXTS = {
     ".java", ".xml", ".yml", ".yaml", ".properties", ".md", ".txt", ".json",

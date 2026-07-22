@@ -21,6 +21,9 @@ review_max_items = 6          # 单日复习项上限（回滚 > 卡壳 > 疑问
 init_detail_days = 3          # 初始化时细化前 N 天，其余粗纲滚动细化
 verify_timeout = 300          # [验证代码] 构建/测试超时秒数
 verify_offline = false        # true 时 maven 加 -o 禁网络（需依赖已缓存）
+materials_prefetch_max_chars = 6000   # 备课预取注入总量上限（字符）
+materials_catalog_max_lines = 60      # 注入 system 的资料清单行数上限
+materials_cache_max_chars = 500000    # 单资料解析缓存字符上限
 
 [llm]
 provider = "openai_compat"
@@ -164,6 +167,7 @@ project_dir = "../ragent原项目"
 session_path = "runtime/session.json"
 total_days = 25
 replica_name = "ragent-replica"
+materials_dir = "../RAgent文档"
 
 [[workspaces]]
 slug = "tinyrag"
