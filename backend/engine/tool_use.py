@@ -69,8 +69,14 @@ class ToolUseLoop:
             reads += 1
             if pending_read["kind"] == "doc":
                 event, injection = self._do_read_doc(pending_read)
+                tool_name = "read_doc"
+                detail = pending_read["doc"]
             else:
                 event, injection = self._do_read(pending_read)
+                tool_name = "read_code"
+                detail = pending_read["path"]
+            from ..services.observer import get_observer
+            get_observer(self._config).log_tool(tool_name, event["ok"], detail)
             yield event
             convo = convo + [
                 {"role": "assistant", "content": self.text},

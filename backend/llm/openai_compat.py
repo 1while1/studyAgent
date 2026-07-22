@@ -36,19 +36,44 @@ class OpenAICompatClient(LLMClient):
                         or config.get("llm_timeout", 300))
         self._client = OpenAI(base_url=base_url, api_key=api_key,
                               timeout=timeout, max_retries=1)
+        self._usage_opts = True  # 网关不支持 stream_options 时自动降级记忆
 
     def chat_stream(self, messages: list[Message],
                     max_tokens: int | None = None) -> Iterator[str]:
-        stream = self._client.chat.completions.create(
-            model=self._model,
-            messages=messages,
-            max_tokens=max_tokens or self._max_tokens,
-            temperature=self._temperature,
-            stream=True,
-        )
-        for chunk in stream:
-            if not chunk.choices:  # 跳过心跳/用量等空块（部分兼容网关会下发）
-                continue
-            delta = chunk.choices[0].delta
-            if delta and delta.content:
-                yield delta.content
+        self.last_usage = None
+        use_opts = self._usage_opts
+        while True:
+            yielded = False
+            try:
+                kwargs = dict(
+                    model=self._model,
+                    messages=messages,
+                    max_tokens=max_tokens or self._max_tokens,
+                    temperature=self._temperature,
+                    stream=True,
+                )
+                if use_opts:
+                    # 请求末块下发 usage（DeepSeek 等支持；不支持的网关降级）
+                    kwargs["stream_options"] = {"include_usage": True}
+                stream = self._client.chat.completions.create(**kwargs)
+                for chunk in stream:
+                    if not chunk.choices:
+                        usage = getattr(chunk, "usage", None)
+                        if usage is not None:
+                            self.last_usage = {
+                                "prompt_tokens": usage.prompt_tokens,
+                                "completion_tokens": usage.completion_tokens,
+                            }
+                        continue
+                    delta = chunk.choices[0].delta
+                    if delta and delta.content:
+                        yielded = True
+                        yield delta.content
+                return
+            except Exception:
+                if use_opts and not yielded:
+                    # 疑似网关不认 stream_options：降级重试一次并记住
+                    use_opts = False
+                    self._usage_opts = False
+                    continue
+                raise

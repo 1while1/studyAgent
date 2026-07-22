@@ -82,8 +82,10 @@ class DocInitializer:
             p = prompt if not errors else (
                 f"{prompt}\n\n【上次输出未通过程序校验】\n{errors}\n"
                 f"请修正后重新完整输出（仍禁止任何前言后语）。")
-            text = self._llm.chat([{"role": "user", "content": p}],
-                                  max_tokens=self._max_tokens)
+            from .observer import task_scope
+            with task_scope("init"):
+                text = self._llm.chat([{"role": "user", "content": p}],
+                                      max_tokens=self._max_tokens)
             # 容错：剥掉可能的 markdown 围栏包裹
             text = text.strip()
             if text.startswith("```") and text.endswith("```"):

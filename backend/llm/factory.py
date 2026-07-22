@@ -26,7 +26,12 @@ def _build(provider: str, config: ConfigService, **kwargs) -> LLMClient:
     if provider not in _BUILDERS:
         raise RuntimeError(
             f"未知 LLM provider: {provider}（可用: {', '.join(_BUILDERS)}）")
-    return _BUILDERS[provider](config, **kwargs)
+    client = _BUILDERS[provider](config, **kwargs)
+    if provider == "mock":
+        return client  # 假模型不记账
+    from ..services.observer import get_observer
+    from .observed import ObservedLLM
+    return ObservedLLM(client, get_observer(config), provider)
 
 
 def create_llm(config: ConfigService, **kwargs) -> LLMClient:

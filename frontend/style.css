@@ -443,6 +443,26 @@ body[data-layout="pair"] #input-form { margin: 2px 12px 12px; }
 .mat-back:hover { color: var(--accent); border-color: var(--accent); }
 .tool-chip.doc-chip { cursor: default; }
 
+/* ---------- 可观测性与密码门（M2） ---------- */
+#llm-pill { font-size: 12px; font-family: var(--font-mono); color: var(--text-dim); background: var(--inline-code-bg); border-radius: 999px; padding: 5px 11px; white-space: nowrap; }
+#llm-pill.err { color: #e5534b; background: rgba(229, 83, 75, .12); }
+#usage-summary { font-size: 13px; color: var(--text-dim); margin-bottom: 12px; }
+#usage-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+#usage-table th, #usage-table td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); }
+#usage-table th { color: var(--text-dim); font-weight: 500; white-space: nowrap; }
+#usage-auth-area { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+#usage-auth-area input { border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px; font-size: 13px; background: var(--panel); color: var(--text); }
+#usage-auth-area button { background: var(--accent-grad); color: #fff; border: none; border-radius: 8px; padding: 7px 14px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.usage-auth-tip { font-size: 12px; color: var(--text-dim); margin-right: auto; }
+#login-overlay { position: fixed; inset: 0; z-index: 2000; background: rgba(0, 0, 0, .45); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; }
+#login-overlay.hidden { display: none; }
+.login-box { background: var(--panel); border-radius: 16px; padding: 32px 36px; width: 340px; text-align: center; box-shadow: var(--shadow); }
+.login-box h2 { font-family: var(--font-serif); font-size: 20px; margin-bottom: 8px; }
+.login-sub { font-size: 13px; color: var(--text-dim); margin-bottom: 18px; }
+.login-box input { width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; font-size: 14px; background: var(--bg); color: var(--text); }
+#login-error { color: #e5534b; font-size: 12px; min-height: 18px; margin: 8px 0; }
+.login-box .primary { width: 100%; padding: 10px; border-radius: 10px; }
+
 /* 阅读排版 */
 .markdown-body { line-height: 1.9; font-size: 14.5px; }
 .markdown-body h2 { font-family: var(--font-serif); font-size: 19px; margin: 24px 0 12px; padding-left: 12px; border-left: 4px solid var(--accent); letter-spacing: 1px; }
@@ -596,7 +616,7 @@ body[data-layout="pair"] #code-panel { order: 1; }
 .test-result { font-size: 12px; margin-left: 8px; }
 .test-result.ok, #llm-status.ok { color: #4d8a3d; }
 .test-result.fail, #llm-status.fail { color: #c0452f; }
-#llm-status { font-size: 13px; margin-top: 8px; }
+#llm-pill { font-size: 13px; margin-top: 8px; }
 .modal-foot .primary {
   background: var(--accent-grad); color: #fff; border: none; border-radius: 999px;
   padding: 9px 24px; font-size: 14px; cursor: pointer; font-weight: 600;

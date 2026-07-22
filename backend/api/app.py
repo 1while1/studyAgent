@@ -77,10 +77,12 @@ def _warmup_llm_cache(deps: Deps) -> None:
                 return
             card = (SOP_DIR / card_name).read_text(encoding="utf-8")
             system = deps.prompts.build(session, sop_card=card)
-            list(deps.llm.chat_stream(
-                [{"role": "system", "content": system},
-                 {"role": "user", "content": "预热请求，回复 OK 即可。"}],
-                max_tokens=1))
+            from ..services.observer import task_scope
+            with task_scope("warmup"):
+                list(deps.llm.chat_stream(
+                    [{"role": "system", "content": system},
+                     {"role": "user", "content": "预热请求，回复 OK 即可。"}],
+                    max_tokens=1))
             logging.getLogger("study-web").info("LLM 上下文缓存预热完成")
         except Exception as e:  # 预热失败不影响服务
             logging.getLogger("study-web").warning("LLM 预热失败（可忽略）: %s", e)
@@ -108,6 +110,12 @@ def create_app() -> FastAPI:
         yield
 
     app = FastAPI(title=deps.config.workspace.title, version="0.2.0", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def auth_gate(request, call_next):
+        """访问密码门（M2）：实现在 middleware.make_auth_gate（可单测）。"""
+        from .middleware import make_auth_gate
+        return await make_auth_gate(deps.config)(request, call_next)
 
     @app.middleware("http")
     async def no_cache_static(request, call_next):

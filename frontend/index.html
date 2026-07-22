@@ -43,6 +43,8 @@
         <div id="ws-menu" class="hidden"></div>
       </div>
       <div class="topbar-actions">
+        <span id="llm-pill" class="hidden" title=""></span>
+        <button id="open-usage" title="Token 用量统计">📊</button>
         <button id="open-docs" title="学习资料（StudyMemory / 面试话术库）">📚</button>
         <button id="open-llm-config" title="模型配置">⚙</button>
         <button id="reset-history" title="清空对话历史（不影响学习数据）">🗑</button>
@@ -185,6 +187,36 @@
     <div class="modal-foot">
       <button id="ws-create" class="primary">开始初始化</button>
     </div>
+  </div>
+</div>
+
+<div id="usage-modal" class="modal hidden">
+  <div class="modal-box wide">
+    <div class="modal-head">
+      <h2>Token 用量（估算值，仅供参考）</h2>
+      <button id="usage-close">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="usage-summary"></div>
+      <table id="usage-table">
+        <thead><tr>
+          <th>日期</th><th>渠道 / 模型</th><th>任务</th><th>调用</th><th>失败</th>
+          <th>输入 tok</th><th>输出 tok</th><th>成本</th>
+        </tr></thead>
+        <tbody id="usage-rows"></tbody>
+      </table>
+    </div>
+    <div class="modal-foot" id="usage-auth-area"></div>
+  </div>
+</div>
+
+<div id="login-overlay" class="hidden">
+  <div class="login-box">
+    <h2>学习助手已锁定</h2>
+    <p class="login-sub">请输入访问密码以继续</p>
+    <input id="login-password" type="password" placeholder="访问密码" autocomplete="current-password">
+    <div id="login-error"></div>
+    <button id="login-submit" class="primary">进入</button>
   </div>
 </div>
 

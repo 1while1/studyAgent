@@ -174,6 +174,18 @@ def get_config() -> ConfigService:
     return _config
 
 
+def runtime_dir(config: ConfigService) -> Path:
+    """运行时目录（agent.log/auth_secret 等可 gitignore 产物）。
+
+    settings 在 config/ 下时取其上级（study-web/config/settings.toml →
+    study-web/runtime）；测试临时 settings（直接放 tmp 根）→ tmp/runtime 隔离。
+    """
+    base = (config.path.parent.parent
+            if config.path.parent.name == "config"
+            else config.path.parent)
+    return (base / "runtime").resolve()
+
+
 def reset_config() -> None:
     global _config
     _config = None

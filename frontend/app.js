@@ -1184,10 +1184,176 @@ document.getElementById("ws-create").onclick = async () => {
   }
 };
 
+// ---------- 访问密码门 + 可观测性（M2） ----------
+
+const loginOverlay = document.getElementById("login-overlay");
+const loginPwd = document.getElementById("login-password");
+const loginErr = document.getElementById("login-error");
+const _rawFetch = window.fetch.bind(window);
+let _loginPromise = null;
+
+function ensureLogin() {
+  if (_loginPromise) return _loginPromise;
+  loginOverlay.classList.remove("hidden");
+  loginErr.textContent = "";
+  loginPwd.value = "";
+  setTimeout(() => loginPwd.focus(), 50);
+  _loginPromise = new Promise((resolve) => {
+    const submit = document.getElementById("login-submit");
+    submit.onclick = async () => {
+      const res = await _rawFetch("/api/auth/login", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: loginPwd.value }),
+      });
+      const r = await res.json();
+      if (r.ok) {
+        loginOverlay.classList.add("hidden");
+        _loginPromise = null;
+        resolve(true);
+      } else {
+        loginErr.textContent = r.error || "登录失败";
+      }
+    };
+    loginPwd.onkeydown = (e) => {
+      if (e.key === "Enter") submit.click();
+    };
+  });
+  return _loginPromise;
+}
+
+// fetch 包装：/api/ 返回 401 → 弹登录层 → 登录成功重放一次原请求
+window.fetch = async (input, init) => {
+  const res = await _rawFetch(input, init);
+  const url = typeof input === "string" ? input : input.url;
+  if (res.status === 401 && url.includes("/api/") && !url.includes("/api/auth/")) {
+    const ok = await ensureLogin();
+    if (ok) return _rawFetch(input, init);
+  }
+  return res;
+};
+
+// ---- LLM 状态条 ----
+
+const llmStatusEl = document.getElementById("llm-pill");
+async function refreshLlmStatus() {
+  try {
+    const r = await (await fetch("/api/observability/status")).json();
+    llmStatusEl.classList.remove("hidden", "err");
+    const last = r.last_call;
+    if (last) {
+      llmStatusEl.textContent = last.ok
+        ? `${last.provider} · ${(last.latency_ms / 1000).toFixed(1)}s`
+        : `${last.provider} · 失败`;
+      llmStatusEl.title = last.ok
+        ? `模型 ${last.model} · ${last.ts} · 今日 ${r.today.calls} 次调用（自服务启动）`
+        : `最近调用失败：${last.error}`;
+      if (!last.ok) llmStatusEl.classList.add("err");
+    } else {
+      llmStatusEl.textContent = r.provider;
+      llmStatusEl.title = `主渠道 ${r.provider}（服务启动后尚未调用 LLM）`;
+    }
+  } catch (e) { /* 服务未就绪时静默 */ }
+}
+
+// ---- Token 用量弹窗 ----
+
+const usageModal = document.getElementById("usage-modal");
+document.getElementById("open-usage").onclick = openUsage;
+document.getElementById("usage-close").onclick = () => usageModal.classList.add("hidden");
+usageModal.addEventListener("click", (e) => {
+  if (e.target === usageModal) usageModal.classList.add("hidden");
+});
+
+async function openUsage() {
+  usageModal.classList.remove("hidden");
+  const rowsEl = document.getElementById("usage-rows");
+  const summaryEl = document.getElementById("usage-summary");
+  rowsEl.innerHTML = "";
+  summaryEl.textContent = "加载中…";
+  const [u, a] = await Promise.all([
+    (await fetch("/api/observability/usage?days=7")).json(),
+    (await fetch("/api/auth/status")).json(),
+  ]);
+  const t = u.totals;
+  summaryEl.textContent =
+    `近 ${u.days} 天：${t.calls} 次调用（失败 ${t.failures}）· ` +
+    `输入 ${t.in_tokens.toLocaleString()} tok · 输出 ${t.out_tokens.toLocaleString()} tok` +
+    (t.cost ? ` · 估算成本 ¥${t.cost}` : "") +
+    "（token 为实际/估算混排，仅供参考）";
+  if (!u.rows.length) {
+    rowsEl.innerHTML = `<tr><td colspan="8">暂无记录（agent.log 为空）</td></tr>`;
+  }
+  for (const g of u.rows) {
+    const tr = document.createElement("tr");
+    const cells = [g.date, `${g.provider} / ${g.model}`, g.task, g.calls,
+                   g.failures, g.in_tokens.toLocaleString(),
+                   g.out_tokens.toLocaleString(),
+                   (g.cost ? `¥${g.cost}` : "—") + (g.est_calls ? `（估算×${g.est_calls}）` : "")];
+    for (const c of cells) {
+      const td = document.createElement("td");
+      td.textContent = c;
+      tr.appendChild(td);
+    }
+    rowsEl.appendChild(tr);
+  }
+  renderUsageAuth(a);
+}
+
+function renderUsageAuth(a) {
+  const area = document.getElementById("usage-auth-area");
+  area.innerHTML = "";
+  if (!a.gate) {
+    const tip = document.createElement("span");
+    tip.className = "usage-auth-tip";
+    tip.textContent = "访问密码未设置（开放模式）";
+    const input = document.createElement("input");
+    input.type = "password";
+    input.id = "setup-password";
+    input.placeholder = "设置访问密码（≥6 位）";
+    const btn = document.createElement("button");
+    btn.textContent = "设置密码";
+    btn.onclick = async () => {
+      const res = await fetch("/api/auth/setup", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: input.value }),
+      });
+      const r = await res.json();
+      if (r.ok) { showToast("访问密码已设置"); openUsage(); }
+      else showToast(r.error || "设置失败");
+    };
+    area.append(tip, input, btn);
+  } else {
+    const logout = document.createElement("button");
+    logout.textContent = "退出登录";
+    logout.onclick = async () => {
+      await _rawFetch("/api/auth/logout", { method: "POST" });
+      location.reload();
+    };
+    const clear = document.createElement("button");
+    clear.textContent = "删除密码（恢复开放）";
+    clear.onclick = async () => {
+      if (!confirm("确定删除访问密码？删除后本助手恢复开放访问。")) return;
+      const res = await fetch("/api/auth/password", { method: "DELETE" });
+      const r = await res.json();
+      if (r.ok) { showToast("密码已删除，恢复开放模式"); openUsage(); }
+      else showToast(r.error || "删除失败");
+    };
+    area.append(logout, clear);
+  }
+}
+
 // ---------- 启动 ----------
 
+(async () => {
+  try {
+    const a = await (await fetch("/api/auth/status")).json();
+    if (a.gate && !a.authed) await ensureLogin();
+  } catch (e) { /* 服务未就绪时静默 */ }
+})();
 refreshState();
+refreshLlmStatus();
 loadCommands();
 loadHistory();
 loadWorkspaces();
 setInterval(refreshState, 10000);
+setInterval(refreshLlmStatus, 15000);
