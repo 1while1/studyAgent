@@ -285,6 +285,47 @@ def main():
         page.locator("#doc-close").click()
         page.wait_for_timeout(400)
 
+        # ---- 9e. 可观测性与密码门（M2） ----
+        page.wait_for_timeout(1000)
+        pill = page.locator("#llm-pill")
+        check("LLM 状态条显示", pill.is_visible() and
+              len(pill.text_content() or "") > 0)
+        page.locator("#open-usage").click()
+        page.wait_for_timeout(1200)
+        check("用量弹窗表格渲染", page.locator("#usage-table").is_visible() and
+              page.locator("#usage-rows tr").count() >= 1)
+        # auth 全流程：设密码 → 退出 → 401 → 错误密码 → 正确登录 → 删除还原
+        page.fill("#setup-password", "walk123")
+        page.locator("#usage-auth-area button", has_text="设置密码").click()
+        page.wait_for_timeout(1200)
+        check("设置密码成功", page.locator(
+            "#usage-auth-area button", has_text="退出登录").count() == 1)
+        page.locator("#usage-auth-area button", has_text="退出登录").click()
+        page.wait_for_timeout(2000)  # 退出后页面自动刷新
+        check("退出后登录层出现", page.locator("#login-overlay").is_visible())
+        check("未登录 API 401",
+              page.request.get(BASE + "/api/state").status == 401)
+        page.fill("#login-password", "wrong999")
+        page.locator("#login-submit").click()
+        page.wait_for_timeout(800)
+        check("错误密码被拒", page.locator("#login-overlay").is_visible() and
+              "密码错误" in (page.locator("#login-error").text_content() or ""))
+        page.fill("#login-password", "walk123")
+        page.locator("#login-submit").click()
+        page.wait_for_timeout(1200)
+        check("正确密码登录成功", page.locator("#login-overlay").is_hidden())
+        check("登录后 API 200",
+              page.request.get(BASE + "/api/state").status == 200)
+        page.locator("#open-usage").click()
+        page.wait_for_timeout(1000)
+        page.once("dialog", lambda d: d.accept())  # confirm 删除密码
+        page.locator("#usage-auth-area button", has_text="删除密码").click()
+        page.wait_for_timeout(1200)
+        gate = page.request.get(BASE + "/api/auth/status").json().get("gate")
+        check("密码已还原为开放模式", gate is False)
+        page.locator("#usage-close").click()
+        page.wait_for_timeout(300)
+
         # ---- 汇总 ----
         check("全程零 JS 错误", len(errors) == 0, "; ".join(errors[:3]))
         page.screenshot(path="/tmp/walkthrough_final.png")

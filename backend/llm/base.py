@@ -9,6 +9,8 @@ Message = dict  # {"role": "system"|"user"|"assistant", "content": str}
 
 
 class LLMClient(ABC):
+    last_usage: dict | None = None  # 最近一次调用的 usage（openai_compat 捕获）
+
     @abstractmethod
     def chat_stream(self, messages: list[Message],
                     max_tokens: int | None = None) -> Iterator[str]:

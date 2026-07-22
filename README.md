@@ -65,6 +65,13 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 - 资料库弹窗：清单（类型/章节数/状态）+ 预览（目录+开头节选）+ 重新扫描 + 手工注册外部文件/视频链接
 - 敏感文件（.env/证书类）不注册不解析
 
+**可观测性（M2）**
+- `runtime/agent.log`（JSONL）：每次 LLM 调用记录渠道/模型/任务/耗时/token/成败与失败原因，READ/READ_DOC/备课预取记 tool 记录——任何"没反应"可定位
+- **token 三层统计**：API usage 精确 → tiktoken cl100k 通用估算 → CJK×1.5 公式兜底；usage 到达自动滑动校准估算比率
+- 顶栏状态条：当前渠道 + 最近调用耗时（失败标红，悬停看错误原因）
+- 「📊 用量」页：近 7 天 渠道×任务×日 的调用量/token/估算成本（定价表可在 settings 配）
+- **访问密码门**：「📊 用量」页设置密码后全 API 锁定（bcrypt 哈希存 .env，签名 cookie 7 天，失败限速）；未设置 = 开放模式
+
 **代码浏览器与联动提问**
 - 目录树懒加载 + 行号 gutter + 语法高亮（只读，路径穿越防护）；树折叠、长行换行、树宽拖拽记忆
 - **片段提问**：选中代码 → 浮动按钮 → 自动填入「`路径:L行号` + 代码块」到输入框；聊天中渲染为片段卡片，点 📎 跳回代码浏览器定位 + 行高亮
@@ -82,8 +89,8 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 
 ```bash
 cd study-web
-python -m unittest discover -s tests    # 124 个后端测试，stdlib，无需真实 LLM
-python scripts/ui_walkthrough.py        # UI 真实点击走查 55 项（需服务运行中）
+python -m unittest discover -s tests    # 147 个后端测试，stdlib，无需真实 LLM
+python scripts/ui_walkthrough.py        # UI 真实点击走查 58 项（需服务运行中）
 python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name]
 ```
 

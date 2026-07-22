@@ -1,7 +1,7 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-22（**M1 资料库交付**：注册/解析 docx·pdf/索引 + READ_DOC + 备课确定性预取；124 单测/55 走查全绿）
+> 最近更新：2026-07-23（**M2 可观测交付**：agent.log + 状态条 + 用量页 + 访问密码门；147 单测/58 走查全绿）
 
 ## 当前运行状态
 
@@ -11,12 +11,20 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 124 个全绿；UI 走查 55 项全绿
+- 测试：`python -m unittest discover -s tests` → 147 个全绿；UI 走查 58 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步
 
-v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 `docs/AgentDesign.md` v3 封板版为准：**M1 资料库 ✅（2026-07-22 交付，验收通过：ragent 单元带读真实引用教材段落）→ 下一步 = M2 可观测**（agent.log + UI 状态条 + token 消耗页 + 访问密码门）。
+v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 `docs/AgentDesign.md` v3 封板版为准：M1 资料库 ✅ → M2 可观测 ✅（2026-07-23 交付）→ **下一步 = M3 学习者模型**（schema + 三张硬表 + 迁移 + evidence 三路写入 + 掌握度热力图）。
+
+## M2 可观测（2026-07-23 交付）
+
+- **observer**（`services/observer.py`）：`runtime/agent.log` JSONL（v/ts/kind/provider/model/task/latency_ms/in/out_tokens/tokens_est/ok/error）。`factory._build` 包 `ObservedLLM`（每渠道独立记账，fallback 切换 = 主记失败+备记成功两条）。任务标签走 ContextVar `task_scope`（chat/warmup/init）；READ/READ_DOC/prefetch 记 tool 记录。**记账任何异常静默吞掉，绝不阻断主流程**
+- **token 三层**：usage 精确（openai_compat 加 `stream_options include_usage`，网关不支持自动降级记忆）→ tiktoken cl100k 估算 → CJK×1.5+其他÷4 兜底公式；usage 到达反算比率 0.8/0.2 滑动校准（`runtime/token_calibration.json`）
+- **UI**：顶栏 `#llm-pill` 状态条（渠道+耗时/失败标红悬停看原因，15s 轮询 `/api/observability/status`）；📊 用量弹窗（日×渠道×task 聚合 + settings `[pricing]` 成本，估算诚实标注）
+- **访问密码门**：bcrypt 哈希存 `.env AUTH_PASSWORD_HASH`（**有意偏离设计原文"存 settings"**——settings.toml 是 git 跟踪文件，.env 才符合"不入 git"意图与密钥边界铁律）；token=HMAC-SHA256 签名 `{exp}.{sig}`，密钥 `runtime/auth_secret` 首生成；中间件 `api/middleware.make_auth_gate`（豁免仅 status/setup/login；注入 `request.state.user="local"` 多用户预留）；登录限速 10 次/5 分钟；未设密码 = 开放模式；前端 fetch 包装 401→登录层→重放原请求
+- **运行时目录统一** `config_service.runtime_dir(config)`：settings 在 config/ 下取上级根，测试临时 settings 自动隔离（防测试写真实 runtime）
 
 ## M1 资料库（2026-07-22 交付）
 
@@ -58,6 +66,7 @@ v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 
 | 代码引用芯片 | AI 回答中反引号路径自动转为可点击芯片；`/api/code/resolve` 三级解析（根前缀→直接相对→后缀索引，60s 缓存）；点击 → 源码学习模式打开文件 + 行高亮；完整路径失败时**按文件名回退定位**；找不到弹 toast。prompt 硬约束第 6 条 + system prompt 注入当前工作区 `Project.md` 防虚构路径 |
 | AI 读文件 tool-use | 导师输出 `[READ:路径:L起-止]` → `engine/tool_use.ToolUseLoop` 增量扫描截获（反引号包裹/行内出现均容错，标记不进 SSE/历史）→ code_browser 只读注入真实代码（≤200 行）→ 续写；单回复限 3 次（`ai_read_max_per_reply`，超限静默丢弃）；读取失败注入**模糊候选文件**（`code_browser.suggest`）供模型纠正；SSE 事件 `tool_read` → 前端 chip，点击跳转代码浏览器行高亮 |
 | **资料库（M1）** | `materials_dir` 扫描注册（txt/md/docx/pdf）→ 解析索引缓存；**备课确定性预取**（讲解回合按单元文档引用 transient 注入教材节选，📚 chip）；`[READ_DOC:资料id#章节]` 与 READ 同管线同限流（📄 chip）；资料库弹窗（清单/预览/重扫/注册） |
+| **可观测性（M2）** | agent.log 全量 LLM/工具记账（ObservedLLM 逐渠道包裹）；token 三层统计（usage→tiktoken→公式）+ 滑动校准；顶栏状态 pill；📊 用量页；**访问密码门**（bcrypt@.env + 签名 cookie + 限速 + 开放模式默认） |
 | Mermaid 图 | vendor mermaid@11；```mermaid 块终渲染为 SVG（流式中不渲染）；主题随布局 pair=dark/tutor=default；`securityLevel: strict`；渲染失败回退代码块 |
 | 模型配置页 | 主/备渠道、模型/URL/Key（掩码）、测试连接、保存热生效 |
 
@@ -102,6 +111,9 @@ v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 
 | READ 标记泄漏到聊天（用户看到原始 `[READ:...]` 文本、无 chip 可点） | 模型把标记裹进反引号（`` `[READ:...]` ``）或写在行内，行缓冲正则只认整行 → 不截获；更糟的是模型随后**自己模拟注入**并编造代码 | 改增量扫描解析（任意位置/反引号/跨 delta 残片均截获，未闭合按文本下发）；prompt 规则 7 加固（禁包裹/输出标记后立即停止/禁模拟注入/用户要求读代码时必须 READ）；读取失败注入模糊候选文件 |
 | [验证代码] 报"未发现构建文件"（replica 项目） | ragent-replica 按日分模块（day01/day02 各自带 pom），验证根只查根目录；onecoupon 多模块项目根有 pom 却被子目录 pom 干扰判为多候选 | resolve_verify_root 三级解析：args 点名 > 当日 dayNN > 根/唯一候选；多模块根有构建文件时从根构建 |
 | M1 预取命中错误资料（注入八阶段问答而非 Prompt 工程教材） | `extract_doc_paths` 按空格切 token，"AI & RAG 基础扫盲/..." 被切碎成 "RAgent文档/AI"，词干 "ai" 模糊命中错误资料 | extract_doc_paths 改为只按 、，,；; 分隔（路径允许空格与 &）；resolve_doc 词干兜底加最短 4 字符防猜 |
+| M2 聊天全挂（"LLM 调用失败：<Token var=..."） | task_scope 用 `_task_var.reset(token)` 恢复——SSE 生成器在 anyio 线程池跨上下文关闭时 reset 校验 context 抛 RuntimeError | 恢复旧值改用 `set(old)`（set 不校验 context）；回归测试补齐 |
+| M2 测试日志互串（47 条记录混进单测） | runtime 路径取 `settings.parent.parent`，临时 settings 落在共享 Temp 目录，所有测试共写一份 agent.log | `config_service.runtime_dir()`：settings 在 config/ 下才取上级根，否则取同级 runtime 隔离 |
+| 走查 strict mode 撞 id（#llm-status ×2） | 新增状态 pill 复用了模型配置弹窗已有的 `#llm-status` id | pill 改名 `#llm-pill`；modal 原引用还原 |
 
 ## 缺陷修复批（2026-07-22，双子智能体审查驱动，fix/review-batch）
 
@@ -125,6 +137,7 @@ v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 
 
 ## UI 版本
 
+- **v7（2026-07-23）**：M2 可观测 —— 顶栏 LLM 状态 pill（渠道+耗时/失败标红）；📊 用量弹窗（日×渠道×task 聚合表 + 成本 + auth 管理区）；登录 overlay（401 自动唤起 + 登录后重放原请求）；设置/删除访问密码、退出登录入口收在用量弹窗底部。
 - **v6（2026-07-22）**：M1 资料库 —— 学习资料弹窗加「资料库」tab（清单/预览/重扫/注册）；📚 备课 chip（讲解回合确定性预取教材节选）与 📄 READ_DOC chip（AI 主动读教材，章节自导航），资料 chip 不跳代码浏览器。
 - **v5（2026-07-22）**：P0 教学真实性 —— AI 读文件 tool-use 闭环（`[READ:路径:Lx-y]` 行缓冲截获 → 真实代码注入续写，前端 📖 chip 可点击跳转行高亮，限 3 次/回复）；Mermaid 图渲染（vendor mermaid@11，主题随布局，失败回退代码块）；prompt 硬约束扩到 8 条；走查 49 项全绿（新增 mermaid/tool-use 5 项）。
 - **v4（2026-07-22）**：多工作区通用化 —— 顶栏工作区下拉（切换/新建/重新扫描），初始化向导（表单→扫描预览→LLM 生成→验证管线→自动切换），品牌与代码根随工作区隔离。走查 46 项全绿。

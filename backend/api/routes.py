@@ -84,6 +84,8 @@ class LLMStreamer:
                 "讲解必须基于这些真实内容与项目真实结构，禁止编造教材中不存在的"
                 "内容；禁止声称读过未注入的资料。需要更多章节时用 "
                 "[READ_DOC:资料id#章节名] 读取。")
+            from ..services.observer import log_prefetch
+            log_prefetch(deps.config, pre["sources"])
             event = {"type": "tool_read", "kind": "doc", "prefetch": True,
                      "ok": True, "sources": pre["sources"]}
             return injection, event
@@ -109,15 +111,17 @@ class LLMStreamer:
         from ..engine.tool_use import ToolUseLoop
         from ..services.code_browser import CodeBrowser
         from ..services.materials_service import MaterialsService
+        from ..services.observer import task_scope
         loop = ToolUseLoop(self._deps.config, self._deps.llm,
                            CodeBrowser(self._deps.config),
                            MaterialsService(self._deps.config))
         if event:
             yield sse(event)
-        for ev in loop.run(messages):
-            if ev["type"] == "delta":
-                self.full.append(ev["content"])
-            yield sse(ev)
+        with task_scope("chat"):
+            for ev in loop.run(messages):
+                if ev["type"] == "delta":
+                    self.full.append(ev["content"])
+                yield sse(ev)
 
 
 @router.post("/api/chat")
@@ -343,6 +347,95 @@ def code_resolve(path: str):
     if not hit:
         return {"ok": False}
     return {"ok": True, **hit}
+
+
+# ---------- 访问密码门（M2） ----------
+
+from fastapi import Request, Response
+from ..services.auth_service import AUTH_COOKIE, get_auth
+
+
+def _set_auth_cookie(auth, response: Response) -> None:
+    days = float(_deps.config.get("auth_session_days", 7))
+    response.set_cookie(AUTH_COOKIE, auth.make_token(),
+                        max_age=int(days * 86400),
+                        httponly=True, samesite="lax")
+
+
+@router.get("/api/auth/status")
+def auth_status(request: Request):
+    auth = get_auth(_deps.config)
+    return {"gate": auth.enabled(),
+            "authed": auth.enabled() and auth.verify_token(
+                request.cookies.get(AUTH_COOKIE, ""))}
+
+
+class _PasswordIn(BaseModel):
+    password: str
+
+
+@router.post("/api/auth/setup")
+def auth_setup(body: _PasswordIn, response: Response):
+    auth = get_auth(_deps.config)
+    if auth.enabled():
+        return {"ok": False, "error": "密码已设置，请直接登录"}
+    pw = body.password.strip()
+    if len(pw) < 6:
+        return {"ok": False, "error": "密码至少 6 位"}
+    auth.set_password(pw)
+    _set_auth_cookie(auth, response)
+    return {"ok": True}
+
+
+@router.post("/api/auth/login")
+def auth_login(body: _PasswordIn, request: Request, response: Response):
+    auth = get_auth(_deps.config)
+    ip = request.client.host if request.client else "unknown"
+    if auth.rate_limited(ip):
+        return {"ok": False, "error": "尝试次数过多，请稍后再试"}
+    if not auth.enabled():
+        return {"ok": True, "gate": False}
+    if not auth.verify_password(body.password):
+        auth.record_fail(ip)
+        return {"ok": False, "error": "密码错误"}
+    auth.record_success(ip)
+    _set_auth_cookie(auth, response)
+    return {"ok": True}
+
+
+@router.post("/api/auth/logout")
+def auth_logout(response: Response):
+    response.delete_cookie(AUTH_COOKIE)
+    return {"ok": True}
+
+
+@router.delete("/api/auth/password")
+def auth_clear():
+    """删除密码（还原为开放模式）。中间件已保证门开时此请求已认证。"""
+    auth = get_auth(_deps.config)
+    if not auth.enabled():
+        return {"ok": False, "error": "未设置密码"}
+    auth.clear_password()
+    return {"ok": True}
+
+
+# ---------- 可观测性（M2） ----------
+
+from ..services.observer import get_observer
+
+
+@router.get("/api/observability/status")
+def observability_status():
+    cfg = _deps.config.llm_config
+    st = get_observer(_deps.config).status()
+    return {**st, "provider": cfg.get("provider", "?"),
+            "fallback_provider": cfg.get("fallback_provider", "")}
+
+
+@router.get("/api/observability/usage")
+def observability_usage(days: int = 7):
+    days = max(1, min(int(days), 90))
+    return get_observer(_deps.config).usage_summary(days)
 
 
 # ---------- 学习资料库 ----------
