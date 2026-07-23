@@ -1,7 +1,7 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-23（**M6 实战工坊 + 审查修复批交付**——脚手架 + Monaco + edit_file 白名单 + process_mgr + study/code 模式分离；修复批：code_roots 全量基线/settings 锁/进程注册表锁/每文件 model 等；355 单测/132 走查全绿）
+> 最近更新：2026-07-23（**M7 课程本体交付**——图谱增强 + 感召式复习 + 拓扑计划 + 先修诊断；379 单测/137 走查全绿；v3 分期 M1-M7 全部收官）
 
 ## 当前运行状态
 
@@ -11,12 +11,27 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 355 个全绿；UI 走查 132 项全绿
+- 测试：`python -m unittest discover -s tests` → 379 个全绿；UI 走查 137 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步
 
-v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 `docs/AgentDesign.md` v3 封板版为准：M1 资料库 ✅ → M2 可观测 ✅ → M3 学习者模型 ✅ → M4 笔记管理 ✅ → M5a 工具骨架 ✅ → M5b 上下文+路由 ✅ → M5c planner ✅ → M6 实战工坊 ✅（2026-07-23 交付）→ **下一步 = M7 课程本体**（知识点图谱 + 感召式复习 + 拓扑计划 + 先修诊断，验收=复习按相关性而非日历）。mark_wrong 工具（§9）留档待 M7 前另立小项。
+v1 Roadmap 与 v3 分期（M1 资料库 → M2 可观测 → M3 学习者模型 → M4 笔记管理 → M5a 工具骨架 → M5b 上下文+路由 → M5c planner → M6 实战工坊 → **M7 课程本体 ✅**）全部收官。后续按用户指令推进：架构审计（设计符合性 + 各模块 bug 审查）→ 子 agent 全面 UI 优化 → 全功能浏览器模拟测试。mark_wrong 工具（§9）仍留档另立。
+
+## M7 课程本体（2026-07-23 交付）
+
+- **图谱纯函数**（`domain/learner.py`，零 IO）：`upstream_closure(cid, prereq_map)`（DFS 后序=根基在前，**环守卫**（成环跳过回边）+ 缺失节点容忍）、`topo_order(cids, prereq_map)`（闭包深度升序=上游先补，id 稳定序 tiebreak——初版按深度降序写反被单测当场抓住）
+- **LearnerService 图查询**：`upstream_chain(cid)` / `unmastered_upstream(cids, day, threshold=0.7)`（**含零证据节点**——先修诊断"已会节点置初始 mastery"核心场景；prereq_of 记录最近目标）/ `remediation_order(day, threshold)`（仅**有证据**未达标，零证据标「未学」不计入——M5b R4 先例）
+- **感召式复习**（§13 验收形态，start_day 集成）：今日首单元 concept 上游未达标闭包（拓扑序）打【上游感召】标签注入 step1「将优先安排」与 review_prefix 分组（**感召优先 + 日历补充 + 总量封顶 review_max_items**）；collect_due 日历通道保留为补充；**无感召时输出与 M7 前逐字节一致**（测试锁）；plan 解析上移至 RESUME 分支之后（保 resume 不解析大纲的原行为）
+- **拓扑计划 v1**：`remediation_order` 进 /api/learner/model（图谱异常静默降级 []）；战术板「需要行动」桶改拓扑补弱序（不在序列的达标到期项沉底）；**Study.md 动态重排/LLM 建议边 = 留档**
+- **先修诊断**（`[先修诊断]`，行为矩阵与面试对称）：
+  - **代码强制选题**：当前单元上游未达标闭包拓扑序前 5（含零证据）；无目标→明确提示不开空头诊断
+  - **出题**：一次非流式 LLM（新策略卡 `resources/pedagogy/prereq_quiz.md`）→ **机械校验每 cid 恰好一题**（缺一带原因重试一次，再不齐 fail-closed 不开场；缺卡 fail-closed 同面试 R7）
+  - **评分**（orchestrator PREREQ 分支 + `DayPhase.PREREQ`）：逐 cid 提取 `DayN-X：【评分：X.X】`（`quiz_engine.extract_scores_by_cid`，分隔容忍 `**：` 等形态，1.0-5.0 契约）→ **机械校验全覆盖**（缺一提示重试一次，retry 用尽→取消诊断**不写证据**）→ ≥及格写 `prereq_pass`（+0.40，爬升档不超 0.7）否则 `prereq_fail`（−0.10），source_ref=`prereq:{cid}:{date}` **同日幂等**（幂等命中与真失败文案区分）→ phase 还原 + 汇总（✅/❌ + 已置初始掌握度/幂等跳过/落盘失败）
+  - **矩阵对称**：day_review/end_day fail_fast 拦截；start_day/resume 清 prereq 字段；prompt_builder 在 PREREQ 期跳过阶段指令（同 INTERVIEW）；`SessionContext + prereq_targets/prereq_retry`（from_dict 天然兼容旧数据）
+  - 排坑：orchestrator 内 `cid, score = q["cid"], scores[cid]` 触发 Python 函数级遮蔽 UnboundLocalError（面试分支下文有同名赋值，改名 tcid）；`from datetime import date` 局部补导
+- **UI**：雷达时间轴上游未达标徽标 `▲N`（hover 显示含义）+ **hover 高亮上游链**（点击已占用为跳战术板，高亮走 mouseenter/leave，客户端由 prerequisites 递归环守卫）
+- **测试**：+24（test_learner_graph 7：闭包/环/缺节点/拓扑序/未达标过滤/补弱序；test_relevance_review 5：感召标签/排序/分组/封顶/无感召一致/异常降级/start_day 清字段；test_prereq 12：选题/无目标/重试/fail-closed×2/证据 pass+fail/幂等/缺分重试/取消/矩阵/提取器）→ **379 全绿**；走查 137 项全绿（+9i 先修诊断全流程（Mock 渠道双分支+存在性备份还原）+徽标/hover 断言）
 
 ## M6 审查修复批（2026-07-23，双子 agent 审查驱动，fix/m6-review）
 
