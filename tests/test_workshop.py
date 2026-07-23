@@ -156,5 +156,89 @@ class TestWorkshop(unittest.TestCase):
         self.assertFalse(self.svc.editable("ghost", "x"))         # 未知根
 
 
+class TestWorkshopRoutes(unittest.TestCase):
+    """路由级（routes.py 直接调用）：写路径 API 的 ok/error 契约。"""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="workshop_rt_"))
+        self.docx = self.tmp / "docx"
+        self.docx.mkdir()
+        self.demo = self.tmp / "demo"
+        self.proj = self.tmp / "projA"
+        self.proj.mkdir()
+        (self.proj / "a.txt").write_text("hello", encoding="utf-8")
+        settings = self.tmp / "settings.toml"
+        settings.write_text(
+            'active_workspace = "t"\n'
+            'status_enum = ["not_started", "in_progress", "completed"]\n'
+            '[evidence_delta]\nquiz_right = 0.10\n'
+            '[[stages]]\nname = "teaching"\nnext = ""\n'
+            'sop_step = "步骤一"\ninstruction = "讲"\n'
+            f'[[code_roots]]\nname = "projA"\npath = "{self.proj.as_posix()}"\n'
+            'workspace = "t"\n'
+            '[[workspaces]]\nslug = "t"\n'
+            f'docx_dir = "{self.docx.as_posix()}"\n'
+            f'project_dir = "{self.proj.as_posix()}"\n'
+            f'session_path = "{(self.tmp / "session.json").as_posix()}"\n'
+            f'demo_dir = "{self.demo.as_posix()}"\n'
+            'replica_name = ""\n',
+            encoding="utf-8")
+        self.config = ConfigService(settings)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _init_routes(self):
+        from backend.api import routes
+        from backend.engine.orchestrator import ChatOrchestrator
+        from tests.test_flows import make_deps
+        deps = make_deps(self.config, self.tmp / "session.json")
+        orch = ChatOrchestrator(self.config, deps.stages, deps.quiz,
+                                deps.state_store, deps.memory, deps.templates)
+        routes.init(deps, orch)
+        return routes
+
+    def test_demo_scaffold_api(self):
+        routes = self._init_routes()
+        r = routes.demo_scaffolds()
+        self.assertTrue(r["ok"])
+        self.assertIn("npm", {s["type"] for s in r["scaffolds"]})
+        r = routes.demo_scaffold({"type": "npm", "name": "api-demo"})
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["path"], "demo/api-demo")
+        r = routes.demo_scaffold({"type": "npm", "name": "api-demo"})
+        self.assertFalse(r["ok"])  # 重名
+        r = routes.demo_scaffold({"type": "ghost", "name": "x"})
+        self.assertFalse(r["ok"])  # 未知类型
+
+    def test_code_save_api_whitelist(self):
+        routes = self._init_routes()
+        routes.demo_scaffold({"type": "npm", "name": "s-demo"})
+        r = routes.code_save({"root": "demo", "path": "s-demo/src/app.js",
+                              "content": "// api edited\n"})
+        self.assertTrue(r["ok"])
+        self.assertEqual((self.demo / "s-demo" / "src" / "app.js")
+                         .read_text(encoding="utf-8"), "// api edited\n")
+        r = routes.code_save({"root": "projA", "path": "a.txt",
+                              "content": "hack"})
+        self.assertFalse(r["ok"])  # 原项目只读
+        self.assertEqual((self.proj / "a.txt").read_text(encoding="utf-8"),
+                         "hello")  # 未被改动
+        r = routes.code_save({"root": "", "path": "x", "content": "y"})
+        self.assertFalse(r["ok"])  # 参数缺失
+
+    def test_code_file_editable_flag(self):
+        routes = self._init_routes()
+        routes.demo_scaffold({"type": "npm", "name": "e-demo"})
+        r = routes.code_file("demo", "e-demo/src/app.js")
+        self.assertTrue(r["ok"])
+        self.assertTrue(r["editable"])
+        r = routes.code_file("projA", "a.txt")
+        self.assertTrue(r["ok"])
+        self.assertFalse(r["editable"])
+        r = routes.code_file("demo", "e-demo/nope.js")
+        self.assertFalse(r["ok"])  # 不存在仍走原错误契约
+
+
 if __name__ == "__main__":
     unittest.main()

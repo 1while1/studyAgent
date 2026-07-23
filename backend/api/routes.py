@@ -16,6 +16,7 @@ from ..engine.turn_engine import AGENT_COMMAND_HINT, build_turn_engine
 from ..services.doc_initializer import InitError
 from ..services.repo_scanner import scan as repo_scan
 from ..services.workspace_service import WorkspaceError, WorkspaceService
+from ..services.workshop_service import WorkshopError, WorkshopService
 
 router = APIRouter()
 
@@ -327,6 +328,10 @@ def _code_browser() -> CodeBrowser:
     return CodeBrowser(_deps.config)
 
 
+def _workshop() -> WorkshopService:
+    return WorkshopService(_deps.config)
+
+
 @router.get("/api/code/roots")
 def code_roots():
     return {"roots": _code_browser().roots()}
@@ -383,9 +388,46 @@ def code_tree(root: str, path: str = ""):
 @router.get("/api/code/file")
 def code_file(root: str, path: str):
     try:
-        return {"ok": True, **_code_browser().read_file(root, path)}
+        data = _code_browser().read_file(root, path)
+        # M6：可编辑标记（demo/replica 白名单 + 非敏感文件；异常一律 False）
+        data["editable"] = _workshop().editable(root, path)
+        return {"ok": True, **data}
     except CodeBrowserError as e:
         return {"ok": False, "error": str(e)}
+
+
+@router.post("/api/code/save")
+def code_save(body: dict):
+    """UI 保存（M6）：仅 demo/replica 白名单可写，atomic_write 落盘。"""
+    root = (body or {}).get("root", "")
+    path = (body or {}).get("path", "")
+    content = (body or {}).get("content")
+    if not root.strip() or not path.strip() or content is None:
+        return {"ok": False, "error": "root / path / content 均不能为空"}
+    try:
+        return {"ok": True, **_workshop().save_via_root(root, path, str(content))}
+    except WorkshopError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"保存失败: {e}"}
+
+
+@router.get("/api/demo/scaffolds")
+def demo_scaffolds():
+    return {"ok": True, "scaffolds": _workshop().scaffold_types()}
+
+
+@router.post("/api/demo/scaffold")
+def demo_scaffold(body: dict):
+    """平台内建 demo（M6）：脚手架复制到 demo 根 + 自动注册代码根。"""
+    try:
+        r = _workshop().scaffold_create((body or {}).get("type", ""),
+                                        (body or {}).get("name", ""))
+        return {"ok": True, **r}
+    except WorkshopError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"创建 demo 失败: {e}"}
 
 
 @router.get("/api/code/resolve")
