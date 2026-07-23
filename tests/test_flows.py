@@ -102,6 +102,7 @@ class TestFlows(unittest.TestCase):
         # M5b：新开始同步重置归档层（防 archive_upto 越界）
         self.assertEqual(session.archive_summary, "")
         self.assertEqual(session.archive_upto, 0)
+        self.assertEqual(session.compress_cooldown, 0)
         self._validate_tmp()
 
         # 3. [下一内容] → 掌握情况检查（默认需巩固）+ 进入 quiz_r1
