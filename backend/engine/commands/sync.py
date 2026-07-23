@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from ...domain.enums import DayPhase
 from ...domain.models import SessionContext
 from .base import CommandHandler, CommandResult, Deps
 
@@ -21,6 +22,10 @@ class SyncHandler(CommandHandler):
 
     def fail_fast(self, deps: Deps, session: SessionContext,
                   args: str, mode: str = "") -> str | None:
+        if getattr(session, "day_phase", None) == DayPhase.INTERVIEW.value:
+            return "模拟面试进行中，请先完成本场面试。"
+        if getattr(session, "day_phase", None) == DayPhase.PREREQ.value:
+            return "先修诊断进行中，请先完成本场诊断。"
         m = re.match(r"^\s*(已掌握|卡壳|疑问|面试话术|代码完成)\s+(.+)$", args)
         if not m:
             return "未识别子类型或内容为空，可选：已掌握/卡壳/疑问/面试话术/代码完成。\n用法：[同步] 已掌握 XXX"

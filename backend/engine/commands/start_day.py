@@ -176,10 +176,11 @@ class StartDayHandler(CommandHandler):
         relevance: list[dict] = []
         try:
             from ...domain.learner import concept_id
-            from ...services.learner_service import LearnerService
             first_cid = concept_id(day, plan["units"][0]["id"])
-            for x in LearnerService(deps.config).unmastered_upstream(
-                    [first_cid], day):
+            # F1 修复：读图前先 ensure（新日当日单元未注册时闭包为空 →
+            # 感召静默缺失；sync/next_content 同款统一入口）
+            svc = CommandHandler.learner_with_concepts(deps)
+            for x in svc.unmastered_upstream([first_cid], day):
                 m = re.match(r"Day(\d+)-", x["cid"])
                 relevance.append({
                     "type": "上游感召",

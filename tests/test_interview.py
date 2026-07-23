@@ -120,14 +120,21 @@ class TestInterview(unittest.TestCase):
         self.assertIn("Day2-A", result.messages[0])
 
     def test_pick_empty_model(self):
-        (self.docx / "concepts.json").write_text(json.dumps(
-            {"schema_version": 1, "concepts": {}},
-            ensure_ascii=False), encoding="utf-8")
+        """F1 时代：ensure 会从 StudyState 重建 concepts——无证据走「带证据」提示；
+        StudyState 也无单元时才是「没有可面试的知识点」。"""
         (self.docx / "learner_model.json").write_text(json.dumps(
             {"schema_version": 1, "concepts": {}},
             ensure_ascii=False), encoding="utf-8")
         _, result = self._start()
         self.assertIsNone(result.llm_instruction)
+        self.assertIn("还没有带证据的知识点", result.messages[0])
+        # StudyState 也清空 → concepts 为空 → 首个分支
+        (self.docx / "StudyState.json").write_text(json.dumps(
+            {"current_day": 1, "days": {}}, ensure_ascii=False), encoding="utf-8")
+        (self.docx / "concepts.json").write_text(json.dumps(
+            {"schema_version": 1, "concepts": {}},
+            ensure_ascii=False), encoding="utf-8")
+        _, result = self._start()
         self.assertIn("还没有可面试的知识点", result.messages[0])
 
     def test_fail_fast(self):

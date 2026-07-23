@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ...domain.enums import DayPhase
 from ...domain.models import SessionContext
 from .base import CommandHandler, CommandResult, Deps
 
@@ -11,6 +12,10 @@ class CodeModeHandler(CommandHandler):
 
     def fail_fast(self, deps: Deps, session: SessionContext,
                   args: str, mode: str = "") -> str | None:
+        if getattr(session, "day_phase", None) == DayPhase.INTERVIEW.value:
+            return "模拟面试进行中，请先完成本场面试。"
+        if getattr(session, "day_phase", None) == DayPhase.PREREQ.value:
+            return "先修诊断进行中，请先完成本场诊断。"
         if not session.current_unit_id:
             return "当前没有学习单元，请先 [开始今日学习]。"
         if session.current_stage == deps.stages.first:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ...domain.enums import DayPhase
 from ...domain.models import SessionContext
 from .base import CommandHandler, CommandResult, Deps
 
@@ -13,6 +14,10 @@ class NextContentHandler(CommandHandler):
                   args: str, mode: str = "") -> str | None:
         if not deps.state_store.exists():
             return "StudyState.json 不存在，请先 [开始今日学习]。"
+        if getattr(session, "day_phase", None) == DayPhase.INTERVIEW.value:
+            return "模拟面试进行中，请先完成本场面试。"
+        if getattr(session, "day_phase", None) == DayPhase.PREREQ.value:
+            return "先修诊断进行中，请先完成本场诊断。"
         state = deps.state_store.load()
         if not deps.memory.exists(state["current_day"]):
             return "当日 StudyMemory 不存在，请先 [开始今日学习]。"

@@ -2078,7 +2078,7 @@ function renderRadarTimeline(model) {
       // M7：hover 高亮上游链（点击已占用为跳战术板，高亮走 hover）
       row.addEventListener("mouseenter", () => {
         for (const id of ups) {
-          const r = box.querySelector(`.tl-row[data-cid="${id}"]`);
+          const r = box.querySelector(`.tl-row[data-cid="${CSS.escape(id)}"]`);
           if (r) r.classList.add("tl-upstream");
         }
       });
