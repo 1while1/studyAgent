@@ -15,10 +15,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.engine.tool_registry import (READONLY, SANDBOX, WRITE,
-                                          ToolContext, build_default_registry)
+                                          ToolContext, ToolRegistry, ToolSpec,
+                                          build_default_registry)
+from backend.services import code_runner
 from backend.services.code_browser import CodeBrowser
 from backend.services.config_service import ConfigService
 from backend.services.state_store import StateStore
+from unittest import mock
 
 TODAY = date.today().isoformat()
 
@@ -210,6 +213,84 @@ class TestToolRegistry(unittest.TestCase):
         result = self.registry.invoke("resolve_note", {"id": "x"}, ctx)
         self.assertFalse(result.ok)
         self.assertIn("StateStore", result.error)
+
+    # ---- invoke 异常契约（防假绿核心防线） ----
+
+    def test_invoke_handler_exception_returns_contract(self):
+        def boom(ctx, args):
+            raise RuntimeError("模拟 handler 爆炸")
+        reg = ToolRegistry()
+        reg.register(ToolSpec(name="boom", permission=READONLY,
+                              description="x", params={}, handler=boom))
+        result = reg.invoke("boom", {}, self.ctx)
+        self.assertFalse(result.ok)
+        self.assertIn("执行异常", result.error)
+
+    # ---- run_build ----
+
+    def test_run_build_missing_state_store(self):
+        ctx = ToolContext(config=self.config)  # 无 state_store
+        result = self.registry.invoke("run_build", {}, ctx)
+        self.assertFalse(result.ok)
+        self.assertIn("StateStore", result.error)
+
+    def test_run_build_no_build_files(self):
+        # project_dir（tmp）及其一级子目录均无构建文件
+        result = self.registry.invoke("run_build", {}, self.ctx)
+        self.assertFalse(result.ok)
+        self.assertIn("未发现构建文件", result.error)
+
+    def test_run_build_multiple_candidates(self):
+        for name in ("day01", "day03"):  # 当日=Day2，均不匹配 day02/day2
+            d = self.tmp / name
+            d.mkdir()
+            (d / "pom.xml").write_text("<xml/>", encoding="utf-8")
+        result = self.registry.invoke("run_build", {}, self.ctx)
+        self.assertFalse(result.ok)
+        self.assertIn("多个可验证目录", result.error)
+
+    def test_run_build_success_passes_params(self):
+        (self.tmp / "pom.xml").write_text("<xml/>", encoding="utf-8")
+        fake = {"code": 0, "cmd": "mvn test", "seconds": 1.2, "tail": "ok"}
+        with mock.patch.object(code_runner, "run_build",
+                               return_value=fake) as m:
+            result = self.registry.invoke(
+                "run_build", {"kind": "test"}, self.ctx)
+        self.assertTrue(result.ok, result.error)
+        self.assertEqual(result.data["kind"], "test")
+        self.assertEqual(result.data["code"], 0)
+        chosen, tool = m.call_args.args[:2]
+        self.assertEqual(tool, "maven")
+        self.assertTrue((Path(str(chosen)) / "pom.xml").is_file())
+        kwargs = m.call_args.kwargs
+        self.assertEqual(kwargs["kind"], "test")
+        self.assertEqual(kwargs["timeout"], 300)   # 夹具未配置 → 默认
+        self.assertEqual(kwargs["offline"], False)
+
+    def test_run_build_target_selection(self):
+        for name in ("day01", "day03"):
+            d = self.tmp / name
+            d.mkdir()
+            (d / "pom.xml").write_text("<xml/>", encoding="utf-8")
+        fake = {"code": 1, "cmd": "mvn compile", "seconds": 0.5, "tail": "err"}
+        with mock.patch.object(code_runner, "run_build",
+                               return_value=fake) as m:
+            result = self.registry.invoke(
+                "run_build", {"target": "day03"}, self.ctx)
+        self.assertFalse(result.ok)  # 退出码非 0 → ok=False
+        chosen = m.call_args.args[0]
+        self.assertEqual(Path(str(chosen)).name, "day03")
+
+    # ---- update_model fail-closed（写路径天数不可解析即拒绝） ----
+
+    def test_update_model_rejects_when_day_unresolvable(self):
+        ctx = ToolContext(config=self.config)  # 无 state_store → 天数不可解析
+        result = self.registry.invoke(
+            "update_model", {"concept_id": "Day2-A", "type": "quiz_right",
+                             "source_ref": "t:1"}, ctx)
+        self.assertFalse(result.ok)
+        self.assertIn("无法确定当前天数", result.error)
+        self.assertFalse((self.docx / "learner_model.json").exists())
 
 
 if __name__ == "__main__":

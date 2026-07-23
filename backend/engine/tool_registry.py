@@ -328,7 +328,11 @@ def _update_model(ctx: ToolContext, args: dict) -> ToolResult:
         return ToolResult(ok=False, error=(
             f"未登记的证据类型: {etype}"
             "（只允许 settings [evidence_delta] 表内类型）"))
-    day = _current_day(ctx) or 1
+    day = _current_day(ctx)
+    if day is None:
+        # 写路径 fail-closed：天数无法解析时静默记到 Day 1 会造成证据错归因
+        return ToolResult(ok=False, error=(
+            "无法确定当前天数（学习状态缺失或损坏），证据已拒绝写入"))
     try:
         written = LearnerService(ctx.config).add_evidence(
             cid, etype, source_ref, day)
