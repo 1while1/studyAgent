@@ -1,7 +1,7 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-23（**M6 实战工坊交付**——脚手架 + Monaco + edit_file 白名单 + process_mgr + study/code 模式分离；N 单测/M 走查全绿）
+> 最近更新：2026-07-23（**M6 实战工坊交付**——脚手架 + Monaco + edit_file 白名单 + process_mgr + study/code 模式分离；348 单测/131 走查全绿）
 
 ## 当前运行状态
 
@@ -11,7 +11,7 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → N 个全绿；UI 走查 M 项全绿
+- 测试：`python -m unittest discover -s tests` → 348 个全绿；UI 走查 131 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步
@@ -30,7 +30,7 @@ v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 
 - **前端**：Monaco 保存（文件头按钮仅 editable 显示 + Ctrl+S + 脏标记 ●）/ demo 弹窗（类型+名称 → 创建成功自动刷新选中 demo 根，900ms 自关——走查初版点关闭撞 auto-close 不可见）/ 进程抽屉（cwd 白名单下拉 + cmd 启动 + 行内停止 + SSE 日志 tail + 端口链接新窗口看效果，进程行 textContent 构建防 XSS）
 - **API**：/api/code/save、/api/code/file+editable、/api/demo/scaffold(s)、/api/processes(+allowed_cwds)/start/stop/logs/logs/stream(SSE)、/api/session/mode
 - **新工具 5 个**：scaffold_create/edit_file（WRITE）+ process_start/process_stop/process_logs（SANDBOX）；ToolContext + workshop/process_mgr 字段；planner 工具清单自动收录（schemas 遍历零改动）
-- **测试**：+28（test_workshop 12：白名单/脚手架/保存/editable/路由；test_process_mgr 9：真实杀树父子双亡+端口释放/PID 复用守卫/损坏恢复/SSE 流/路由起停；test_tool_registry +4：16 工具权限/工坊工具成败/planner 清单；test_turn_engine +3：mode 端点/非法拒/引擎路由）→ **N 全绿**；走查 M 项全绿（+8b code 模式段 23 项，Monaco 适配改造 + 存在性感知清理：进程/模式/demo 目录/demo 代码根 finally 还原）
+- **测试**：+28（test_workshop 12：白名单/脚手架/保存/editable/路由；test_process_mgr 9：真实杀树父子双亡+端口释放/PID 复用守卫/损坏恢复/SSE 流/路由起停；test_tool_registry +4：16 工具权限/工坊工具成败/planner 清单；test_turn_engine +3：mode 端点/非法拒/引擎路由）→ **348 全绿**；走查 131 项全绿（+8b code 模式段 23 项，Monaco 适配改造 + 存在性感知清理：进程/模式/demo 目录/demo 代码根 finally 还原）
 
 ## M5c planner（2026-07-23 交付）
 
