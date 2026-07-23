@@ -1,7 +1,7 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-23（**M5b 上下文+路由交付 + 审查修复批**——context_manager 三层 + 预算钳制（默认 256K/模型上限表/UI 可调）+ 压缩机械校验（防增不防减）+ 低水位滞回与失败冷却 + cheap/strong 两档；275 单测/105 走查全绿）
+> 最近更新：2026-07-23（**M5c planner 交付**——ACTION 契约 + plan-act-observe（planner 真身）+ resources/pedagogy 策略库 + 模拟面试（口述→追问→teach_back 落盘）；306 单测/108 走查全绿）
 
 ## 当前运行状态
 
@@ -11,12 +11,22 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 275 个全绿；UI 走查 105 项全绿
+- 测试：`python -m unittest discover -s tests` → 306 个全绿；UI 走查 108 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步
 
-v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 `docs/AgentDesign.md` v3 封板版为准：M1 资料库 ✅ → M2 可观测 ✅ → M3 学习者模型 ✅ → M4 笔记管理 ✅ → M5a 工具骨架 ✅ → M5b 上下文+路由 ✅（2026-07-23 交付）→ **下一步 = M5c planner**（JSON action 契约 + plan-act-observe + SOP 策略化 + 模拟面试模式，验收=[导学] 跑通、口述→追问→teach_back 证据落盘）。
+v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 `docs/AgentDesign.md` v3 封板版为准：M1 资料库 ✅ → M2 可观测 ✅ → M3 学习者模型 ✅ → M4 笔记管理 ✅ → M5a 工具骨架 ✅ → M5b 上下文+路由 ✅ → M5c planner ✅（2026-07-23 交付）→ **下一步 = M6 实战工坊**（脚手架 + Monaco + edit_file 白名单 + process_mgr + study/code 模式分离，验收=平台内建 demo → 构建 → 启动看效果 → 杀树验证）。
+
+## M5c planner（2026-07-23 交付）
+
+- **ACTION 契约 + plan-act-observe**（`tool_use.py` 第三标记）：`[ACTION:{"action","args","reason"}]` 复用增量扫描管线——截获 → 契约校验（JSON dict + action str + args dict；不符注入错误教纠正，与非法 READ 标记同策略的无法解析按文本透传）→ `registry.invoke` 任意注册工具 → 注入结果（data 截断 2000）→ 续写。JSON 按**逐 ] 尝试解析**提取（容忍 args 内嵌 ]）；单回复上限 `[context].planner_max_actions_per_reply=4`（独立于 READ 3 次）；plan 决策记 agent.log（`observer.log_plan`，§10）
+- **PlannerEngine 真身**（`engine/planner.py`）：instruction_for 注入 ACTION 契约 + registry marker schema 工具清单；post_process 空转（动作已在流内执行，阶段机不介入 agent 会话）。turn_engine 删 stub 改懒加载接线（防循环导入）；routes/test 改从 planner 导入。`agent_mode_enabled` 默认仍 false（仅 flag+测试可达，agent UI 入口属 M6）
+- **SOP 策略化**：`resources/pedagogy/` 教学策略库（retell_guide 口述引导/retell_assess 四档 rubric/probe_followup 追问策略三卡）+ `render_pedagogy` 渲染器（PEDAGOGY_DIR），**面试指令与 quiz_generate/retell_assess 工具共用同卡**
+- **🎤 模拟面试**（study 模式确定性状态机，§8.1 永不过 planner）：DayPhase.INTERVIEW + session.interview_cid/interview_round；`[模拟面试]` handler **代码确定性选题**（args 精确 > 当前单元 > 有证据最弱）；orchestrator 分支：round 0 四档评估（收评分进 pending_score）→ round 1/2 追问 → 终评 **teach_back 证据落盘**（≥及格 teach_back_pass +0.25 / fail −0.20，`interview:{cid}:{date}` 同日幂等）→ phase 还原；无评分标记不推进（铁律 6）；中断按 session 字段恢复
+- **新 LLM 档工具**：quiz_generate（concept+证据摘要 → 渲染追问卡出题）/ retell_assess（rubric 卡评口述）；ToolContext + llm 字段（缺失 ok=False）
+- **ScriptableLLM**（`tests/scriptable_llm.py`，§10 谓词脚本：match 正则 → respond 文本，记录 calls）
+- **测试**：+31（test_planner 15：ACTION 截获执行注入/契约不符/未知工具/非法透传/嵌套 ]/plan 记账/[导学] 跑通/上限/LLM 工具×4；test_interview 16：选题×5/fail_fast/全流程 pass+fail/幂等/中断恢复/无评分不推进）→ 306 全绿；走查 108 项全绿（+模拟面试全流程——teach_back 写真实库，走查**先备份 session+learner_model 事后还原**防污染；胶囊 11→12）
 
 ## M5b 上下文+路由（2026-07-23 交付）
 

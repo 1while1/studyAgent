@@ -101,6 +101,12 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 - **预算用户可调**：模型配置页「上下文窗口」区（默认 256K），**生效预算 = min(用户预算, 模型上限 − 输出预留)**；模型上限表 `[model_context]` 驱动不同模型差异
 - **cheap/strong 两档路由**：压缩走 cheap 档（`[llm] cheap_provider` 可配，空 = 复用 strong），cheap 失败自动 strong 重试一次
 
+**planner 与模拟面试（M5c）**
+- **🎤 模拟面试**：`[模拟面试]`（可带知识点）确定性选题（指定 > 当前单元 > 最弱有证据）→ 口述 → 四档评估（结构/准确/源码定位/追问应对）→ 两轮追问 → 终评 **teach_back 证据落盘**（pass +0.25 / fail −0.20，同日幂等）；中断可续
+- **planner（agent 引擎）**：`[ACTION:{"action","args","reason"}]` 标记——流式回合内 plan-act-observe 循环（截获 → 工具执行 → 注入结果 → 续写），单回复限 4 次；契约不符/未知工具注入错误教纠正；plan 决策记 agent.log
+- **教学策略库**：`resources/pedagogy/` 策略卡（口述引导/四档评估/追问策略），面试指令与 quiz_generate/retell_assess 工具共用同源
+- 新 LLM 档工具：quiz_generate（基于知识点+薄弱证据出题）/ retell_assess（四档评估口述）
+
 **模型管理**
 - 「模型配置」页面：主/备渠道切换、模型 ID、Base URL、API Key（掩码显示）、测试连接、保存热生效
 - 主备自动 fallback：主渠道失败自动切备用（中途断流会标注重新生成）
@@ -111,8 +117,8 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 
 ```bash
 cd study-web
-python -m unittest discover -s tests    # 268 个后端测试，stdlib，无需真实 LLM
-python scripts/ui_walkthrough.py        # UI 真实点击走查 105 项（需服务运行中）
+python -m unittest discover -s tests    # 306 个后端测试，stdlib，无需真实 LLM
+python scripts/ui_walkthrough.py        # UI 真实点击走查 108 项（需服务运行中）
 python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name]
 ```
 
@@ -137,7 +143,8 @@ python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name]
 ```
 api/        FastAPI 路由 + SSE（chat/command/state/workspaces/code/llm-config 等）
 engine/     stage_machine（配置驱动）/ orchestrator（聊天阶段驱动）/ quiz_engine（评分提取）
-            / turn_engine（双引擎接口 + mode/flag 路由）/ tool_registry（工具注册表+权限四级）
+            / turn_engine（双引擎接口 + mode/flag 路由）/ planner（ACTION 契约 + plan-act-observe）
+            / tool_registry（工具注册表+权限四级）
             / context_manager（上下文三层 + 预算钳制 + 压缩机械校验）
             / commands（每 SOP 卡一个 handler，互不 import）/ hooks（注册式钩子链）
 services/   state_store / memory_store / study_plan / template_service（SOP 锚点解析）

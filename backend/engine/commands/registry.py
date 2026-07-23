@@ -13,6 +13,7 @@ from .code_mode import CodeModeHandler
 from .day_review import DayReviewHandler
 from .declarative import DeclarativeHandler
 from .end_day import EndDayHandler
+from .interview import InterviewHandler
 from .jump_day import JumpDayHandler
 from .next_content import NextContentHandler
 from .resume import ResumeHandler
@@ -30,6 +31,7 @@ _CODE_HANDLERS: dict[str, type[CommandHandler]] = {
     "end_day": EndDayHandler,
     "jump_day": JumpDayHandler,
     "verify_code": VerifyCodeHandler,
+    "interview": InterviewHandler,
     "declarative": DeclarativeHandler,
 }
 

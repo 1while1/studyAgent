@@ -8,6 +8,7 @@ class DayPhase(str, Enum):
     PLANNING = "planning"          # 开始今日学习 4 步进行中
     STUDYING = "studying"          # 导学中
     REVIEWING = "reviewing"        # 今日复盘拷打中
+    INTERVIEW = "interviewing"     # 模拟面试中（M5c）
     ENDED = "ended"                # 已结束
 
 

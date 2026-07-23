@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from backend.engine.tool_registry import (READONLY, SANDBOX, WRITE,
+from backend.engine.tool_registry import (LLM_LEVEL, READONLY, SANDBOX, WRITE,
                                           ToolContext, ToolRegistry, ToolSpec,
                                           build_default_registry)
 from backend.services import code_runner
@@ -35,6 +35,8 @@ _EXPECTED = {
     "resolve_note": WRITE,
     "update_model": WRITE,
     "persist_state": WRITE,
+    "quiz_generate": LLM_LEVEL,
+    "retell_assess": LLM_LEVEL,
 }
 
 

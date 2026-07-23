@@ -32,6 +32,8 @@ class SessionContext:
     archive_summary: str = ""         # 归档层：历史压缩摘要（有损缓存，M5b）
     archive_upto: int = 0             # 归档层：摘要覆盖到的 chat_history 下标
     compress_cooldown: int = 0        # 压缩失败冷却回合数（R2：防失败重试风暴）
+    interview_cid: str = ""           # 模拟面试知识点 concept id（M5c；空=非面试中）
+    interview_round: int = 0          # 面试回合（0=待口述评估，1/2=追问回合）
     chat_history: list[dict] = field(default_factory=list)  # [{role, content}]
 
     def to_dict(self) -> dict:
