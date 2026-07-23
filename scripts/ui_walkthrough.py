@@ -42,12 +42,20 @@ def main():
     orig_ws = next((w["slug"] for w in ws_list["workspaces"] if w["active"]), None)
     if orig_ws != "ragent":
         api("/api/workspaces/switch", {"slug": "ragent"})
+    # 会话模式归一化：残留 code 模式会让侧栏隐藏/指令走 guard（走查前提自愈）
+    api("/api/session/mode", {"mode": "study"})
 
     with sync_playwright() as p:
         b = p.chromium.launch(headless=True)
         page = b.new_page(viewport={"width": 1500, "height": 820})
         errors = []
+        step = {"cur": "加载"}
+
+        def mark(s):
+            step["cur"] = s
+
         page.on("pageerror", lambda e: errors.append(
+            f"<{step['cur']}> " +
             (str(e)[:150] + " | " + str(getattr(e, "stack", ""))[:250])))
 
         # ---- 1. 加载 ----
@@ -121,6 +129,7 @@ def main():
         page.locator("#llm-close").click()
         page.wait_for_timeout(400)
 
+        mark("7 代码浏览")
         # ---- 7. 源码学习模式 + 代码浏览器（M6：Monaco 宿主） ----
         page.locator("#mode-pair").click()
         page.wait_for_timeout(1500)
@@ -166,6 +175,7 @@ def main():
             "window.__codeEditor.getOption(monaco.editor.EditorOption.wordWrap)") == "on")
         page.locator("#code-wrap-toggle").click()
 
+        mark("7c 引用芯片")
         # ---- 7c. 代码引用芯片（AI 回答中的路径 → 点击跳转 + 高亮） ----
         page.evaluate("addMessage('assistant', '请看 `ragent-replica/day01/pom.xml:L1-L3` 这个文件', true)")
         page.wait_for_timeout(300)
@@ -180,6 +190,7 @@ def main():
         page.wait_for_timeout(600)
         check("引用未找到-toast", page.locator(".toast").is_visible())
 
+        mark("7b 片段提问")
         # ---- 7b. 发送片段提问 → 卡片渲染 → 刷新历史回填 ----
         page.locator("#input").press("End")
         page.type("#input", "只回复OK", delay=5)
@@ -200,6 +211,7 @@ def main():
         page.wait_for_timeout(2000)
         check("历史回填渲染卡片", page.locator(".snippet-jump").count() >= 1)
 
+        mark("8 片段跳转")
         # ---- 8. 片段跳转 + 切回知识学习 ----
         page.locator(".snippet-jump").first.click()
         page.wait_for_timeout(2500)
@@ -210,6 +222,7 @@ def main():
         check("知识学习-侧栏恢复", page.locator("#sidebar").is_visible())
         check("知识学习-代码面板隐藏", not page.locator("#code-panel").is_visible())
 
+        mark("8b 实战工坊")
         # ---- 8b. code 模式 + 实战工坊（M6）：模式持久化/Monaco 编辑保存/
         #      demo 脚手架/进程起停/面板显隐；存在性感知清理（9c+ 同款） ----
         demo_root_existed = any(r["name"] == "demo"
@@ -335,6 +348,7 @@ def main():
                 except Exception:
                     pass
 
+        mark("9 聊天")
         # ---- 9. 聊天（真实 LLM，短请求） ----
         before = page.locator("#messages .bubble").count()
         page.fill("#input", "回复OK即可")
@@ -351,6 +365,7 @@ def main():
         check("无 LLM 错误泡", page.locator(".msg.error").count() == 0,
               page.locator(".msg.error .bubble").first.text_content()[:100] if page.locator(".msg.error").count() else "")
 
+        mark("9b Mermaid")
         # ---- 9b. Mermaid 渲染（前端确定性注入，不依赖 LLM 发挥） ----
         page.evaluate("""(() => {
           const div = document.createElement('div');
@@ -363,6 +378,7 @@ def main():
               page.locator("#mermaid-test svg").count() >= 1)
         page.evaluate("document.getElementById('mermaid-test').remove()")
 
+        mark("9c tool-use")
         # ---- 9c. AI 读文件 tool-use 全链路（临时切 Mock 渠道，事后还原） ----
         orig_cfg = page.request.get(BASE + "/api/llm-config").json()
         mock_cfg = {"provider": "mock",
@@ -393,6 +409,7 @@ def main():
             check("chip 跳转行高亮", page.locator(".line-flash-mc").count() >= 1)
             page.locator("#mode-tutor").click()
             page.wait_for_timeout(600)
+        mark("9c+ 模拟面试")
         # ---- 9c+. 模拟面试（M5c，Mock 渠道；teach_back 写真实库 → 先备份事后还原） ----
         import tomllib
         _cfg = tomllib.load(open(ROOT / "config" / "settings.toml", "rb"))
@@ -438,6 +455,7 @@ def main():
                 "warmup_on_start": orig_cfg.get("warmup_on_start", True),
                 "sections": {}})
 
+        mark("9d 资料库")
         # ---- 9d. 资料库（M1）：API + 弹窗列表 + 预览 ----
         mats = page.request.get(BASE + "/api/materials").json()
         check("资料库 API 非空", mats.get("ok") and len(mats.get("materials", [])) >= 1)
@@ -456,6 +474,7 @@ def main():
         page.locator("#doc-close").click()
         page.wait_for_timeout(400)
 
+        mark("9e 可观测")
         # ---- 9e. 可观测性与密码门（M2） ----
         page.wait_for_timeout(1000)
         pill = page.locator("#llm-pill")
@@ -497,6 +516,7 @@ def main():
         page.locator("#usage-close").click()
         page.wait_for_timeout(300)
 
+        mark("9f 掌握度")
         # ---- 9f. 掌握度抽屉（战术板 + 战略雷达 + 侧栏预警） ----
         page.locator("#open-learner").click()
         page.wait_for_timeout(1500)
@@ -560,6 +580,7 @@ def main():
         page.locator("#mastery-close").click()
         page.wait_for_timeout(300)
 
+        mark("9g 笔记")
         # ---- 9g. 笔记页 v2（书架三栏 + MD 编辑器） ----
         # 全程只用「走查测试」前缀笔记（无 concept：销账不写证据，零污染真实数据）
         page.locator("#open-notes").click()
@@ -622,6 +643,7 @@ def main():
         page.locator("#notes-close").click()
         page.wait_for_timeout(300)
 
+        mark("9h 话术")
         # ---- 9h. 面试话术库（M4）：卡片视图 + 原文切换 ----
         page.locator("#open-docs").click()
         page.wait_for_timeout(800)

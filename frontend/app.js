@@ -753,20 +753,15 @@ function loadMonaco() {
     s.onload = () => {
       try {
         const base = location.origin + "/vendor/monaco/vs";
-        // worker 经 data-URL 包装引入（无构建步骤下的官方做法）
-        // 语言智能感知 worker 各指各的真实文件，其余走通用 editor worker
-        const WORKERS = {
-          "vs/language/css/cssWorker": "language/css/cssWorker.js",
-          "vs/language/html/htmlWorker": "language/html/htmlWorker.js",
-          "vs/language/json/jsonWorker": "language/json/jsonWorker.js",
-          "vs/language/typescript/tsWorker": "language/typescript/tsWorker.js",
-        };
+        // worker 经 data-URL 包装引入（无构建步骤下的官方做法）。
+        // 关键：worker 内 AMD 解析根 baseUrl 必须是 vs 的【父级】——Monaco 0.52
+        // 传 workerId='workerMain.js'，目标模块（vs/language/typescript/tsWorker
+        // 等）经 init 消息下发，由 worker 按 baseUrl+模块id 加载（模块 id 自带 vs/ 前缀）；
+        // baseUrl 误指到 vs 会拼出 vs/vs 404（已踩坑，走查 8b 当场抓住）。
+        const baseRoot = location.origin + "/vendor/monaco";
         window.MonacoEnvironment = {
-          getWorkerUrl: (moduleId) => {
-            const rel = WORKERS[moduleId] || "base/worker/workerMain.js";
-            return "data:text/javascript;charset=utf-8," + encodeURIComponent(
-              `self.MonacoEnvironment={baseUrl:'${base}/'};importScripts('${base}/${rel}');`);
-          },
+          getWorkerUrl: () => "data:text/javascript;charset=utf-8," + encodeURIComponent(
+            `self.MonacoEnvironment={baseUrl:'${baseRoot}/'};importScripts('${base}/base/worker/workerMain.js');`),
         };
         require.config({
           paths: { vs: base },
