@@ -130,6 +130,7 @@ python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name]
 ```
 api/        FastAPI 路由 + SSE（chat/command/state/workspaces/code/llm-config 等）
 engine/     stage_machine（配置驱动）/ orchestrator（聊天阶段驱动）/ quiz_engine（评分提取）
+            / turn_engine（双引擎接口 + mode/flag 路由）/ tool_registry（工具注册表+权限四级）
             / commands（每 SOP 卡一个 handler，互不 import）/ hooks（注册式钩子链）
 services/   state_store / memory_store / study_plan / template_service（SOP 锚点解析）
             / backup_service（规则 14 落盘编排）/ config_service / config_writer

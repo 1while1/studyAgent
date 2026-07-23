@@ -10,6 +10,8 @@ from pydantic import BaseModel
 
 from ..engine.commands.base import CommandHandler, Deps
 from ..engine.orchestrator import ChatOrchestrator
+from ..engine.turn_engine import (AGENT_COMMAND_HINT, PlannerEngine,
+                                  build_turn_engine)
 from ..services.doc_initializer import InitError
 from ..services.repo_scanner import scan as repo_scan
 from ..services.workspace_service import WorkspaceError, WorkspaceService
@@ -109,12 +111,18 @@ class LLMStreamer:
             else:
                 messages.append({"role": "user", "content": prefetch})
         from ..engine.tool_use import ToolUseLoop
+        from ..engine.tool_registry import ToolContext, build_default_registry
         from ..services.code_browser import CodeBrowser
         from ..services.materials_service import MaterialsService
         from ..services.observer import task_scope
-        loop = ToolUseLoop(self._deps.config, self._deps.llm,
-                           CodeBrowser(self._deps.config),
-                           MaterialsService(self._deps.config))
+        ctx = ToolContext(config=self._deps.config,
+                          browser=CodeBrowser(self._deps.config),
+                          materials=MaterialsService(self._deps.config),
+                          state_store=self._deps.state_store,
+                          validator=self._deps.validator())
+        loop = ToolUseLoop(self._deps.config, self._deps.llm, ctx.browser,
+                           ctx.materials, registry=build_default_registry(),
+                           tool_context=ctx)
         if event:
             yield sse(event)
         with task_scope("chat"):
@@ -131,7 +139,8 @@ def chat(body: TextIn):
     def gen():
         session = deps.session_store.load()
         text = body.text.strip()
-        instruction = orch.instruction_for(session, text)
+        engine = build_turn_engine(session, deps, tutor=orch)  # M5a 引擎路由
+        instruction = engine.instruction_for(session, text)
         session.chat_history.append({"role": "user", "content": text})
         # 先落盘用户消息：客户端中途断连（GeneratorExit 不走 except）也不丢消息
         deps.session_store.save(session)
@@ -145,7 +154,7 @@ def chat(body: TextIn):
             return
         session.chat_history.append({"role": "assistant", "content": streamer.text})
         try:
-            extras = orch.post_process(session, streamer.text)
+            extras = engine.post_process(session, streamer.text)
         except Exception as e:
             yield sse({"type": "error", "content": f"后处理失败：{e}"})
             extras = []
@@ -168,7 +177,7 @@ def chat(body: TextIn):
 
 @router.post("/api/command")
 def command(body: TextIn):
-    deps = _deps
+    deps, orch = _deps, _orchestrator
 
     def gen():
         from ..engine.commands.registry import CommandRegistry
@@ -182,6 +191,12 @@ def command(body: TextIn):
         session = deps.session_store.load()
         import copy
         snapshot = copy.deepcopy(session)  # LLM 失败时整体回滚用
+        # M5a：agent 会话不跑导学指令（§8.2 硬规，v1 默认不可达）
+        if isinstance(build_turn_engine(session, deps, tutor=orch),
+                      PlannerEngine):
+            yield sse({"type": "message", "content": AGENT_COMMAND_HINT})
+            yield sse({"type": "done"})
+            return
         try:
             stop = handler.fail_fast(deps, session, args, entry["mode"])
         except Exception as e:

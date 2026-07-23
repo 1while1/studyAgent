@@ -1,7 +1,7 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-23（**UI v10：笔记/掌握度全屏化重做**——📝 书架三栏 + MD 编辑器，🧠 掌握度面板；另修复 /api/chat 断连丢消息真 bug；211 单测/87 走查全绿）
+> 最近更新：2026-07-23（**M5a 工具骨架交付**——turn_engine 双引擎接口+路由、tool_registry 权限四级+9 工具化包装、READ/READ_DOC 分发改经注册表；235 单测/102 走查全绿）
 
 ## 当前运行状态
 
@@ -11,12 +11,20 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 211 个全绿；UI 走查 102 项全绿
+- 测试：`python -m unittest discover -s tests` → 235 个全绿；UI 走查 102 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步
 
-v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 `docs/AgentDesign.md` v3 封板版为准：M1 资料库 ✅ → M2 可观测 ✅ → M3 学习者模型 ✅ → M4 笔记管理 ✅（2026-07-23 交付）→ **下一步 = M5a 工具骨架**（tool_registry + 权限分级 + 现有服务工具化包装 + turn_engine 接口抽出，纯重构）。
+v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 `docs/AgentDesign.md` v3 封板版为准：M1 资料库 ✅ → M2 可观测 ✅ → M3 学习者模型 ✅ → M4 笔记管理 ✅ → M5a 工具骨架 ✅（2026-07-23 交付）→ **下一步 = M5b 上下文+路由**（context_manager 三层 + token 计量 + 模型两档路由，验收=长会话 50+ 轮不断片、压缩机械校验过关）。
+
+## M5a 工具骨架（2026-07-23 交付，纯重构）
+
+- **turn_engine**（`engine/turn_engine.py`，AgentDesign §8.2）：`TurnEngine` ABC（`instruction_for` + `post_process` 两方法）；ChatOrchestrator 加继承为第一实现（签名逻辑零变化，测试直接构造点全部不动）；`PlannerEngine` 占位 stub（M5c 填充）；`build_turn_engine(session, deps, tutor)` 按 `session.mode` × `agent_mode_enabled`（settings 新裸键，默认 false=零行为变化）二选一，同一 session 不混跑。SessionContext 加 `mode: str = "study"`（from_dict 过滤未知键天然兼容旧数据）。command 路由加 guard：agent 会话返回固定提示「该指令请在导学模式使用」（v1 不可达，骨架就位）
+- **tool_registry**（`engine/tool_registry.py`，§8.3/§9/§12）：权限四级常量（readonly/write/sandbox_exec/llm）+ ToolSpec（name/permission/description/params JSON-schema/handler）+ ToolResult（ok/data/event/injection/error）+ ToolContext（config 必有，browser/materials/state_store/validator 按需，缺依赖 ok=False 不抛异常）。`schemas(transport)` 对 marker/native 两种传输暴露同一份 schema（native 接线 LLM 属 M5c）
+- **9 个现有能力工具化**：read_code/read_doc（tool_use 的 _do_read/_do_read_doc **逐字迁入**，event/injection 文本零变化）/ search_notes / read_model / run_build（镜像 verify_code 解析，不含点评与 evidence）/ write_note / resolve_note（走 M4 单一路径 note_actions）/ update_model（etype 限定 [evidence_delta] 表内，铁律 15）/ persist_state（**白名单操作集** v1 仅 set_unit_status，status 限 status_enum，规则 14 落盘——planner 未来只能经此间接写 StudyState）
+- **ToolUseLoop 改注册表分发**：构造加可选 `registry`/`tool_context`（缺省内部自建，签名向后兼容）；READ/READ_DOC 标记截获后 `registry.invoke` 取 (event,injection)；observer.log_tool 留在 Loop。chat 路径 LLMStreamer 建完整 ToolContext（含 state_store/validator）
+- **测试**：+24（test_turn_engine 7：接口实例/三路路由/stub 可调用/mode 兼容；test_tool_registry 17：9 工具权限/双传输 schema 一致/read_code 成败/update_model 拒绝+幂等/persist_state 白名单/write_note 边界/缺依赖不抛异常）→ 235 全绿；走查 102 项全绿（服务重启为新代码后跑）
 
 ## M4 笔记管理（2026-07-23 交付）
 
