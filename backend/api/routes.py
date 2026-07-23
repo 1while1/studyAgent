@@ -238,6 +238,7 @@ def command(body: TextIn):
             return
         for msg in result.messages:
             yield sse({"type": "message", "content": msg})
+        streamer = None  # R3 修复：无 llm_instruction 的纯消息指令不绑定 streamer
         if result.llm_instruction:
             sop = result.sop_card if result.sop_card is not None else entry["sop_card"]
             streamer = LLMStreamer(deps)
@@ -254,8 +255,10 @@ def command(body: TextIn):
                 {"role": "assistant", "content": streamer.text})
             deps.session_store.save(session)
         yield sse({"type": "done"})
-        # M5b：done 之后压缩（对称于 chat 路由；失败静默降级）
-        ContextManager(deps).maybe_compress(session, streamer.ctx_plan)
+        # M5b：done 之后压缩（对称于 chat 路由；失败静默降级）；
+        # R3 修复：纯消息指令无 streamer，传空计划（压缩顺延到下轮 chat）
+        ContextManager(deps).maybe_compress(
+            session, streamer.ctx_plan if streamer else {})
         deps.session_store.save(session)
 
     return StreamingResponse(gen(), media_type="text/event-stream")

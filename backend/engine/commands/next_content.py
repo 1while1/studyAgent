@@ -111,7 +111,9 @@ class NextContentHandler(CommandHandler):
             content = deps.memory.read(day)
             content = content.replace(
                 "### [同步] 记录",
-                f"- [ ] 单元{new_id}（超前）：{first['title']}\n\n### [同步] 记录")
+                # （超前）后缀放标题后：validator/memory_store 的单元行正则
+                # 要求 id 紧跟冒号（中缀写法会断链 PersistError，已踩坑）
+                f"- [ ] 单元{new_id}：{first['title']}（超前）\n\n### [同步] 记录")
             deps.backup.atomic_persist(
                 {deps.state_store.path: deps.state_store.dump(state),
                  deps.memory.path_for(day): content},
