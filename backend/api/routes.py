@@ -133,6 +133,8 @@ def chat(body: TextIn):
         text = body.text.strip()
         instruction = orch.instruction_for(session, text)
         session.chat_history.append({"role": "user", "content": text})
+        # 先落盘用户消息：客户端中途断连（GeneratorExit 不走 except）也不丢消息
+        deps.session_store.save(session)
         streamer = LLMStreamer(deps)
         try:
             yield from streamer.stream(session, instruction)

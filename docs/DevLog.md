@@ -1,7 +1,7 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-23（**M4 笔记管理交付**：四层笔记体系 + 整理动作 + 📝 笔记页 + 话术层收编 InterviewQA + 🎙 拷打反喂；210 单测/73 走查全绿）
+> 最近更新：2026-07-23（**UI v10：笔记/掌握度全屏化重做**——📝 书架三栏 + MD 编辑器，🧠 掌握度面板；另修复 /api/chat 断连丢消息真 bug；211 单测/87 走查全绿）
 
 ## 当前运行状态
 
@@ -11,7 +11,7 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 210 个全绿；UI 走查 73 项全绿
+- 测试：`python -m unittest discover -s tests` → 211 个全绿；UI 走查 87 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步
@@ -138,6 +138,7 @@ v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 
 | 走查 strict mode 撞 id（#llm-status ×2） | 新增状态 pill 复用了模型配置弹窗已有的 `#llm-status` id | pill 改名 `#llm-pill`；modal 原引用还原 |
 | M4 走查笔记「编辑」步骤假失败（点击后 textarea 不出现） | 走查用 `has_text` 定位 `.note-item`；进入编辑态后 `.note-text` 被换成 `textarea`，其 value **不属于 textContent**，has_text 定位瞬间失效——应用代码无 bug（合成点击/直接调用均正常） | 走查编辑后改用 `#notes-list` 下的新鲜定位器；教训：**has_text 定位的元素内容被编辑控件替换时必须重新定位** |
 | M4 测试 settings 的 `qa_capture_enabled=false` 不生效 | EXTRA_SETTINGS 拼在 `[evidence_delta]` 表之后，裸键落进节区变成 delta 表成员 | 测试基座把 EXTRA_SETTINGS 移到所有 `[节区]` 之前（TOML 裸键必须前置的铁律同样适用于测试夹具） |
+| 走查「历史回填渲染卡片」超时崩溃（LLM 慢/挂起日必现） | /api/chat 的用户消息在**流式完成后**才随 session 落盘；客户端中途断连/刷新（GeneratorExit 不走 `except Exception`）→ 消息整轮丢失，前后端历史分叉 | 用户消息**先落盘再开流**（routes.py chat gen 一行前移）；回归测试 test_chat_disconnect 用 `body_iterator.aclose()` 模拟断连，未修复时必失败 |
 
 ## 缺陷修复批（2026-07-22，双子智能体审查驱动，fix/review-batch）
 
@@ -161,6 +162,7 @@ v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 
 
 ## UI 版本
 
+- **v10（2026-07-23）**：笔记/掌握度全屏化重做 —— 两个模块从 780px modal 升级为 `.page-overlay` 全屏页。📝 笔记页 = 书架三栏（特殊架/知识点成书/类型 chips/全文搜索 + 卡片列表 + MD 编辑器：H1-H3/B/I/S/代码块/引用/列表/任务/链接/表格/分隔线/Mermaid 工具条 + 编辑/分屏/预览三态，预览复用聊天渲染管线）；🧠 掌握度面板 = 统计卡 + 按 Day 分组进度条列表 + 详情（建议行动卡 + 证据构成表·行为中文名·Δ 着色·衰减说明）。后端零改动。
 - **v9（2026-07-23）**：M4 笔记管理 —— 顶栏 📝 笔记页（筛选/新建/就地编辑/合并模式/日志蒸馏/concept 挂接下拉/销账）；学习资料弹窗「面试话术库」升级为卡片视图（30s 直显 + 2min/追问预案折叠 + 就地编辑/删除 + 原文切换）。
 - **v8（2026-07-23）**：M3 学习者模型 —— 顶栏 🧠 掌握度热力图（红黄绿格 + △封顶 + ⏰到期），点格展开证据明细表；迁移引导条（预览→确认→应用）。
 - **v7（2026-07-23）**：M2 可观测 —— 顶栏 LLM 状态 pill（渠道+耗时/失败标红）；📊 用量弹窗（日×渠道×task 聚合表 + 成本 + auth 管理区）；登录 overlay（401 自动唤起 + 登录后重放原请求）；设置/删除访问密码、退出登录入口收在用量弹窗底部。

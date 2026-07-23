@@ -1343,33 +1343,40 @@ function renderUsageAuth(a) {
   }
 }
 
-// ---- 掌握度热力图（M3） ----
+// ---- 掌握度面板（M3 数据 / v2 全屏面板） ----
 
-const learnerModal = document.getElementById("learner-modal");
+const masteryPage = document.getElementById("mastery-page");
 document.getElementById("open-learner").onclick = openLearner;
-document.getElementById("learner-close").onclick = () => learnerModal.classList.add("hidden");
-learnerModal.addEventListener("click", (e) => {
-  if (e.target === learnerModal) learnerModal.classList.add("hidden");
-});
+document.getElementById("mastery-close").onclick = () => masteryPage.classList.add("hidden");
 
-function masteryClass(m, hasEvidence) {
-  if (!hasEvidence) return "none";
-  if (m < 0.4) return "low";
-  if (m < 0.7) return "mid";
+// evidence 类型 → 人性化中文名（机器术语不进 UI）
+const EV_TYPE_NAMES = {
+  quiz_right: "单元考核达标", quiz_wrong: "考核未达标",
+  quiz_score: "历史评分迁移",
+  sync_mastered: "[同步] 已掌握", sync_stuck: "[同步] 卡壳",
+  code_verify_pass: "构建验证通过", code_verify_fail: "构建未通过",
+  note_distilled: "笔记销账", teach_back_pass: "口述考核通过",
+  teach_back_fail: "口述考核未过", mark_wrong: "纠错标记",
+};
+
+function masteryBand(c) {
+  if (!c.evidence.length) return "none";
+  if (c.mastery < 0.4) return "low";
+  if (c.mastery < 0.7) return "mid";
   return "high";
 }
 
 async function openLearner() {
-  learnerModal.classList.remove("hidden");
-  const grid = document.getElementById("learner-grid");
-  const detail = document.getElementById("learner-detail");
+  masteryPage.classList.remove("hidden");
+  const list = document.getElementById("mastery-list");
+  const detail = document.getElementById("mastery-detail");
+  list.innerHTML = "";
+  detail.innerHTML = '<div class="mastery-empty-hint">← 点击左侧知识点查看证据构成与建议行动</div>';
   const mbar = document.getElementById("learner-migrate");
-  grid.innerHTML = "";
-  detail.innerHTML = "";
   mbar.classList.add("hidden");
   const model = await (await fetch("/api/learner/model")).json();
 
-  // 迁移引导条：模型未建且有旧评分数据
+  // 迁移引导条：模型未建且有旧评分数据（幂等，逻辑与 v1 一致）
   if (!model.exists && model.has_ratings_source) {
     mbar.classList.remove("hidden");
     mbar.innerHTML = "";
@@ -1391,44 +1398,120 @@ async function openLearner() {
     mbar.append(tip, btn);
   }
 
-  // 按 Day 分组渲染热力格
+  // 统计卡
+  const concepts = model.concepts || [];
+  const withEv = concepts.filter(c => c.evidence.length);
+  const avg = withEv.length ? withEv.reduce((s, c) => s + c.mastery, 0) / withEv.length : 0;
+  document.getElementById("stat-avg").textContent =
+    withEv.length ? (avg * 100).toFixed(1) + "%" : "—";
+  document.getElementById("stat-weak").textContent =
+    concepts.filter(c => c.evidence.length && c.mastery < 0.4).length;
+  document.getElementById("stat-due").textContent =
+    concepts.filter(c => c.due).length;
+
+  if (!concepts.length) {
+    list.textContent = "（暂无知识点——完成迁移或开始学习后自动生成）";
+    return;
+  }
   const byDay = new Map();
-  for (const c of model.concepts) {
+  for (const c of concepts) {
     const day = (c.id.match(/^Day(\d+)-/) || [0, "?"])[1];
     if (!byDay.has(day)) byDay.set(day, []);
     byDay.get(day).push(c);
   }
-  if (!model.concepts.length) {
-    grid.textContent = "（暂无知识点——完成迁移或开始学习后自动生成）";
-  }
   for (const [day, items] of [...byDay.entries()].sort((a, b) => a[0] - b[0])) {
-    const row = document.createElement("div");
-    row.className = "heat-row";
-    const label = document.createElement("span");
-    label.className = "heat-day";
-    label.textContent = `Day ${day}`;
-    row.appendChild(label);
-    for (const c of items) {
-      const cell = document.createElement("button");
-      const hasEv = c.evidence.length > 0;
-      cell.className = "heat-cell " + masteryClass(c.mastery, hasEv);
-      cell.textContent = c.id.split("-")[1] + (c.capped ? " △" : "") + (c.due ? " ⏰" : "");
-      cell.title = `${c.id} ${c.title}\n掌握度 ${c.mastery}` +
-        (c.capped ? `（未封顶 ${c.uncapped}，缺构建验证封顶 0.6）` : "") +
-        (c.due ? "\n复习已到期" : "");
-      cell.onclick = () => showConceptDetail(c);
-      row.appendChild(cell);
-    }
-    grid.appendChild(row);
+    const head = document.createElement("div");
+    head.className = "mastery-day";
+    head.textContent = `Day ${day}`;
+    list.appendChild(head);
+    for (const c of items) list.appendChild(masteryRow(c));
   }
 }
 
+function masteryRow(c) {
+  const band = masteryBand(c);
+  const row = document.createElement("button");
+  row.className = "mastery-row";
+  row.dataset.band = band;
+  const top = document.createElement("div");
+  top.className = "mr-top";
+  const title = document.createElement("span");
+  title.className = "mr-title";
+  title.textContent = c.title || c.id;
+  title.title = `${c.id} ${c.title}`;
+  top.appendChild(title);
+  if (c.capped) {
+    const b = document.createElement("span");
+    b.className = "mr-badge";
+    b.textContent = "△";
+    b.title = "缺构建验证，封顶 0.6";
+    top.appendChild(b);
+  }
+  if (c.due) {
+    const b = document.createElement("span");
+    b.className = "mr-badge due";
+    b.textContent = "⏰";
+    b.title = "已到复习窗口";
+    top.appendChild(b);
+  }
+  const pct = document.createElement("span");
+  pct.className = "mr-pct";
+  pct.textContent = c.evidence.length ? (c.mastery * 100).toFixed(0) + "%" : "无证据";
+  top.appendChild(pct);
+  const barWrap = document.createElement("div");
+  barWrap.className = "mr-bar";
+  const fill = document.createElement("div");
+  fill.className = "mr-fill " + band;
+  fill.style.width = Math.round(c.mastery * 100) + "%";
+  barWrap.appendChild(fill);
+  row.append(top, barWrap);
+  row.onclick = () => {
+    document.querySelectorAll(".mastery-row.active").forEach(r => r.classList.remove("active"));
+    row.classList.add("active");
+    showConceptDetail(c);
+  };
+  return row;
+}
+
+function masteryAdvice(c) {
+  if (!c.evidence.length)
+    return "💡 建议：先完成本单元的导学与考核问答，产生第一条掌握度证据。";
+  if (c.mastery < 0.4)
+    return "💡 建议：掌握度偏低。可在对话中说「再讲讲这个单元」针对性补强，复盘时它也会被重点拷问。";
+  if (c.capped)
+    return "💡 建议：切到源码学习模式运行 [验证代码]，一次构建通过即可解除 0.6 封顶。";
+  if (c.due)
+    return "💡 建议：已到复习窗口。下次 [开始今日学习] 的间隔复习会自动带上它，也可以现在快速自测一遍。";
+  return "✅ 状态良好，按节奏推进即可。";
+}
+
 function showConceptDetail(c) {
-  const detail = document.getElementById("learner-detail");
+  const detail = document.getElementById("mastery-detail");
   detail.innerHTML = "";
+  const band = masteryBand(c);
   const h = document.createElement("h3");
-  h.textContent = `${c.id}：${c.title}（掌握度 ${c.mastery}）`;
+  h.textContent = `${c.id}：${c.title}`;
   detail.appendChild(h);
+  // 分数行
+  const scoreLine = document.createElement("div");
+  scoreLine.className = "md-score";
+  const big = document.createElement("span");
+  big.className = "md-big " + band;
+  big.textContent = c.evidence.length ? (c.mastery * 100).toFixed(1) + "%" : "—";
+  scoreLine.appendChild(big);
+  const expl = document.createElement("span");
+  expl.className = "md-expl";
+  expl.textContent = c.capped
+    ? `未封顶值 ${(c.uncapped * 100).toFixed(1)}%，因缺少构建验证通过记录，按规则封顶 60%`
+    : c.evidence.length ? "由下列证据按时间衰减加权得出" : "尚无学习证据";
+  scoreLine.appendChild(expl);
+  detail.appendChild(scoreLine);
+  // 建议行动卡
+  const advice = document.createElement("div");
+  advice.className = "md-advice";
+  advice.textContent = masteryAdvice(c);
+  detail.appendChild(advice);
+  // 先修 / 资料
   if (c.prerequisites.length) {
     const p = document.createElement("div");
     p.className = "learner-meta";
@@ -1441,28 +1524,44 @@ function showConceptDetail(c) {
     p.textContent = `关联资料：${c.materials.join("、")}`;
     detail.appendChild(p);
   }
+  // 证据构成
+  const evh = document.createElement("div");
+  evh.className = "md-ev-head";
+  evh.textContent = `证据构成（${c.evidence.length} 条）`;
+  detail.appendChild(evh);
   if (!c.evidence.length) {
     const p = document.createElement("div");
     p.className = "learner-meta";
-    p.textContent = "暂无证据。";
+    p.textContent = "完成该单元的考核问答后，这里会出现第一条证据。";
     detail.appendChild(p);
     return;
   }
   const table = document.createElement("table");
   table.className = "ev-table";
-  table.innerHTML = "<thead><tr><th>类型</th><th>Δ</th><th>日期</th><th>来源</th></tr></thead>";
+  table.innerHTML = "<thead><tr><th>行为</th><th>Δ 权重</th><th>日期</th><th>来源</th></tr></thead>";
   const tb = document.createElement("tbody");
   for (const ev of [...c.evidence].reverse()) {
     const tr = document.createElement("tr");
-    for (const v of [ev.type, ev.delta, ev.ts, ev.source_ref]) {
-      const td = document.createElement("td");
-      td.textContent = v;
-      tr.appendChild(td);
-    }
+    const t = document.createElement("td");
+    t.textContent = EV_TYPE_NAMES[ev.type] || ev.type;
+    const d = document.createElement("td");
+    d.textContent = (ev.delta > 0 ? "+" : "") + ev.delta;
+    d.className = ev.delta >= 0 ? "delta-pos" : "delta-neg";
+    const ts = document.createElement("td");
+    ts.textContent = ev.ts;
+    const src = document.createElement("td");
+    src.textContent = ev.source_ref;
+    src.className = "ev-src";
+    src.title = ev.source_ref;
+    tr.append(t, d, ts, src);
     tb.appendChild(tr);
   }
   table.appendChild(tb);
   detail.appendChild(table);
+  const decay = document.createElement("div");
+  decay.className = "md-decay";
+  decay.textContent = "证据随时间衰减：半衰期 14 天（14 天前的证据权重减半）。保持复习与实战，掌握度才不会回落。";
+  detail.appendChild(decay);
 }
 
 // ---------- 面试话术库（M4 话术层：卡片视图 + 编辑/删除 + 原文切换） ----------
@@ -1644,21 +1743,18 @@ function qaEdit(card, e) {
   cancel.onclick = () => openQa(false);
 }
 
-// ---------- 笔记页（M4 条目层） ----------
+// ---------- 笔记页 v2（M4 条目层：书架三栏 + Markdown 编辑器） ----------
 
-const notesModal = document.getElementById("notes-modal");
-document.getElementById("open-notes").onclick = () => {
-  notesModal.classList.remove("hidden");
-  renderNotes();
-};
-document.getElementById("notes-close").onclick = () => notesModal.classList.add("hidden");
-notesModal.addEventListener("click", (e) => {
-  if (e.target === notesModal) notesModal.classList.add("hidden");
-});
-
+const notesPage = document.getElementById("notes-page");
 const NOTE_KINDS = { stuck: "卡壳", question: "疑问", mastered: "已掌握", insight: "心得" };
-const notesFilter = { status: "", kind: "" };
-let notesMergeMode = false;
+const notesState = {
+  shelf: "all", kind: "", search: "",
+  notes: [], concepts: [], selectedId: null,
+  dirty: false, mergeMode: false,
+};
+
+document.getElementById("open-notes").onclick = openNotes;
+document.getElementById("notes-close").onclick = closeNotes;
 
 async function notesApi(url, body) {
   const r = await fetch(url, {
@@ -1668,219 +1764,487 @@ async function notesApi(url, body) {
   return r.json();
 }
 
-async function renderNotes() {
-  const list = document.getElementById("notes-list");
-  list.textContent = "加载中…";
-  const q = new URLSearchParams();
-  if (notesFilter.status) q.set("status", notesFilter.status);
-  if (notesFilter.kind) q.set("kind", notesFilter.kind);
-  const r = await (await fetch("/api/notes?" + q)).json();
-  list.innerHTML = "";
-  if (!r.ok || !r.notes.length) {
-    list.textContent = "（暂无笔记——[同步] 卡壳/疑问会自动进条目层，也可「＋新建」或「⇩ 从日志蒸馏」）";
-    return;
-  }
-  for (const n of r.notes) list.appendChild(noteItem(n));
+async function openNotes() {
+  notesPage.classList.remove("hidden");
+  await reloadNotes();
 }
 
-function noteItem(n) {
-  const item = document.createElement("div");
-  item.className = "note-item" + (n.status === "resolved" ? " resolved" : "");
+function closeNotes() {
+  if (notesState.dirty && !confirm("有未保存的修改，确定关闭？")) return;
+  notesState.dirty = false;
+  notesPage.classList.add("hidden");
+}
+
+async function reloadNotes() {
+  const [notesRes, model] = await Promise.all([
+    (await fetch("/api/notes")).json(),
+    (await fetch("/api/learner/model")).json(),
+  ]);
+  notesState.notes = notesRes.notes || [];
+  notesState.concepts = model.concepts || [];
+  renderShelf();
+  renderNotesList();
+  renderEditor();
+}
+
+// ---- 书架（左栏） ----
+
+function noteMatchesShelf(n, shelf) {
+  if (shelf === "all") return true;
+  if (shelf === "open") return n.status !== "resolved";
+  if (shelf === "resolved") return n.status === "resolved";
+  if (shelf === "triage") return !!n.needs_review || !n.concept_id;
+  if (shelf.startsWith("concept:")) return n.concept_id === shelf.slice(8);
+  return true;
+}
+
+function filteredNotes() {
+  const q = notesState.search.toLowerCase();
+  return notesState.notes.filter(n =>
+    noteMatchesShelf(n, notesState.shelf) &&
+    (!notesState.kind || n.kind === notesState.kind) &&
+    (!q || n.text.toLowerCase().includes(q)));
+}
+
+function renderShelf() {
+  const notes = notesState.notes;
+  const count = (pred) => notes.filter(pred).length;
+  document.getElementById("cnt-all").textContent = notes.length;
+  document.getElementById("cnt-open").textContent = count(n => n.status !== "resolved");
+  document.getElementById("cnt-resolved").textContent = count(n => n.status === "resolved");
+  document.getElementById("cnt-triage").textContent = count(n => n.needs_review || !n.concept_id);
+  document.querySelectorAll("#notes-shelf > .shelf-group > .shelf-item").forEach(b =>
+    b.classList.toggle("active", b.dataset.shelf === notesState.shelf));
+  // 知识点书架：有笔记挂接的 concept 成"书"
+  const box = document.getElementById("shelf-concepts");
+  box.innerHTML = "";
+  const used = new Set(notes.map(n => n.concept_id).filter(Boolean));
+  const concepts = notesState.concepts.filter(c => used.has(c.id));
+  if (!concepts.length) {
+    const empty = document.createElement("div");
+    empty.className = "shelf-empty";
+    empty.textContent = "（挂接知识点后在此成架）";
+    box.appendChild(empty);
+  }
+  for (const c of concepts) {
+    const b = document.createElement("button");
+    b.className = "shelf-item" + (notesState.shelf === "concept:" + c.id ? " active" : "");
+    b.dataset.shelf = "concept:" + c.id;
+    const t = document.createElement("span");
+    t.className = "shelf-title";
+    t.textContent = `${c.id} ${c.title}`;
+    t.title = `${c.id} ${c.title}`;
+    const cnt = document.createElement("span");
+    cnt.className = "shelf-count";
+    cnt.textContent = count(n => n.concept_id === c.id);
+    b.append(t, cnt);
+    b.onclick = () => { notesState.shelf = b.dataset.shelf; renderShelf(); renderNotesList(); };
+    box.appendChild(b);
+  }
+  document.querySelectorAll("#shelf-kinds .kind-chip").forEach(b =>
+    b.classList.toggle("active", b.dataset.kind === notesState.kind));
+}
+
+document.querySelectorAll("#notes-shelf > .shelf-group > .shelf-item[data-shelf]").forEach(b => {
+  b.onclick = () => { notesState.shelf = b.dataset.shelf; renderShelf(); renderNotesList(); };
+});
+document.querySelectorAll("#shelf-kinds .kind-chip").forEach(b => {
+  b.onclick = () => {
+    notesState.kind = notesState.kind === b.dataset.kind ? "" : b.dataset.kind;
+    renderShelf();
+    renderNotesList();
+  };
+});
+document.getElementById("notes-search").oninput = (e) => {
+  notesState.search = e.target.value.trim();
+  renderNotesList();
+};
+
+// ---- 列表（中栏） ----
+
+function noteTitle(text) {
+  for (const line of text.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    return t.replace(/^#+\s*/, "").slice(0, 40);
+  }
+  return "（空白笔记）";
+}
+
+function noteExcerpt(text) {
+  const plain = text.replace(/[#*>`\-\[\]|]/g, "").replace(/\s+/g, " ").trim();
+  return plain.length > 80 ? plain.slice(0, 80) + "…" : plain;
+}
+
+function renderNotesList() {
+  const list = document.getElementById("notes-list");
+  list.innerHTML = "";
+  const notes = filteredNotes();
+  if (!notes.length) {
+    const empty = document.createElement("div");
+    empty.className = "notes-empty-hint";
+    empty.textContent = "（此书架暂无笔记——[同步] 卡壳/疑问会自动进条目层，也可「＋ 新建笔记」或「⇩ 从日志蒸馏」）";
+    list.appendChild(empty);
+    return;
+  }
+  for (const n of notes) list.appendChild(noteCard(n));
+}
+
+function noteCard(n) {
+  const card = document.createElement("div");
+  card.className = "note-card"
+    + (n.id === notesState.selectedId ? " active" : "")
+    + (n.status === "resolved" ? " resolved" : "");
   const head = document.createElement("div");
-  head.className = "note-head";
+  head.className = "nc-head";
   const kind = document.createElement("span");
   kind.className = "note-chip kind-" + n.kind;
   kind.textContent = NOTE_KINDS[n.kind] || n.kind;
   head.appendChild(kind);
-  if (n.concept_id) {
-    const c = document.createElement("span");
-    c.className = "note-chip concept";
-    c.textContent = n.concept_id;
-    c.title = "已挂接知识点";
-    head.appendChild(c);
-  }
-  if (n.needs_review) {
+  if (n.needs_review || !n.concept_id) {
     const w = document.createElement("span");
     w.className = "note-chip warn";
-    w.textContent = "⚠ 待挂接";
-    w.title = "迁移/蒸馏产物，需人工挂接知识点后才能销账写证据";
+    w.textContent = "⚠";
+    w.title = "待整理：挂接知识点后，销账才能写证据";
     head.appendChild(w);
   }
   if (n.status === "resolved") {
     const s = document.createElement("span");
     s.className = "note-chip done";
-    s.textContent = "✓ 已解决";
+    s.textContent = "✓";
     head.appendChild(s);
   }
-  if (n.merged_into) {
-    const m = document.createElement("span");
-    m.className = "note-chip merged";
-    m.textContent = "⇄ 已合并";
-    head.appendChild(m);
-  }
-  const text = document.createElement("div");
-  text.className = "note-text";
-  text.textContent = n.text;
-  const meta = document.createElement("div");
-  meta.className = "note-meta";
-  const bits = [];
-  if (n.created_day) bits.push(`Day ${n.created_day}`);
-  if (n.resolved_day) bits.push(`解决于 Day ${n.resolved_day}`);
-  bits.push(n.source_ref);
-  meta.textContent = bits.join(" · ");
-  const ops = document.createElement("div");
-  ops.className = "note-ops";
-  if (notesMergeMode) {
+  if (notesState.mergeMode) {
     const cb = document.createElement("input");
     cb.type = "checkbox";
-    cb.dataset.nid = n.id;
     cb.className = "note-merge-cb";
-    ops.appendChild(cb);
+    cb.dataset.nid = n.id;
+    head.appendChild(cb);
   }
-  if (n.status !== "resolved") {
-    const edit = document.createElement("button");
-    edit.textContent = "编辑";
-    edit.onclick = () => noteEdit(item, n);
-    const resolve = document.createElement("button");
-    resolve.textContent = "标记解决";
-    resolve.className = "primary";
-    resolve.onclick = async () => {
-      const tip = n.concept_id
-        ? "标记为解决？（将沉淀 note_distilled 证据到掌握度模型）"
-        : "标记为解决？（未挂接知识点，不写证据）";
-      if (!confirm(tip)) return;
-      const r = await notesApi("/api/notes/resolve", { id: n.id });
-      if (!r.ok) { showToast(r.error || "操作失败"); return; }
-      showToast(r.evidence ? "已销账并沉淀证据（+0.05）" : "已标记解决");
-      renderNotes();
-    };
-    ops.append(edit, resolve);
-    if (n.needs_review) {
-      const attach = document.createElement("button");
-      attach.textContent = "挂接知识点";
-      attach.onclick = () => noteAttach(item, n);
-      ops.appendChild(attach);
-    }
-  }
-  const del = document.createElement("button");
-  del.textContent = "删除";
-  del.onclick = async () => {
-    if (!confirm("删除这条笔记？（不可恢复）")) return;
-    await notesApi("/api/notes/delete", { id: n.id });
-    renderNotes();
+  const title = document.createElement("div");
+  title.className = "nc-title";
+  title.textContent = noteTitle(n.text);
+  const excerpt = document.createElement("div");
+  excerpt.className = "nc-excerpt";
+  excerpt.textContent = noteExcerpt(n.text);
+  const meta = document.createElement("div");
+  meta.className = "nc-meta";
+  const bits = [];
+  if (n.concept_id) bits.push(n.concept_id);
+  if (n.created_day) bits.push(`Day ${n.created_day}`);
+  meta.textContent = bits.join(" · ");
+  card.append(head, title, excerpt, meta);
+  card.onclick = () => {
+    if (notesState.mergeMode) return;
+    selectNote(n.id);
   };
-  ops.appendChild(del);
-  item.append(head, text, meta, ops);
-  return item;
+  return card;
 }
 
-function noteEdit(item, n) {
-  const textEl = item.querySelector(".note-text");
-  const ta = document.createElement("textarea");
-  ta.rows = 3;
+function currentNote() {
+  return notesState.notes.find(n => n.id === notesState.selectedId) || null;
+}
+
+function selectNote(id) {
+  if (notesState.dirty && notesState.selectedId && id !== notesState.selectedId) {
+    if (!confirm("当前笔记有未保存修改，切换将丢弃，继续？")) return;
+  }
+  notesState.dirty = false;
+  notesState.selectedId = id;
+  renderNotesList();
+  renderEditor();
+}
+
+// ---- 编辑器（右栏） ----
+
+function renderEditor() {
+  const empty = document.getElementById("notes-empty");
+  const ed = document.getElementById("notes-editor");
+  const n = currentNote();
+  if (!n) {
+    empty.classList.remove("hidden");
+    ed.classList.add("hidden");
+    return;
+  }
+  empty.classList.add("hidden");
+  ed.classList.remove("hidden");
+  const ta = document.getElementById("ne-text");
   ta.value = n.text;
+  notesState.dirty = false;
+  updateDirty();
+  refreshPreview();
+  const bits = [NOTE_KINDS[n.kind] || n.kind];
+  bits.push(n.concept_id ? `挂接：${n.concept_id}` : "未挂接知识点");
+  bits.push(n.status === "resolved" ? "已解决" : "未解决");
+  if (n.created_day) bits.push(`Day ${n.created_day}`);
+  document.getElementById("ne-meta").textContent = bits.join(" · ");
+  document.getElementById("ne-resolve").style.display =
+    n.status === "resolved" ? "none" : "";
+}
+
+let _previewTimer = null;
+function refreshPreview() {
+  const ta = document.getElementById("ne-text");
+  renderMarkdownInto(document.getElementById("ne-preview"),
+                     ta.value || "（无内容）", true);
+}
+document.getElementById("ne-text").addEventListener("input", () => {
+  notesState.dirty = true;
+  updateDirty();
+  clearTimeout(_previewTimer);
+  _previewTimer = setTimeout(refreshPreview, 200);
+});
+function updateDirty() {
+  document.getElementById("ne-dirty").classList.toggle("hidden", !notesState.dirty);
+}
+
+document.querySelectorAll("#ne-view-switch button").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll("#ne-view-switch button").forEach(x =>
+      x.classList.toggle("active", x === b));
+    document.getElementById("ne-body").dataset.view = b.dataset.view;
+    if (b.dataset.view !== "edit") refreshPreview();
+  };
+});
+
+// ---- Markdown 工具条 ----
+
+function mdApply(fn) {
+  const ta = document.getElementById("ne-text");
+  fn(ta);
+  ta.dispatchEvent(new Event("input"));
+  ta.focus();
+}
+
+function mdWrap(ta, before, after, placeholder) {
+  const s = ta.selectionStart, e = ta.selectionEnd;
+  const sel = ta.value.slice(s, e) || placeholder;
+  ta.setRangeText(before + sel + after, s, e, "end");
+  ta.setSelectionRange(s + before.length, s + before.length + sel.length);
+}
+
+function mdLinePrefix(ta, prefix) {
+  const s = ta.selectionStart, e = ta.selectionEnd;
+  const start = ta.value.lastIndexOf("\n", s - 1) + 1;
+  const lines = ta.value.slice(start, e).split("\n");
+  const replaced = lines.map(l => l.trim() ? prefix + l : l).join("\n");
+  ta.setRangeText(replaced, start, e, "end");
+}
+
+function mdInsert(ta, text, selectOffset = 0, selectLen = 0) {
+  const s = ta.selectionStart;
+  ta.setRangeText(text, s, ta.selectionEnd, "end");
+  if (selectLen) ta.setSelectionRange(s + selectOffset, s + selectOffset + selectLen);
+}
+
+const MD_SNIPPETS = {
+  codeblock: "\n```\n代码…\n```\n",
+  link: "[链接文字](https://)",
+  table: "\n| 列1 | 列2 | 列3 |\n|-----|-----|-----|\n|     |     |     |\n",
+  hr: "\n\n---\n\n",
+  mermaid: "\n```mermaid\nflowchart LR\n  A[开始] --> B[处理] --> C[结束]\n```\n",
+};
+
+document.querySelectorAll("#ne-toolbar button[data-md]").forEach(b => {
+  b.onclick = () => {
+    const act = b.dataset.md;
+    mdApply(ta => {
+      if (act === "h1") mdLinePrefix(ta, "# ");
+      else if (act === "h2") mdLinePrefix(ta, "## ");
+      else if (act === "h3") mdLinePrefix(ta, "### ");
+      else if (act === "bold") mdWrap(ta, "**", "**", "加粗文字");
+      else if (act === "italic") mdWrap(ta, "*", "*", "斜体文字");
+      else if (act === "strike") mdWrap(ta, "~~", "~~", "删除线");
+      else if (act === "code") mdWrap(ta, "`", "`", "代码");
+      else if (act === "quote") mdLinePrefix(ta, "> ");
+      else if (act === "ul") mdLinePrefix(ta, "- ");
+      else if (act === "ol") mdLinePrefix(ta, "1. ");
+      else if (act === "task") mdLinePrefix(ta, "- [ ] ");
+      else if (act === "codeblock") mdInsert(ta, MD_SNIPPETS.codeblock, 5, 3);
+      else if (act === "link") mdInsert(ta, MD_SNIPPETS.link, 1, 4);
+      else if (act === "table") mdInsert(ta, MD_SNIPPETS.table);
+      else if (act === "hr") mdInsert(ta, MD_SNIPPETS.hr);
+      else if (act === "mermaid") mdInsert(ta, MD_SNIPPETS.mermaid);
+    });
+  };
+});
+
+// ---- 编辑器动作 ----
+
+document.getElementById("ne-save").onclick = async () => {
+  const n = currentNote();
+  if (!n) return;
+  const r = await notesApi("/api/notes/update", {
+    id: n.id, text: document.getElementById("ne-text").value,
+  });
+  if (!r.ok) { showToast(r.error || "保存失败"); return; }
+  n.text = r.note.text;
+  notesState.dirty = false;
+  updateDirty();
+  showToast("已保存");
+  renderNotesList();
+};
+
+document.getElementById("ne-resolve").onclick = async () => {
+  const n = currentNote();
+  if (!n) return;
+  const tip = n.concept_id
+    ? "标记为解决？（将沉淀 note_distilled 证据到掌握度模型）"
+    : "标记为解决？（未挂接知识点，不写证据）";
+  if (!confirm(tip)) return;
+  const r = await notesApi("/api/notes/resolve", { id: n.id });
+  if (!r.ok) { showToast(r.error || "操作失败"); return; }
+  showToast(r.evidence ? "已销账并沉淀证据（+0.05）" : "已标记解决");
+  await reloadNotes();
+};
+
+document.getElementById("ne-delete").onclick = async () => {
+  const n = currentNote();
+  if (!n || !confirm("删除这条笔记？（不可恢复）")) return;
+  await notesApi("/api/notes/delete", { id: n.id });
+  notesState.selectedId = null;
+  await reloadNotes();
+};
+
+// ---- 挂接 / 新建 选择器浮层 ----
+
+function closeAttachPicker() {
+  document.getElementById("attach-picker")?.remove();
+}
+
+function pickerOverlay(titleText) {
+  closeAttachPicker();
+  const ov = document.createElement("div");
+  ov.id = "attach-picker";
+  const box = document.createElement("div");
+  box.className = "attach-box";
+  const h = document.createElement("div");
+  h.className = "attach-title";
+  h.textContent = titleText;
+  box.appendChild(h);
+  ov.appendChild(box);
+  ov.onclick = (e) => { if (e.target === ov) closeAttachPicker(); };
+  return { ov, box };
+}
+
+function pickerRow(box) {
   const row = document.createElement("div");
   row.className = "note-edit-row";
-  const save = document.createElement("button");
-  save.textContent = "保存";
-  save.className = "primary";
+  const ok = document.createElement("button");
+  ok.textContent = "确定";
+  ok.className = "primary";
   const cancel = document.createElement("button");
   cancel.textContent = "取消";
-  row.append(save, cancel);
-  textEl.replaceWith(ta);
-  ta.after(row);
-  save.onclick = async () => {
-    const r = await notesApi("/api/notes/update", { id: n.id, text: ta.value });
-    if (!r.ok) { showToast(r.error || "保存失败"); return; }
-    renderNotes();
-  };
-  cancel.onclick = renderNotes;
+  cancel.onclick = closeAttachPicker;
+  row.append(ok, cancel);
+  box.appendChild(row);
+  return ok;
 }
 
-async function noteAttach(item, n) {
-  const model = await (await fetch("/api/learner/model")).json();
-  if (!model.concepts || !model.concepts.length) {
+document.getElementById("ne-attach").onclick = () => {
+  const n = currentNote();
+  if (!n) return;
+  if (!notesState.concepts.length) {
     showToast("暂无知识点（先开始学习或完成迁移）");
     return;
   }
-  const row = document.createElement("div");
-  row.className = "note-edit-row";
+  const { ov, box } = pickerOverlay("挂接到知识点：");
   const sel = document.createElement("select");
-  for (const c of model.concepts) {
+  for (const c of notesState.concepts) {
     const opt = document.createElement("option");
     opt.value = c.id;
     opt.textContent = `${c.id} ${c.title}`;
     sel.appendChild(opt);
   }
-  const ok = document.createElement("button");
-  ok.textContent = "确认挂接";
-  ok.className = "primary";
-  const cancel = document.createElement("button");
-  cancel.textContent = "取消";
-  row.append(sel, ok, cancel);
-  item.querySelector(".note-ops").after(row);
+  if (n.concept_id) sel.value = n.concept_id;
+  box.appendChild(sel);
+  const ok = pickerRow(box);
+  document.body.appendChild(ov);
   ok.onclick = async () => {
     const r = await notesApi("/api/notes/update", { id: n.id, concept_id: sel.value });
+    closeAttachPicker();
     if (!r.ok) { showToast(r.error || "挂接失败"); return; }
     showToast(`已挂接 ${sel.value}`);
-    renderNotes();
+    await reloadNotes();
   };
-  cancel.onclick = renderNotes;
-}
+};
 
-// 工具条事件
-document.getElementById("notes-filter-status").onchange = (e) => {
-  notesFilter.status = e.target.value;
-  renderNotes();
-};
-document.getElementById("notes-filter-kind").onchange = (e) => {
-  notesFilter.kind = e.target.value;
-  renderNotes();
-};
 document.getElementById("notes-add-btn").onclick = () => {
-  document.getElementById("notes-add-form").classList.toggle("hidden");
+  const { ov, box } = pickerOverlay("新建笔记");
+  const l1 = document.createElement("div");
+  l1.className = "qa-label";
+  l1.textContent = "类型";
+  const kindSel = document.createElement("select");
+  for (const [v, label] of Object.entries(NOTE_KINDS)) {
+    const opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = label;
+    kindSel.appendChild(opt);
+  }
+  kindSel.value = "insight";
+  const l2 = document.createElement("div");
+  l2.className = "qa-label";
+  l2.textContent = "挂接书架（知识点，可后补）";
+  const conceptSel = document.createElement("select");
+  const none = document.createElement("option");
+  none.value = "";
+  none.textContent = "（暂不挂接）";
+  conceptSel.appendChild(none);
+  for (const c of notesState.concepts) {
+    const opt = document.createElement("option");
+    opt.value = c.id;
+    opt.textContent = `${c.id} ${c.title}`;
+    conceptSel.appendChild(opt);
+  }
+  if (notesState.shelf.startsWith("concept:")) {
+    conceptSel.value = notesState.shelf.slice(8);
+  }
+  box.append(l1, kindSel, l2, conceptSel);
+  const ok = pickerRow(box);
+  ok.textContent = "创建并编辑";
+  document.body.appendChild(ov);
+  ok.onclick = async () => {
+    const r = await notesApi("/api/notes/add", {
+      kind: kindSel.value, text: "# 新笔记\n\n",
+      concept_id: conceptSel.value,
+    });
+    closeAttachPicker();
+    if (!r.ok) { showToast(r.error || "创建失败"); return; }
+    notesState.selectedId = r.note.id;
+    await reloadNotes();
+    document.getElementById("ne-text").focus();
+  };
 };
-document.getElementById("notes-add-cancel").onclick = () => {
-  document.getElementById("notes-add-form").classList.add("hidden");
-};
-document.getElementById("notes-add-save").onclick = async () => {
-  const kind = document.getElementById("notes-add-kind").value;
-  const text = document.getElementById("notes-add-text").value;
-  const r = await notesApi("/api/notes/add", { kind, text });
-  if (!r.ok) { showToast(r.error || "保存失败"); return; }
-  document.getElementById("notes-add-text").value = "";
-  document.getElementById("notes-add-form").classList.add("hidden");
-  showToast("已保存笔记");
-  renderNotes();
-};
+
+// ---- 顶栏动作 ----
+
 document.getElementById("notes-distill-btn").onclick = async () => {
   const r = await notesApi("/api/notes/distill", {});
   showToast(r.ok ? `日志蒸馏完成：新增 ${r.added} 条` : (r.error || "蒸馏失败"));
-  renderNotes();
+  await reloadNotes();
 };
+
 document.getElementById("notes-merge-btn").onclick = async () => {
   const btn = document.getElementById("notes-merge-btn");
-  if (!notesMergeMode) {
-    notesMergeMode = true;
-    btn.textContent = "完成合并";
+  if (!notesState.mergeMode) {
+    notesState.mergeMode = true;
     btn.classList.add("active");
-    renderNotes();
+    renderNotesList();
     return;
   }
   const cbs = [...document.querySelectorAll(".note-merge-cb:checked")];
-  notesMergeMode = false;
-  btn.textContent = "⇄ 合并";
+  notesState.mergeMode = false;
   btn.classList.remove("active");
-  if (cbs.length < 2) { renderNotes(); return; }
+  if (cbs.length < 2) { renderNotesList(); return; }
   const ids = cbs.map(cb => cb.dataset.nid);
   if (!confirm(`合并 ${ids.length} 条笔记？文本并入最早勾选的那条，其余标记为已合并。`)) {
-    renderNotes();
+    renderNotesList();
     return;
   }
   const r = await notesApi("/api/notes/merge", { keep: ids[0], others: ids.slice(1) });
   if (!r.ok) { showToast(r.error || "合并失败"); return; }
   showToast("已合并");
-  renderNotes();
+  await reloadNotes();
 };
 
 // ---------- 启动 ----------

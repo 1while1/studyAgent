@@ -326,7 +326,7 @@ def main():
         page.locator("#usage-close").click()
         page.wait_for_timeout(300)
 
-        # ---- 9f. 学习者模型热力图（M3） ----
+        # ---- 9f. 掌握度面板（M3 数据 / v2 全屏） ----
         page.locator("#open-learner").click()
         page.wait_for_timeout(1500)
         # 模型不存在时先走迁移（幂等：已存在则迁移条不出现，直接跳过）
@@ -335,67 +335,70 @@ def main():
             page.wait_for_timeout(1000)
             page.locator("#learner-migrate button", has_text="确认应用迁移").click()
             page.wait_for_timeout(1500)
-        check("热力图有知识点格", page.locator(".heat-cell").count() >= 1)
-        check("迁移后有掌握度着色格", page.locator(
-            ".heat-cell.low,.heat-cell.mid,.heat-cell.high").count() >= 1)
-        page.locator(".heat-cell").first.click()
+        check("掌握度面板打开", page.locator("#mastery-page").is_visible())
+        check("统计卡渲染", page.locator(".stat-card").count() == 3)
+        check("知识点行渲染", page.locator(".mastery-row").count() >= 1)
+        check("有着色掌握度行", page.locator(
+            ".mastery-row[data-band='low'],.mastery-row[data-band='mid'],"
+            ".mastery-row[data-band='high']").count() >= 1)
+        page.locator(".mastery-row").first.click()
         page.wait_for_timeout(600)
-        check("知识点证据明细展开", page.locator("#learner-detail h3").is_visible())
-        page.locator("#learner-close").click()
+        check("详情含证据构成", page.locator("#mastery-detail h3").is_visible() and
+              "证据构成" in page.locator("#mastery-detail").text_content())
+        check("详情含建议行动", page.locator(".md-advice").is_visible())
+        page.locator("#mastery-close").click()
         page.wait_for_timeout(300)
 
-        # ---- 9g. 笔记页（M4）：新建→编辑→筛选→合并→销账→蒸馏→清理 ----
+        # ---- 9g. 笔记页 v2（书架三栏 + MD 编辑器） ----
         # 全程只用「走查测试」前缀笔记（无 concept：销账不写证据，零污染真实数据）
         page.locator("#open-notes").click()
-        page.wait_for_timeout(1000)
-        check("笔记弹窗打开", page.locator("#notes-modal").is_visible())
+        page.wait_for_timeout(1200)
+        check("笔记全屏页打开", page.locator("#notes-page").is_visible())
+        check("书架渲染", page.locator(
+            "#notes-shelf .shelf-item[data-shelf='all']").is_visible())
+        # 新建（浮层选类型）→ 进编辑器
         page.locator("#notes-add-btn").click()
-        page.locator("#notes-add-kind").select_option("insight")
-        page.fill("#notes-add-text", "走查测试笔记甲")
-        page.locator("#notes-add-save").click()
-        page.wait_for_timeout(800)
-        check("笔记新建成功", page.locator(
-            ".note-item", has_text="走查测试笔记甲").count() == 1)
-        page.locator("#notes-add-btn").click()
-        page.fill("#notes-add-text", "走查测试笔记乙")
-        page.locator("#notes-add-save").click()
-        page.wait_for_timeout(800)
-        # 编辑甲（注意：编辑会把 .note-text 换成 textarea，has_text 定位随之失效，
-        # 因此编辑后改用 #notes-list 下的新鲜定位器）
-        item_a = page.locator(".note-item", has_text="走查测试笔记甲")
-        item_a.locator("button", has_text="编辑").click()
-        page.wait_for_timeout(300)
-        check("编辑模式出现 textarea",
-              page.locator("#notes-list .note-item textarea").count() >= 1)
-        page.locator("#notes-list .note-item textarea").first.fill(
-            "走查测试笔记甲（已编辑）")
-        page.locator("#notes-list .note-item .note-edit-row button",
-                     has_text="保存").click()
-        page.wait_for_timeout(800)
-        check("笔记编辑生效", "已编辑" in page.locator("#notes-list").text_content())
-        # 类型筛选
-        page.locator("#notes-filter-kind").select_option("insight")
-        page.wait_for_timeout(600)
-        check("类型筛选生效", page.locator(".note-item").count() >= 2)
-        page.locator("#notes-filter-kind").select_option("")
         page.wait_for_timeout(400)
-        # 合并（甲 ← 乙）
-        page.locator("#notes-merge-btn").click()
-        page.wait_for_timeout(600)
-        cbs = page.locator(".note-item", has_text="走查测试笔记").locator(".note-merge-cb")
-        check("合并模式出现勾选框", cbs.count() >= 2)
-        cbs.nth(0).check()
-        cbs.nth(1).check()
-        page.once("dialog", lambda d: d.accept())
-        page.locator("#notes-merge-btn").click()
+        page.locator("#attach-picker select").first.select_option("insight")
+        page.locator("#attach-picker button", has_text="创建并编辑").click()
         page.wait_for_timeout(1000)
-        check("合并产生已合并标记", page.locator(".note-chip.merged").count() >= 1)
-        # 销账（保留条无 concept → evidence=False，不写学习者模型）
+        check("新建后进编辑器", page.locator("#notes-editor").is_visible())
+        # 工具条插标题 + 预览联动
+        page.locator("#ne-text").fill("走查测试笔记")
+        page.locator("#ne-toolbar button[data-md='h1']").click()
+        page.wait_for_timeout(300)
+        check("工具条插入标题",
+              page.locator("#ne-text").input_value().startswith("# "))
+        page.wait_for_timeout(500)
+        check("预览渲染 h1", page.locator("#ne-preview h1").count() >= 1)
+        # mermaid 模板 → 预览 SVG
+        page.locator("#ne-toolbar button[data-md='mermaid']").click()
+        page.wait_for_timeout(1500)
+        check("预览渲染 mermaid", page.locator("#ne-preview svg").count() >= 1)
+        # 保存 → 卡片出现
+        page.locator("#ne-save").click()
+        page.wait_for_timeout(800)
+        check("笔记卡片出现",
+              page.locator(".note-card", has_text="走查测试笔记").count() >= 1)
+        # 搜索过滤
+        page.fill("#notes-search", "不存在的内容xyz")
+        page.wait_for_timeout(400)
+        check("搜索空结果", page.locator(".note-card").count() == 0)
+        page.fill("#notes-search", "")
+        page.wait_for_timeout(400)
+        # 编辑保存 → 卡片标题更新
+        page.locator(".note-card", has_text="走查测试笔记").first.click()
+        page.wait_for_timeout(400)
+        page.locator("#ne-text").fill("# 走查测试笔记（已编辑）\n\n正文")
+        page.locator("#ne-save").click()
+        page.wait_for_timeout(800)
+        check("编辑保存生效", "已编辑" in page.locator("#notes-list").text_content())
+        # 销账（无 concept → evidence=False，不写学习者模型）
         page.once("dialog", lambda d: d.accept())
-        page.locator(".note-item", has_text="走查测试笔记甲").locator(
-            "button", has_text="标记解决").click()
+        page.locator("#ne-resolve").click()
         page.wait_for_timeout(1000)
-        check("销账后状态已解决", page.locator(".note-chip.done").count() >= 1)
+        check("销账后已解决态",
+              page.locator(".note-card.resolved", has_text="走查测试").count() >= 1)
         r = page.request.post(BASE + "/api/notes/distill", data={})
         check("蒸馏 API 正常", r.status == 200 and "added" in r.json())
         # 清理：只删走查自建笔记
