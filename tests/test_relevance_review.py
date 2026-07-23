@@ -95,6 +95,17 @@ class TestRelevanceReview(unittest.TestCase):
         self.assertNotIn("弱项7", step1)
         self.assertNotIn("弱项6", step1)
 
+    def test_start_day_clears_prereq_fields(self):
+        """矩阵：start_day 新开始清诊断残留字段（与清面试字段对称）。"""
+        session = self.deps.session_store.load()
+        session.prereq_targets = [{"cid": "Day1-A", "title": "x",
+                                   "question": "y"}]
+        session.prereq_retry = 1
+        self.deps.session_store.save(session)
+        StartDayHandler().run(self.deps, session, "重新开始今日学习")
+        self.assertEqual(session.prereq_targets, [])
+        self.assertEqual(session.prereq_retry, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

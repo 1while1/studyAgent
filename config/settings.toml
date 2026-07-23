@@ -48,6 +48,8 @@ sync_mastered = 0.10
 sync_stuck = -0.10
 note_distilled = 0.05
 mark_wrong = -0.05
+prereq_pass = 0.40        # M7 先修诊断通过：置初始 mastery（爬升档，不超达标线 0.7）
+prereq_fail = -0.10       # M7 先修诊断未通过
 
 # 上下文三层控制（M5b）：窗口预算/压缩触发/钉住/归档
 [context]
@@ -166,6 +168,10 @@ sop_card = ""
 
 [commands."模拟面试"]
 handler = "interview"
+sop_card = ""
+
+[commands."先修诊断"]
+handler = "prereq"
 sop_card = ""
 
 [commands."开始今日复盘"]

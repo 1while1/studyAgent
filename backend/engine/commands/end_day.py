@@ -26,6 +26,8 @@ class EndDayHandler(CommandHandler):
             return "今日还没 [开始今日学习]，无内容可结束。"
         if session.day_phase == DayPhase.INTERVIEW.value:
             return "模拟面试进行中，请先完成本场面试再结束今日学习。"
+        if session.day_phase == DayPhase.PREREQ.value:
+            return "先修诊断进行中，请先完成本场诊断再结束今日学习。"
         state = deps.state_store.load()
         day = state["current_day"]
         if not deps.memory.exists(day):
