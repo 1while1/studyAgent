@@ -299,13 +299,24 @@
     <div class="drawer-body">
       <div id="mastery-tactical">
         <div id="learner-migrate" class="hidden"></div>
-        <div id="mastery-expl">
-          掌握度 = 证据按时间衰减的加权和（半衰期 14 天）；△=缺构建验证封顶 0.6；⏰=已到复习窗口
-        </div>
-        <div id="mastery-stats">
-          <div class="stat-card"><div class="stat-num" id="stat-avg">-</div><div class="stat-label">平均掌握度</div></div>
-          <div class="stat-card weak"><div class="stat-num" id="stat-weak">-</div><div class="stat-label">薄弱知识点（&lt;0.4）</div></div>
-          <div class="stat-card due"><div class="stat-num" id="stat-due">-</div><div class="stat-label">待复习（已到期）</div></div>
+        <div id="tac-top">
+          <div class="tac-counter weak">
+            <span class="tac-num" id="stat-weak">-</span>
+            <span class="tac-label">紧急薄弱项</span>
+          </div>
+          <div class="tac-counter due">
+            <span class="tac-num" id="stat-due">-</span>
+            <span class="tac-label">待复习项</span>
+          </div>
+          <button id="algo-info-btn" title="掌握度算法说明"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5v.5"/></svg></button>
+          <div id="algo-pop" class="hidden">
+            <div class="algo-title">掌握度怎么算的？</div>
+            每次考核 / [同步] / 构建验证 / 笔记销账都会沉淀一条带权证据（如考核达标 +0.10、卡壳 -0.10），掌握度 = 全部证据按时间衰减后的加权和（半衰期 14 天，近期行为权重更高），范围 0~1。
+            <div class="algo-legend">
+              <span class="lg low"></span>&lt;0.4 薄弱　<span class="lg mid"></span>&lt;0.7 爬升　<span class="lg high"></span>≥0.7 达标<br>
+              ≤0.6 = 缺构建验证通过记录封顶　⏰ = 已到复习窗口
+            </div>
+          </div>
         </div>
         <section class="m-section" id="ms-urgent">
           <div class="m-sec-head">
@@ -330,18 +341,25 @@
         </section>
       </div>
       <div id="mastery-radar" class="hidden">
-        <div class="radar-block">
-          <div class="radar-head">掌握度分布</div>
-          <div id="radar-bands"></div>
-        </div>
-        <div class="radar-block">
-          <div class="radar-head">学习活动（证据产出）</div>
-          <div id="radar-heat"></div>
-          <div class="radar-foot">颜色越深 = 当天产出证据越多（近 12 周）</div>
-        </div>
-        <div class="radar-block">
-          <div class="radar-head">知识点拓扑（先修链）</div>
-          <div id="radar-topo" class="markdown-body"></div>
+        <div class="radar-cols">
+          <div class="radar-left">
+            <div class="radar-block">
+              <div class="radar-head">掌握度分布</div>
+              <div id="radar-donut"></div>
+              <div id="radar-legend"></div>
+            </div>
+            <div class="radar-block">
+              <div class="radar-head">学习活动</div>
+              <div id="radar-heat"></div>
+              <div class="radar-foot">近 12 周证据产出，颜色越深越多</div>
+            </div>
+          </div>
+          <div class="radar-right">
+            <div class="radar-block tl-block">
+              <div class="radar-head">课程地图（先修链 · 点击节点跳转战术板）</div>
+              <div id="radar-timeline"></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

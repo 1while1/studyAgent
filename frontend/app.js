@@ -1404,10 +1404,6 @@ async function openLearner(expandCid) {
 
   // 统计卡
   const concepts = model.concepts || [];
-  const withEv = concepts.filter(c => c.evidence.length);
-  const avg = withEv.length ? withEv.reduce((s, c) => s + c.mastery, 0) / withEv.length : 0;
-  document.getElementById("stat-avg").textContent =
-    withEv.length ? (avg * 100).toFixed(1) + "%" : "—";
   document.getElementById("stat-weak").textContent =
     concepts.filter(c => c.evidence.length && c.mastery < 0.4).length;
   document.getElementById("stat-due").textContent =
@@ -1487,20 +1483,16 @@ function masteryRow(c) {
   row.dataset.cid = c.id;
   const top = document.createElement("div");
   top.className = "mr-top";
+  // 行首：Day 标签 + 状态标记；行尾：仅百分比
   const dayTag = document.createElement("span");
   dayTag.className = "mr-day";
   dayTag.textContent = "Day" + ((c.id.match(/^Day(\d+)-/) || [0, "?"])[1]);
   top.appendChild(dayTag);
-  const title = document.createElement("span");
-  title.className = "mr-title";
-  title.textContent = c.title || c.id;
-  title.title = `${c.id} ${c.title}`;
-  top.appendChild(title);
   if (c.capped) {
     const b = document.createElement("span");
-    b.className = "mr-badge";
-    b.textContent = "△";
-    b.title = "缺构建验证，封顶 0.6";
+    b.className = "mr-cap";
+    b.textContent = "≤0.6";
+    b.title = "缺构建验证通过记录，封顶 0.6";
     top.appendChild(b);
   }
   if (c.due) {
@@ -1510,17 +1502,21 @@ function masteryRow(c) {
     b.title = "已到复习窗口";
     top.appendChild(b);
   }
+  const title = document.createElement("span");
+  title.className = "mr-title";
+  title.textContent = c.title || c.id;
+  title.title = `${c.id} ${c.title}`;
+  top.appendChild(title);
   const pct = document.createElement("span");
   pct.className = "mr-pct";
   pct.textContent = c.evidence.length ? (c.mastery * 100).toFixed(0) + "%" : "无证据";
   top.appendChild(pct);
-  const barWrap = document.createElement("div");
-  barWrap.className = "mr-bar";
-  const fill = document.createElement("div");
-  fill.className = "mr-fill " + band;
-  fill.style.width = Math.round(c.mastery * 100) + "%";
-  barWrap.appendChild(fill);
-  row.append(top, barWrap);
+  row.appendChild(top);
+  // 底部极细进度线（不占独立行高）
+  const hair = document.createElement("div");
+  hair.className = "mr-hair " + band;
+  hair.style.width = Math.round(c.mastery * 100) + "%";
+  row.appendChild(hair);
   row.onclick = () => toggleMasteryDetail(row, c);
   return row;
 }
@@ -1553,10 +1549,7 @@ function masteryAdvice(c) {
 function showConceptDetail(c, detail) {
   detail.innerHTML = "";
   const band = masteryBand(c);
-  const h = document.createElement("h3");
-  h.textContent = `${c.id}：${c.title}`;
-  detail.appendChild(h);
-  // 分数行
+  // 分数行（标题在行上已有，详情不再重复）
   const scoreLine = document.createElement("div");
   scoreLine.className = "md-score";
   const big = document.createElement("span");
@@ -1566,8 +1559,8 @@ function showConceptDetail(c, detail) {
   const expl = document.createElement("span");
   expl.className = "md-expl";
   expl.textContent = c.capped
-    ? `未封顶值 ${(c.uncapped * 100).toFixed(1)}%，因缺少构建验证通过记录，按规则封顶 60%`
-    : c.evidence.length ? "由下列证据按时间衰减加权得出" : "尚无学习证据";
+    ? `未封顶值 ${(c.uncapped * 100).toFixed(1)}%，缺构建验证通过记录，按规则封顶 60%`
+    : c.evidence.length ? "由证据按时间衰减加权得出" : "尚无学习证据";
   scoreLine.appendChild(expl);
   detail.appendChild(scoreLine);
   // 建议行动卡
@@ -1575,57 +1568,82 @@ function showConceptDetail(c, detail) {
   advice.className = "md-advice";
   advice.textContent = masteryAdvice(c);
   detail.appendChild(advice);
-  // 先修 / 资料
+  // 行动按钮：看完建议直接行动
+  const actions = document.createElement("div");
+  actions.className = "md-actions";
+  const reteach = document.createElement("button");
+  reteach.className = "md-act-btn primary";
+  reteach.textContent = "👉 丢给 AI 重新讲";
+  reteach.onclick = () => {
+    const input = document.getElementById("input");
+    input.value = `再讲讲 ${c.title || c.id}`;
+    masteryPage.classList.add("hidden");
+    input.focus();
+    input.dispatchEvent(new Event("input"));
+  };
+  actions.appendChild(reteach);
+  if ((c.materials || []).length) {
+    const mat = document.createElement("button");
+    mat.className = "md-act-btn";
+    mat.textContent = "📖 查看关联资料";
+    mat.onclick = () => openMaterialDirect(c.materials[0]);
+    actions.appendChild(mat);
+  }
+  detail.appendChild(actions);
+  // 先修链（小字）
   if (c.prerequisites.length) {
     const p = document.createElement("div");
     p.className = "learner-meta";
     p.textContent = `先修：${c.prerequisites.join("、")}`;
     detail.appendChild(p);
   }
-  if (c.materials.length) {
-    const p = document.createElement("div");
-    p.className = "learner-meta";
-    p.textContent = `关联资料：${c.materials.join("、")}`;
-    detail.appendChild(p);
-  }
-  // 证据构成
-  const evh = document.createElement("div");
-  evh.className = "md-ev-head";
-  evh.textContent = `证据构成（${c.evidence.length} 条）`;
-  detail.appendChild(evh);
+  // 证据明细：默认折叠，质疑分数时才展开
+  const det = document.createElement("details");
+  det.className = "md-ev";
+  const sum = document.createElement("summary");
+  sum.textContent = `查看评估明细（${c.evidence.length} 条）`;
+  det.appendChild(sum);
   if (!c.evidence.length) {
     const p = document.createElement("div");
     p.className = "learner-meta";
     p.textContent = "完成该单元的考核问答后，这里会出现第一条证据。";
-    detail.appendChild(p);
-    return;
+    det.appendChild(p);
+  } else {
+    const table = document.createElement("table");
+    table.className = "ev-table";
+    table.innerHTML = "<thead><tr><th>行为</th><th>Δ 权重</th><th>日期</th><th>来源</th></tr></thead>";
+    const tb = document.createElement("tbody");
+    for (const ev of [...c.evidence].reverse()) {
+      const tr = document.createElement("tr");
+      const t = document.createElement("td");
+      t.textContent = EV_TYPE_NAMES[ev.type] || ev.type;
+      const d = document.createElement("td");
+      d.textContent = (ev.delta > 0 ? "+" : "") + ev.delta;
+      d.className = ev.delta >= 0 ? "delta-pos" : "delta-neg";
+      const ts = document.createElement("td");
+      ts.textContent = ev.ts;
+      const src = document.createElement("td");
+      src.textContent = ev.source_ref;
+      src.className = "ev-src";
+      src.title = ev.source_ref;
+      tr.append(t, d, ts, src);
+      tb.appendChild(tr);
+    }
+    table.appendChild(tb);
+    det.appendChild(table);
+    const decay = document.createElement("div");
+    decay.className = "md-decay";
+    decay.textContent = "证据随时间衰减：半衰期 14 天（14 天前的证据权重减半）。保持复习与实战，掌握度才不会回落。";
+    det.appendChild(decay);
   }
-  const table = document.createElement("table");
-  table.className = "ev-table";
-  table.innerHTML = "<thead><tr><th>行为</th><th>Δ 权重</th><th>日期</th><th>来源</th></tr></thead>";
-  const tb = document.createElement("tbody");
-  for (const ev of [...c.evidence].reverse()) {
-    const tr = document.createElement("tr");
-    const t = document.createElement("td");
-    t.textContent = EV_TYPE_NAMES[ev.type] || ev.type;
-    const d = document.createElement("td");
-    d.textContent = (ev.delta > 0 ? "+" : "") + ev.delta;
-    d.className = ev.delta >= 0 ? "delta-pos" : "delta-neg";
-    const ts = document.createElement("td");
-    ts.textContent = ev.ts;
-    const src = document.createElement("td");
-    src.textContent = ev.source_ref;
-    src.className = "ev-src";
-    src.title = ev.source_ref;
-    tr.append(t, d, ts, src);
-    tb.appendChild(tr);
-  }
-  table.appendChild(tb);
-  detail.appendChild(table);
-  const decay = document.createElement("div");
-  decay.className = "md-decay";
-  decay.textContent = "证据随时间衰减：半衰期 14 天（14 天前的证据权重减半）。保持复习与实战，掌握度才不会回落。";
-  detail.appendChild(decay);
+  detail.appendChild(det);
+}
+
+// 关联资料直达（先开资料库再进预览，避免与列表渲染竞态）
+async function openMaterialDirect(id) {
+  masteryPage.classList.add("hidden");
+  await openMaterials();
+  openMaterialPreview(id);
 }
 
 // ---- 抽屉 tab 与「其余知识点」折叠 ----
@@ -1647,46 +1665,71 @@ document.getElementById("ms-rest-toggle").onclick = () => {
     "open", !body.classList.contains("hidden"));
 };
 
-// ---- 战略雷达：掌握度分布 / 活动热力 / 先修拓扑（全部前端渲染现有数据） ----
+// ---- 战略雷达：Donut 分布 / 活动热力 / 课程时间轴（全部前端渲染现有数据） ----
 
 async function renderRadar() {
   const model = _masteryModel || await (await fetch("/api/learner/model")).json();
   _masteryModel = model;
   const concepts = model.concepts || [];
-  renderRadarBands(concepts);
+  renderRadarDonut(concepts);
   renderRadarHeat(concepts);
-  renderRadarTopo(concepts);
+  renderRadarTimeline(model);
 }
 
-function renderRadarBands(concepts) {
-  const box = document.getElementById("radar-bands");
-  box.innerHTML = "";
-  const bands = [
-    ["low", "薄弱（<0.4）", c => c.evidence.length && c.mastery < 0.4],
-    ["mid", "爬升（0.4~0.7）", c => c.evidence.length && c.mastery >= 0.4 && c.mastery < 0.7],
-    ["high", "达标（≥0.7）", c => c.evidence.length && c.mastery >= 0.7],
-    ["none", "无证据", c => !c.evidence.length],
-  ];
-  const total = Math.max(concepts.length, 1);
-  for (const [cls, label, pred] of bands) {
-    const n = concepts.filter(pred).length;
+function _bandOf(c) {
+  return !c.evidence.length ? "none"
+    : c.mastery < 0.4 ? "low" : c.mastery < 0.7 ? "mid" : "high";
+}
+
+const RADAR_BANDS = [
+  ["low", "#e5534b", "薄弱（<0.4）"],
+  ["mid", "#e3b341", "爬升（0.4~0.7）"],
+  ["high", "#57ab5a", "达标（≥0.7）"],
+  ["none", "#8b949e", "无证据"],
+];
+
+function renderRadarDonut(concepts) {
+  const counts = RADAR_BANDS.map(([cls]) =>
+    concepts.filter(c => _bandOf(c) === cls).length);
+  const total = concepts.length;
+  const withEv = concepts.filter(c => c.evidence.length);
+  const avg = withEv.length
+    ? withEv.reduce((s, c) => s + c.mastery, 0) / withEv.length : 0;
+  const R = 62, CIRC = 2 * Math.PI * R;
+  let acc = 0;
+  const segs = [];
+  RADAR_BANDS.forEach(([cls, color], i) => {
+    const len = total ? counts[i] / total * CIRC : 0;
+    if (len > 0) {
+      segs.push(`<circle cx="80" cy="80" r="${R}" fill="none" stroke="${color}" stroke-width="16" stroke-dasharray="${len.toFixed(1)} ${(CIRC - len).toFixed(1)}" stroke-dashoffset="${(-acc).toFixed(1)}" transform="rotate(-90 80 80)"/>`);
+    }
+    acc += len;
+  });
+  document.getElementById("radar-donut").innerHTML =
+    `<svg viewBox="0 0 160 160" class="donut">` +
+    `<circle cx="80" cy="80" r="${R}" fill="none" stroke="var(--inline-code-bg)" stroke-width="16"/>` +
+    segs.join("") +
+    `<text x="80" y="74" text-anchor="middle" class="donut-num">${total}</text>` +
+    `<text x="80" y="92" text-anchor="middle" class="donut-sub">知识点</text>` +
+    `<text x="80" y="110" text-anchor="middle" class="donut-avg">平均 ${withEv.length ? (avg * 100).toFixed(1) + "%" : "—"}</text>` +
+    `</svg>`;
+  const legend = document.getElementById("radar-legend");
+  legend.innerHTML = "";
+  RADAR_BANDS.forEach(([cls, color, label], i) => {
     const row = document.createElement("div");
-    row.className = "rb-row";
+    row.className = "rl-row";
+    const dot = document.createElement("span");
+    dot.className = "rl-dot";
+    dot.style.background = color;
     const lb = document.createElement("span");
-    lb.className = "rb-label";
+    lb.className = "rl-label";
     lb.textContent = label;
-    const bar = document.createElement("span");
-    bar.className = "rb-bar";
-    const fill = document.createElement("span");
-    fill.className = "rb-fill " + cls;
-    fill.style.width = Math.round(n / total * 100) + "%";
-    bar.appendChild(fill);
     const num = document.createElement("span");
-    num.className = "rb-num";
-    num.textContent = n;
-    row.append(lb, bar, num);
-    box.appendChild(row);
-  }
+    num.className = "rl-num";
+    num.textContent = counts[i];
+    row.append(dot, lb, num);
+    legend.appendChild(row);
+  });
 }
 
 function _localIso(d) {
@@ -1718,31 +1761,71 @@ function renderRadarHeat(concepts) {
   box.appendChild(grid);
 }
 
-function renderRadarTopo(concepts) {
-  const box = document.getElementById("radar-topo");
+// 课程地图：垂直时间轴（先修链是线性数据，竖排全标题可读，节点可点击跳转）
+function renderRadarTimeline(model) {
+  const box = document.getElementById("radar-timeline");
   box.innerHTML = "";
+  const concepts = model.concepts || [];
   if (!concepts.length) {
     box.textContent = "（暂无知识点）";
     return;
   }
-  const nid = (cid) => "c_" + cid.replace(/[^A-Za-z0-9]/g, "_");
-  const short = (t) => (t || "").replace(/"/g, "'").slice(0, 8);
-  const bandOf = (c) => !c.evidence.length ? "none"
-    : c.mastery < 0.4 ? "low" : c.mastery < 0.7 ? "mid" : "high";
-  const lines = [
-    "flowchart LR",
-    "  classDef low fill:#e5534b,color:#fff,stroke:none;",
-    "  classDef mid fill:#e3b341,color:#3d2e00,stroke:none;",
-    "  classDef high fill:#57ab5a,color:#fff,stroke:none;",
-    "  classDef none fill:#8b949e,color:#fff,stroke:none;",
-  ];
-  for (const c of concepts)
-    lines.push(`  ${nid(c.id)}["${c.id} ${short(c.title)}"]:::${bandOf(c)}`);
-  for (const c of concepts)
-    for (const p of c.prerequisites || [])
-      lines.push(`  ${nid(p)} --> ${nid(c.id)}`);
-  renderMarkdownInto(box, "```mermaid\n" + lines.join("\n") + "\n```", true);
+  const curDay = String(model.current_day);
+  const byDay = new Map();
+  for (const c of concepts) {
+    const day = (c.id.match(/^Day(\d+)-/) || [0, "?"])[1];
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(c);
+  }
+  let currentRow = null;
+  for (const [day, items] of [...byDay.entries()].sort((a, b) => a[0] - b[0])) {
+    const dh = document.createElement("div");
+    dh.className = "tl-day" + (String(day) === curDay ? " current" : "");
+    dh.textContent = `Day ${day}`;
+    box.appendChild(dh);
+    for (const c of items) {
+      const band = _bandOf(c);
+      const row = document.createElement("button");
+      row.className = "tl-row" + (String(day) === curDay ? " current" : "");
+      row.dataset.cid = c.id;
+      const dot = document.createElement("span");
+      dot.className = "tl-dot " + band;
+      const main = document.createElement("span");
+      main.className = "tl-main";
+      const t = document.createElement("span");
+      t.className = "tl-title";
+      t.textContent = c.title || c.id;
+      const cid = document.createElement("span");
+      cid.className = "tl-cid";
+      cid.textContent = c.id;
+      main.append(t, cid);
+      const pct = document.createElement("span");
+      pct.className = "tl-pct " + band;
+      pct.textContent = c.evidence.length ? (c.mastery * 100).toFixed(0) + "%" : "—";
+      row.append(dot, main, pct);
+      row.onclick = () => {
+        document.querySelector(".drawer-tab[data-mtab='tactical']").click();
+        openLearner(c.id);
+      };
+      box.appendChild(row);
+      if (String(day) === curDay && !currentRow) currentRow = row;
+    }
+  }
+  if (currentRow) setTimeout(() => currentRow.scrollIntoView({ block: "center" }), 60);
 }
+
+// 算法说明弹层
+document.getElementById("algo-info-btn").onclick = (e) => {
+  e.stopPropagation();
+  document.getElementById("algo-pop").classList.toggle("hidden");
+};
+document.addEventListener("click", (e) => {
+  const pop = document.getElementById("algo-pop");
+  if (!pop.classList.contains("hidden") && !pop.contains(e.target)
+      && e.target.id !== "algo-info-btn" && !document.getElementById("algo-info-btn").contains(e.target)) {
+    pop.classList.add("hidden");
+  }
+});
 
 // ---- 侧栏复习预警 widget（伴随式暴露跨周期紧急项） ----
 
