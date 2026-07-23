@@ -78,6 +78,7 @@ class ChatOrchestrator:
                 except Exception:
                     pass  # 学习者模型写入失败不阻断复盘流程
                 session.day_phase = DayPhase.STUDYING.value
+                session.pending_qa_capture = True  # M4：触发拷打反喂话术（chat 路由执行）
                 extra.append(f"复盘评分已落盘：{score} 分。")
 
         elif stage == "quiz_r1":

@@ -149,6 +149,15 @@ def chat(body: TextIn):
             extras = []
         for extra in extras:
             yield sse({"type": "message", "content": extra})
+        # M4 拷打反喂：复盘评分落盘后从拷问转录提炼话术（一次非流式调用，失败静默）
+        if getattr(session, "pending_qa_capture", False):
+            session.pending_qa_capture = False
+            try:
+                from ..engine.qa_capture import run_capture
+                for msg in run_capture(deps, session):
+                    yield sse({"type": "message", "content": msg})
+            except Exception:
+                pass
         deps.session_store.save(session)
         yield sse({"type": "done"})
 
@@ -483,6 +492,156 @@ def learner_migrate_preview():
 @router.post("/api/learner/migrate/apply")
 def learner_migrate_apply():
     return LearnerService(_deps.config).migrate_apply()
+
+
+# ---------- 笔记（M4 条目层） ----------
+
+from ..services.notes_service import NotesService
+
+
+def _notes() -> NotesService:
+    return NotesService(_deps.config)
+
+
+def _current_day() -> int | None:
+    try:
+        return int(_deps.state_store.load().get("current_day", 0)) or None
+    except Exception:
+        return None
+
+
+@router.get("/api/notes")
+def notes_list(status: str = "", kind: str = ""):
+    svc = _notes()
+    return {"ok": True,
+            "notes": svc.list(status=status or None, kind=kind or None),
+            "counts": svc.counts()}
+
+
+@router.post("/api/notes/add")
+def notes_add(body: dict):
+    body = body or {}
+    try:
+        note = _notes().add(
+            body.get("kind", "insight"), body.get("text", ""),
+            concept_id=body.get("concept_id", "") or "",
+            day=_current_day(), validator=_deps.validator())
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    if note is None:
+        return {"ok": False, "error": "内容为空"}
+    return {"ok": True, "note": note}
+
+
+@router.post("/api/notes/update")
+def notes_update(body: dict):
+    body = body or {}
+    try:
+        note = _notes().update(body.get("id", ""), text=body.get("text"),
+                               concept_id=body.get("concept_id"),
+                               validator=_deps.validator())
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+    if note is None:
+        return {"ok": False, "error": "笔记不存在"}
+    return {"ok": True, "note": note}
+
+
+@router.post("/api/notes/resolve")
+def notes_resolve(body: dict):
+    """销账（M4 单一代码路径）：notes resolved + note_distilled 证据（幂等）。"""
+    from ..engine.note_actions import resolve_note
+    try:
+        return resolve_note(_deps.config, _deps.state_store,
+                            (body or {}).get("id", ""),
+                            validator=_deps.validator())
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+
+
+@router.post("/api/notes/merge")
+def notes_merge(body: dict):
+    body = body or {}
+    keep = _notes().merge(body.get("keep", ""), body.get("others") or [],
+                          validator=_deps.validator())
+    if keep is None:
+        return {"ok": False, "error": "保留条目不存在"}
+    return {"ok": True, "note": keep}
+
+
+@router.post("/api/notes/delete")
+def notes_delete(body: dict):
+    try:
+        ok = _notes().delete((body or {}).get("id", ""),
+                             validator=_deps.validator())
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+    return {"ok": ok}
+
+
+@router.post("/api/notes/distill")
+def notes_distill(body: dict):
+    """日志蒸馏：StudyMemory 各天 [同步] 卡壳/疑问行 → 条目层（去重幂等）。"""
+    deps = _deps
+    body = body or {}
+    if body.get("day"):
+        days = [int(body["day"])]
+    elif deps.state_store.exists():
+        days = [int(k) for k in deps.state_store.load().get("days", {})]
+    else:
+        days = []
+    svc = _notes()
+    added = 0
+    for d in days:
+        if deps.memory.exists(d):
+            try:
+                added += svc.distill_from_text(d, deps.memory.read(d),
+                                               validator=deps.validator())
+            except Exception:
+                pass
+    return {"ok": True, "added": added}
+
+
+# ---------- 面试话术（M4 话术层） ----------
+
+from ..services.qa_service import QaService
+
+
+def _qa() -> QaService:
+    return QaService(_deps.config)
+
+
+@router.get("/api/qa/entries")
+def qa_entries():
+    try:
+        return {"ok": True, "entries": _qa().entries()}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200], "entries": []}
+
+
+@router.post("/api/qa/update")
+def qa_update(body: dict):
+    body = body or {}
+    fields = {k: body.get(k) for k in
+              ("title", "tags", "code_ref", "brief", "detail", "followups")}
+    try:
+        entry = _qa().update_entry(body.get("id", ""),
+                                   validator=_deps.validator(), **fields)
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+    if entry is None:
+        return {"ok": False, "error": "话术条目不存在"}
+    return {"ok": True, "entry": entry}
+
+
+@router.post("/api/qa/delete")
+def qa_delete(body: dict):
+    try:
+        ok = _qa().delete_entry((body or {}).get("id", ""),
+                                validator=_deps.validator())
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+    return {"ok": ok}
 
 
 # ---------- 学习资料库 ----------

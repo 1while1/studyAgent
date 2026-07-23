@@ -1,7 +1,7 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-23（**M3 学习者模型交付**：concepts 注册 + 三张硬表 + 三路证据写入 + 迁移 + 掌握度热力图；167 单测/61 走查全绿）
+> 最近更新：2026-07-23（**M4 笔记管理交付**：四层笔记体系 + 整理动作 + 📝 笔记页 + 话术层收编 InterviewQA + 🎙 拷打反喂；210 单测/73 走查全绿）
 
 ## 当前运行状态
 
@@ -11,12 +11,23 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 167 个全绿；UI 走查 61 项全绿
+- 测试：`python -m unittest discover -s tests` → 210 个全绿；UI 走查 73 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步
 
-v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 `docs/AgentDesign.md` v3 封板版为准：M1 资料库 ✅ → M2 可观测 ✅ → M3 学习者模型 ✅（2026-07-23 交付）→ **下一步 = M4 笔记管理**（四层 + 整理动作 + 笔记页 + 话术层收编 InterviewQA）。
+v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 `docs/AgentDesign.md` v3 封板版为准：M1 资料库 ✅ → M2 可观测 ✅ → M3 学习者模型 ✅ → M4 笔记管理 ✅（2026-07-23 交付）→ **下一步 = M5a 工具骨架**（tool_registry + 权限分级 + 现有服务工具化包装 + turn_engine 接口抽出，纯重构）。
+
+## M4 笔记管理（2026-07-23 交付）
+
+- **四层体系**（AgentDesign §6）：日志层=StudyMemory（保留 append-only）/ 条目层=`notes.json` / 话术层=InterviewQA.md（收编）/ 蒸馏层=learner_model evidence
+- **NotesService**（`services/notes_service.py`，不进 Deps）：CRUD + 状态/类型筛选 + `merge`（多条并一条，残骸 `merged_into` 不写证据）+ `distill_from_text`（StudyMemory 卡壳/疑问行 → 条目，剥「（待解答）」后缀，同 kind 文本相等或互为子串去重）。条目 schema 扩展可选字段（created_day/resolved_day/merged_into），kind 枚举收紧为 stuck/question/mastered/insight
+- **条目自动进层**：[同步] 已掌握/卡壳/疑问除写日志外同步 `NotesService.add`（source_ref 带内容 sha1[:6] 幂等；有 current_unit 自动挂接 concept，无则 needs_review 待人工）
+- **卡壳销账单一路径**（`engine/note_actions.resolve_note`）：笔记页按钮与未来 AI resolve_note 工具同走——条目 resolved + `note_distilled` 证据（+0.05，source_ref=`note:{id}` 幂等，重复销账不重复加）；未挂接 concept/合并残骸不写证据
+- **QaService**（`services/qa_service.py`）：InterviewQA.md parse/render round-trip（`## 标题`+`**产出来源**：` 识别条目；「问题模板」「已累积话术」保留小节与内容里的加粗行均不误切）；add_entry 首次追加剥离骨架占位行（`（待产生）`/`（学习开始后自动累积）`）；`validate_capture` 机械校验（5 字段齐 + 追问 ≥3 组）
+- **🎙 拷打反喂**（`engine/qa_capture.py`）：复盘评分落盘 → `session.pending_qa_capture` → chat 路由执行 `run_capture`——转录切片（`session.review_msg_start`，day_review 落点）→ `resources/prompts/qa_capture.md` → 一次非流式 LLM 调用 → 机械校验（失败带原因重试一次）→ **产出来源行服务端强制覆写 `Day N 复盘拷打`**（end_day 统计契约）→ 同名标题跳过。`qa_capture_enabled/qa_capture_max_entries` 可配；任何异常静默不阻断复盘
+- **📝 笔记页**：顶栏 📝 → 筛选/新建/就地编辑/删除/合并模式/⇩ 从日志蒸馏/⚠待挂接条目 concept 下拉挂接；**话术 tab 收编**：学习资料弹窗「面试话术库」升级为卡片视图（30s 直显 / 2min 与追问预案 `<details>` 折叠 / 就地编辑 / 删除）+ 原文切换
+- **validate_study.py 还 M3 债**：`check_json_schemas`——concepts/learner_model/notes 三文件**存在才校验**（schema_version=1 + 结构形状 + notes 枚举/id 唯一）
 
 ## M3 学习者模型（2026-07-23 交付）
 
@@ -77,6 +88,7 @@ v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 
 | **资料库（M1）** | `materials_dir` 扫描注册（txt/md/docx/pdf）→ 解析索引缓存；**备课确定性预取**（讲解回合按单元文档引用 transient 注入教材节选，📚 chip）；`[READ_DOC:资料id#章节]` 与 READ 同管线同限流（📄 chip）；资料库弹窗（清单/预览/重扫/注册） |
 | **可观测性（M2）** | agent.log 全量 LLM/工具记账（ObservedLLM 逐渠道包裹）；token 三层统计（usage→tiktoken→公式）+ 滑动校准；顶栏状态 pill；📊 用量页；**访问密码门**（bcrypt@.env + 签名 cookie + 限速 + 开放模式默认） |
 | **学习者模型（M3）** | concepts 注册（确定性先修链）+ evidence 三路写入（考核/同步/构建）+ mastery 衰减实时计算（无构建验证封顶 0.6）；🧠 掌握度热力图（着色/△/⏰ + 证据明细）；旧评分一键迁移（草稿人审），卡壳疑问转 notes 开放条目 |
+| **笔记管理（M4）** | 四层体系（日志/条目/话术/蒸馏）；[同步] 自动产笔记条目；📝 笔记页（筛选/编辑/合并/蒸馏/挂接/销账）；销账单一路径 note_distilled 证据幂等；话术库卡片化收编；🎙 复盘拷打自动反喂 InterviewQA（机械校验+来源行服务端覆写） |
 | Mermaid 图 | vendor mermaid@11；```mermaid 块终渲染为 SVG（流式中不渲染）；主题随布局 pair=dark/tutor=default；`securityLevel: strict`；渲染失败回退代码块 |
 | 模型配置页 | 主/备渠道、模型/URL/Key（掩码）、测试连接、保存热生效 |
 
@@ -124,6 +136,8 @@ v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 
 | M2 聊天全挂（"LLM 调用失败：<Token var=..."） | task_scope 用 `_task_var.reset(token)` 恢复——SSE 生成器在 anyio 线程池跨上下文关闭时 reset 校验 context 抛 RuntimeError | 恢复旧值改用 `set(old)`（set 不校验 context）；回归测试补齐 |
 | M2 测试日志互串（47 条记录混进单测） | runtime 路径取 `settings.parent.parent`，临时 settings 落在共享 Temp 目录，所有测试共写一份 agent.log | `config_service.runtime_dir()`：settings 在 config/ 下才取上级根，否则取同级 runtime 隔离 |
 | 走查 strict mode 撞 id（#llm-status ×2） | 新增状态 pill 复用了模型配置弹窗已有的 `#llm-status` id | pill 改名 `#llm-pill`；modal 原引用还原 |
+| M4 走查笔记「编辑」步骤假失败（点击后 textarea 不出现） | 走查用 `has_text` 定位 `.note-item`；进入编辑态后 `.note-text` 被换成 `textarea`，其 value **不属于 textContent**，has_text 定位瞬间失效——应用代码无 bug（合成点击/直接调用均正常） | 走查编辑后改用 `#notes-list` 下的新鲜定位器；教训：**has_text 定位的元素内容被编辑控件替换时必须重新定位** |
+| M4 测试 settings 的 `qa_capture_enabled=false` 不生效 | EXTRA_SETTINGS 拼在 `[evidence_delta]` 表之后，裸键落进节区变成 delta 表成员 | 测试基座把 EXTRA_SETTINGS 移到所有 `[节区]` 之前（TOML 裸键必须前置的铁律同样适用于测试夹具） |
 
 ## 缺陷修复批（2026-07-22，双子智能体审查驱动，fix/review-batch）
 
@@ -147,6 +161,7 @@ v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 
 
 ## UI 版本
 
+- **v9（2026-07-23）**：M4 笔记管理 —— 顶栏 📝 笔记页（筛选/新建/就地编辑/合并模式/日志蒸馏/concept 挂接下拉/销账）；学习资料弹窗「面试话术库」升级为卡片视图（30s 直显 + 2min/追问预案折叠 + 就地编辑/删除 + 原文切换）。
 - **v8（2026-07-23）**：M3 学习者模型 —— 顶栏 🧠 掌握度热力图（红黄绿格 + △封顶 + ⏰到期），点格展开证据明细表；迁移引导条（预览→确认→应用）。
 - **v7（2026-07-23）**：M2 可观测 —— 顶栏 LLM 状态 pill（渠道+耗时/失败标红）；📊 用量弹窗（日×渠道×task 聚合表 + 成本 + auth 管理区）；登录 overlay（401 自动唤起 + 登录后重放原请求）；设置/删除访问密码、退出登录入口收在用量弹窗底部。
 - **v6（2026-07-22）**：M1 资料库 —— 学习资料弹窗加「资料库」tab（清单/预览/重扫/注册）；📚 备课 chip（讲解回合确定性预取教材节选）与 📄 READ_DOC chip（AI 主动读教材，章节自导航），资料 chip 不跳代码浏览器。

@@ -26,6 +26,8 @@ class SessionContext:
     pending_score: float | None = None  # LLM 已给出但未确认落盘的评分
     force_skip: bool = False          # 本单元走强制跳过分支
     review_question_count: int = 0    # 今日复盘已问题数
+    review_msg_start: int = 0         # 复盘开始的 chat_history 下标（拷打反喂转录切片）
+    pending_qa_capture: bool = False  # 复盘评分落盘后待执行的拷打反喂标记
     chat_history: list[dict] = field(default_factory=list)  # [{role, content}]
 
     def to_dict(self) -> dict:

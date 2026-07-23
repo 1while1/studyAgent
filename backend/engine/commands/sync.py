@@ -39,16 +39,15 @@ class SyncHandler(CommandHandler):
         llm_instruction = None
 
         if subtype == "面试话术":
-            qa_path = deps.config.docx_dir / "InterviewQA.md"
-            old = qa_path.read_text(encoding="utf-8") if qa_path.exists() else ""
+            from ...services.qa_service import QaService
             entry = (deps.templates.get("interview_qa_entry")
                      .replace("<问题标题>", content_text)
                      .replace("<模块>", "待补").replace("<技术点>", "待补")
                      .replace("<文件路径>:<行号>", "待补")
                      .replace("<N>", str(day)).replace("<场景>", "[同步] 面试话术"))
-            deps.backup.atomic_persist(
-                {qa_path: old.rstrip() + "\n\n" + entry + "\n"},
-                validator=deps.validator())
+            # M4：话术层收编——落盘走 QaService（剥离骨架占位行），
+            # 条目内容可在话术页编辑补全，或由复盘拷打反喂自动产出
+            QaService(deps.config).add_entry(entry, validator=deps.validator())
             messages.append(f"已追加面试话术到 InterviewQA.md：\n- 标题：{content_text}")
             llm_instruction = (
                 f"请围绕「{content_text}」补全 InterviewQA 条目内容：30秒精简版、2分钟展开版、"
@@ -64,6 +63,27 @@ class SyncHandler(CommandHandler):
                 {deps.state_store.path: deps.state_store.dump(state),
                  deps.memory.path_for(day): mem},
                 validator=deps.validator())
+
+            # 条目层（M4）：已掌握/卡壳/疑问同步进 notes.json
+            # source_ref 带内容哈希——同文重复 [同步] 不产生重复条目
+            try:
+                import hashlib
+                from ...domain.learner import concept_id
+                from ...services.notes_service import NotesService
+                kind = {"已掌握": "mastered", "卡壳": "stuck",
+                        "疑问": "question"}.get(subtype)
+                if kind:
+                    unit = session.current_unit_id or ""
+                    slug = hashlib.sha1(
+                        content_text.encode("utf-8")).hexdigest()[:6]
+                    NotesService(deps.config).add(
+                        kind, content_text,
+                        concept_id=concept_id(day, unit) if unit else "",
+                        source_ref=f"Day{day}-{unit}:sync:{kind}:{slug}",
+                        needs_review=not unit, day=day,
+                        validator=deps.validator())
+            except Exception:
+                pass  # 笔记层写入失败不阻断 [同步]
 
             if subtype == "已掌握":
                 try:

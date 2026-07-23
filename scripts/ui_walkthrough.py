@@ -344,6 +344,86 @@ def main():
         page.locator("#learner-close").click()
         page.wait_for_timeout(300)
 
+        # ---- 9g. 笔记页（M4）：新建→编辑→筛选→合并→销账→蒸馏→清理 ----
+        # 全程只用「走查测试」前缀笔记（无 concept：销账不写证据，零污染真实数据）
+        page.locator("#open-notes").click()
+        page.wait_for_timeout(1000)
+        check("笔记弹窗打开", page.locator("#notes-modal").is_visible())
+        page.locator("#notes-add-btn").click()
+        page.locator("#notes-add-kind").select_option("insight")
+        page.fill("#notes-add-text", "走查测试笔记甲")
+        page.locator("#notes-add-save").click()
+        page.wait_for_timeout(800)
+        check("笔记新建成功", page.locator(
+            ".note-item", has_text="走查测试笔记甲").count() == 1)
+        page.locator("#notes-add-btn").click()
+        page.fill("#notes-add-text", "走查测试笔记乙")
+        page.locator("#notes-add-save").click()
+        page.wait_for_timeout(800)
+        # 编辑甲（注意：编辑会把 .note-text 换成 textarea，has_text 定位随之失效，
+        # 因此编辑后改用 #notes-list 下的新鲜定位器）
+        item_a = page.locator(".note-item", has_text="走查测试笔记甲")
+        item_a.locator("button", has_text="编辑").click()
+        page.wait_for_timeout(300)
+        check("编辑模式出现 textarea",
+              page.locator("#notes-list .note-item textarea").count() >= 1)
+        page.locator("#notes-list .note-item textarea").first.fill(
+            "走查测试笔记甲（已编辑）")
+        page.locator("#notes-list .note-item .note-edit-row button",
+                     has_text="保存").click()
+        page.wait_for_timeout(800)
+        check("笔记编辑生效", "已编辑" in page.locator("#notes-list").text_content())
+        # 类型筛选
+        page.locator("#notes-filter-kind").select_option("insight")
+        page.wait_for_timeout(600)
+        check("类型筛选生效", page.locator(".note-item").count() >= 2)
+        page.locator("#notes-filter-kind").select_option("")
+        page.wait_for_timeout(400)
+        # 合并（甲 ← 乙）
+        page.locator("#notes-merge-btn").click()
+        page.wait_for_timeout(600)
+        cbs = page.locator(".note-item", has_text="走查测试笔记").locator(".note-merge-cb")
+        check("合并模式出现勾选框", cbs.count() >= 2)
+        cbs.nth(0).check()
+        cbs.nth(1).check()
+        page.once("dialog", lambda d: d.accept())
+        page.locator("#notes-merge-btn").click()
+        page.wait_for_timeout(1000)
+        check("合并产生已合并标记", page.locator(".note-chip.merged").count() >= 1)
+        # 销账（保留条无 concept → evidence=False，不写学习者模型）
+        page.once("dialog", lambda d: d.accept())
+        page.locator(".note-item", has_text="走查测试笔记甲").locator(
+            "button", has_text="标记解决").click()
+        page.wait_for_timeout(1000)
+        check("销账后状态已解决", page.locator(".note-chip.done").count() >= 1)
+        r = page.request.post(BASE + "/api/notes/distill", data={})
+        check("蒸馏 API 正常", r.status == 200 and "added" in r.json())
+        # 清理：只删走查自建笔记
+        for n in page.request.get(BASE + "/api/notes").json().get("notes", []):
+            if "走查测试" in n.get("text", ""):
+                page.request.post(BASE + "/api/notes/delete", data={"id": n["id"]})
+        left = [n for n in page.request.get(BASE + "/api/notes").json().get("notes", [])
+                if "走查测试" in n.get("text", "")]
+        check("走查笔记已清理", len(left) == 0)
+        page.locator("#notes-close").click()
+        page.wait_for_timeout(300)
+
+        # ---- 9h. 面试话术库（M4）：卡片视图 + 原文切换 ----
+        page.locator("#open-docs").click()
+        page.wait_for_timeout(800)
+        page.locator(".doc-tab[data-doc='interview_qa']").click()
+        page.wait_for_timeout(1200)
+        check("话术卡片视图工具条", page.locator(".qa-toolbar").is_visible())
+        if page.locator(".qa-entry").count() >= 1:
+            check("话术卡片渲染", page.locator(".qa-entry .qa-brief").count() >= 1)
+        else:
+            check("话术空态提示", page.locator(".qa-empty").is_visible())
+        page.locator(".qa-toolbar button", has_text="原文").click()
+        page.wait_for_timeout(800)
+        check("话术原文视图", "面试话术" in page.locator("#doc-content").text_content())
+        page.locator("#doc-close").click()
+        page.wait_for_timeout(300)
+
         # ---- 汇总 ----
         check("全程零 JS 错误", len(errors) == 0, "; ".join(errors[:3]))
         page.screenshot(path="/tmp/walkthrough_final.png")
