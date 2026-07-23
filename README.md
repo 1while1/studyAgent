@@ -76,13 +76,13 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 - 每个学习单元自动铸造知识点（concept）：`concepts.json` 注册表 + 确定性先修链（天内 A→B→C、跨天衔接）
 - **evidence 三路写入**：单元考核评分 / [同步] 已掌握·卡壳 / [验证代码] 构建结果，全部落为带权证据（delta 表在 settings，LLM 只选类型）
 - **mastery 证据驱动**：衰减公式（14 天半衰期）实时计算，不再只靠 LLM 自评；**无构建验证通过记录封顶 0.6**（防"看懂"幻觉）
-- **🧠 掌握度热力图**：知识点红黄绿着色 + 封顶 △ + 复习到期 ⏰，点格看证据明细（类型/权重/时间/来源）
+- **🧠 掌握度面板**：全屏三栏——统计卡（平均掌握度/薄弱数/待复习数）+ 按 Day 分组的进度条列表 + 详情页（建议行动卡、证据构成表·行为中文名·Δ 正负着色、衰减说明）；证据透明可解释，不再只是"一个分数"
 - 旧数据一键迁移：历史单元评分 → quiz_score 证据（rating/5 映射），卡壳/疑问 → 开放笔记条目（草稿预览→人审确认→应用）
 
 **笔记管理（M4）**
 - **四层笔记体系**：日志层（StudyMemory append-only）→ 条目层（notes.json）→ 话术层（InterviewQA.md）→ 蒸馏层（掌握度证据）
 - **条目自动进层**：[同步] 已掌握/卡壳/疑问除写日志外同步产生笔记条目（内容哈希幂等，自动挂接当前单元知识点）
-- **📝 笔记页**：状态/类型筛选、新建、就地编辑、删除、多条合并、⇩ 从日志蒸馏（StudyMemory 历史卡壳/疑问行一键转条目，自动去重）
+- **📝 笔记页（书架三栏）**：全屏页面——左栏书架（全部/待解决/已解决/⚠待整理 + 按知识点成"书" + 类型 chips + 全文搜索），中栏笔记卡片，右栏 **Markdown 编辑器**（H1-H3/加粗/斜体/删除线/代码块/引用/列表/任务/链接/表格/分隔线/Mermaid 图工具条 + 编辑/分屏/预览三态，预览与聊天同一渲染管线含 mermaid SVG）
 - **卡壳销账**：「标记解决」单一代码路径——条目 resolved + 沉淀 note_distilled 证据（+0.05，source_ref 幂等，重复销账不重复加）；迁移/蒸馏条目先「挂接知识点」再销账
 - **话术库收编**：面试话术库升级为卡片视图（30 秒直显 / 2 分钟与追问预案折叠，就地编辑/删除，可切回原文视图）
 - **🎙 拷打反喂**：每日复盘评分落盘后，自动从拷问转录提炼 ≤2 条最有面试价值的话术写入 InterviewQA.md（LLM 只填内容，格式机械校验 + 产出来源行服务端强制覆写；`qa_capture_enabled` 可关）
@@ -104,8 +104,8 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 
 ```bash
 cd study-web
-python -m unittest discover -s tests    # 210 个后端测试，stdlib，无需真实 LLM
-python scripts/ui_walkthrough.py        # UI 真实点击走查 73 项（需服务运行中）
+python -m unittest discover -s tests    # 211 个后端测试，stdlib，无需真实 LLM
+python scripts/ui_walkthrough.py        # UI 真实点击走查 87 项（需服务运行中）
 python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name]
 ```
 

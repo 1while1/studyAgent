@@ -192,65 +192,123 @@
   </div>
 </div>
 
-<div id="learner-modal" class="modal hidden">
-  <div class="modal-box wide">
-    <div class="modal-head">
-      <h2>掌握度热力图（证据驱动，非 LLM 自评）</h2>
-      <button id="learner-close">×</button>
-    </div>
-    <div class="modal-body">
-      <div id="learner-migrate" class="hidden"></div>
-      <div class="learner-legend">
-        <span class="lg low"></span>&lt;0.4　<span class="lg mid"></span>&lt;0.7　<span class="lg high"></span>≥0.7　△=封顶（缺构建验证）　⏰=到期
+<div id="notes-page" class="page-overlay hidden">
+  <div class="page-frame">
+    <div class="page-topbar">
+      <div class="page-title">📝 学习笔记</div>
+      <input id="notes-search" type="text" placeholder="搜索笔记全文…">
+      <div class="page-actions">
+        <button id="notes-add-btn" class="primary">＋ 新建笔记</button>
+        <button id="notes-distill-btn" title="从 StudyMemory [同步] 卡壳/疑问行蒸馏条目">⇩ 从日志蒸馏</button>
+        <button id="notes-merge-btn" title="勾选 ≥2 条后合并为一条">⇄ 合并</button>
+        <button id="notes-close" title="关闭">×</button>
       </div>
-      <div id="learner-grid"></div>
-      <div id="learner-detail"></div>
+    </div>
+    <div class="page-body notes-layout">
+      <aside id="notes-shelf">
+        <div class="shelf-group">
+          <div class="shelf-head">书架</div>
+          <button class="shelf-item" data-shelf="all">📚 全部笔记<span class="shelf-count" id="cnt-all"></span></button>
+          <button class="shelf-item" data-shelf="open">○ 待解决<span class="shelf-count" id="cnt-open"></span></button>
+          <button class="shelf-item" data-shelf="resolved">✓ 已解决<span class="shelf-count" id="cnt-resolved"></span></button>
+          <button class="shelf-item" data-shelf="triage">⚠ 待整理<span class="shelf-count" id="cnt-triage"></span></button>
+        </div>
+        <div class="shelf-group">
+          <div class="shelf-head">知识点</div>
+          <div id="shelf-concepts"></div>
+        </div>
+        <div class="shelf-group">
+          <div class="shelf-head">类型</div>
+          <div id="shelf-kinds">
+            <button class="kind-chip" data-kind="stuck">卡壳</button>
+            <button class="kind-chip" data-kind="question">疑问</button>
+            <button class="kind-chip" data-kind="mastered">已掌握</button>
+            <button class="kind-chip" data-kind="insight">心得</button>
+          </div>
+        </div>
+      </aside>
+      <section id="notes-list-col">
+        <div id="notes-list"></div>
+      </section>
+      <section id="notes-editor-col">
+        <div id="notes-empty" class="notes-empty-hint">← 从中间列表选择一条笔记，或「＋ 新建笔记」</div>
+        <div id="notes-editor" class="hidden">
+          <div id="ne-meta-bar">
+            <span id="ne-meta"></span>
+            <span class="ne-ops">
+              <button id="ne-attach">挂接知识点</button>
+              <button id="ne-resolve">标记解决</button>
+              <button id="ne-delete">删除</button>
+            </span>
+          </div>
+          <div id="ne-toolbar">
+            <button data-md="h1" title="一级标题">H1</button>
+            <button data-md="h2" title="二级标题">H2</button>
+            <button data-md="h3" title="三级标题">H3</button>
+            <span class="ne-sep"></span>
+            <button data-md="bold" title="加粗">B</button>
+            <button data-md="italic" title="斜体"><i>I</i></button>
+            <button data-md="strike" title="删除线"><s>S</s></button>
+            <button data-md="code" title="行内代码">`</button>
+            <button data-md="codeblock" title="代码块">&lt;/&gt;</button>
+            <span class="ne-sep"></span>
+            <button data-md="quote" title="引用">❝</button>
+            <button data-md="ul" title="无序列表">•</button>
+            <button data-md="ol" title="有序列表">1.</button>
+            <button data-md="task" title="任务列表">☑</button>
+            <span class="ne-sep"></span>
+            <button data-md="link" title="链接">🔗</button>
+            <button data-md="table" title="表格">⊞</button>
+            <button data-md="hr" title="分隔线">―</button>
+            <button data-md="mermaid" title="Mermaid 图">📊</button>
+            <span class="ne-spacer"></span>
+            <div id="ne-view-switch">
+              <button data-view="edit" class="active">编辑</button>
+              <button data-view="split">分屏</button>
+              <button data-view="preview">预览</button>
+            </div>
+          </div>
+          <div id="ne-body" data-view="split">
+            <textarea id="ne-text" placeholder="用 Markdown 记录你的理解…（支持标题/列表/代码块/Mermaid 图）"></textarea>
+            <div id="ne-preview" class="markdown-body"></div>
+          </div>
+          <div id="ne-foot">
+            <span id="ne-dirty" class="hidden">● 未保存</span>
+            <button id="ne-save" class="primary">💾 保存</button>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
 </div>
 
-<div id="notes-modal" class="modal hidden">
-  <div class="modal-box wide">
-    <div class="modal-head">
-      <h2>笔记（卡壳 / 疑问 / 心得 —— 销账即沉淀掌握度证据）</h2>
-      <button id="notes-close">×</button>
+<div id="mastery-page" class="page-overlay hidden">
+  <div class="page-frame">
+    <div class="page-topbar">
+      <div class="page-title">🧠 掌握度面板</div>
+      <div class="page-sub">证据驱动，非 LLM 自评：每次考核/同步/构建/销账都沉淀为带权证据</div>
+      <div class="page-actions">
+        <button id="mastery-close" title="关闭">×</button>
+      </div>
     </div>
-    <div class="modal-body">
-      <div id="notes-toolbar">
-        <div class="nt-filters">
-          <select id="notes-filter-status">
-            <option value="">全部状态</option>
-            <option value="open">未解决</option>
-            <option value="resolved">已解决</option>
-          </select>
-          <select id="notes-filter-kind">
-            <option value="">全部类型</option>
-            <option value="stuck">卡壳</option>
-            <option value="question">疑问</option>
-            <option value="mastered">已掌握</option>
-            <option value="insight">心得</option>
-          </select>
-        </div>
-        <div class="nt-actions">
-          <button id="notes-add-btn">＋ 新建</button>
-          <button id="notes-distill-btn" title="从 StudyMemory [同步] 卡壳/疑问行蒸馏条目">⇩ 从日志蒸馏</button>
-          <button id="notes-merge-btn" title="勾选 ≥2 条后合并为一条">⇄ 合并</button>
-        </div>
+    <div class="page-body mastery-layout">
+      <div id="learner-migrate" class="hidden"></div>
+      <div id="mastery-expl">
+        掌握度 = 各条证据按时间衰减后的加权和（半衰期 14 天，近期行为权重更高），范围 0~1。
+        <span class="lg low"></span>&lt;0.4 薄弱　<span class="lg mid"></span>&lt;0.7 爬升中　<span class="lg high"></span>≥0.7 达标　
+        △ = 缺构建验证，封顶 0.6　⏰ = 已到复习窗口
       </div>
-      <div id="notes-add-form" class="hidden">
-        <select id="notes-add-kind">
-          <option value="insight">心得</option>
-          <option value="stuck">卡壳</option>
-          <option value="question">疑问</option>
-          <option value="mastered">已掌握</option>
-        </select>
-        <textarea id="notes-add-text" rows="2" placeholder="笔记内容…"></textarea>
-        <div class="note-edit-row">
-          <button id="notes-add-save" class="primary">保存</button>
-          <button id="notes-add-cancel">取消</button>
-        </div>
+      <div id="mastery-stats">
+        <div class="stat-card"><div class="stat-num" id="stat-avg">-</div><div class="stat-label">平均掌握度</div></div>
+        <div class="stat-card weak"><div class="stat-num" id="stat-weak">-</div><div class="stat-label">薄弱知识点（&lt;0.4）</div></div>
+        <div class="stat-card due"><div class="stat-num" id="stat-due">-</div><div class="stat-label">待复习（已到期）</div></div>
       </div>
-      <div id="notes-list"></div>
+      <div class="mastery-cols">
+        <section id="mastery-list"></section>
+        <section id="mastery-detail">
+          <div class="mastery-empty-hint">← 点击左侧知识点查看证据构成与建议行动</div>
+        </section>
+      </div>
     </div>
   </div>
 </div>
