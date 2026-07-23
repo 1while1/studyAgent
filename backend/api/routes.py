@@ -979,6 +979,35 @@ def reset_session():
     return {"cleared": n}
 
 
+# ---------- 会话模式（M6：study/code 双轴之 agent 状态轴） ----------
+
+_SESSION_MODES = ("study", "code")
+
+
+@router.get("/api/session/mode")
+def get_session_mode():
+    """当前会话模式（前端加载时同步模式按钮态与默认布局）。"""
+    session = _deps.session_store.load()
+    return {"ok": True, "mode": getattr(session, "mode", "study")}
+
+
+@router.post("/api/session/mode")
+def set_session_mode(body: dict):
+    """切换会话模式：code → planner 引擎 + ACTION 工具武装；study → 导学引擎。
+
+    模式是会话级 agent 状态（SessionContext.mode，落盘）；布局（tutor/pair）
+    是前端展示层偏好，两端各管各的（§7 双轴钉死）。
+    """
+    mode = ((body or {}).get("mode") or "").strip()
+    if mode not in _SESSION_MODES:
+        return {"ok": False,
+                "error": f"非法模式: {mode or '（空）'}（枚举: {_SESSION_MODES}）"}
+    session = _deps.session_store.load()
+    session.mode = mode
+    _deps.session_store.save(session)
+    return {"ok": True, "mode": mode}
+
+
 # ---------- 模型配置页面 ----------
 
 from ..llm.factory import _BUILDERS, create_llm, create_llm_cheap
