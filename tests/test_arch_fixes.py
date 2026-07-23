@@ -198,6 +198,7 @@ class TestCommandTailNoStreamer(ArchFixBase):
             return "".join(chunks)
         return asyncio.run(asyncio.wait_for(drive(), timeout=15))
 
+
     def test_fail_fast_stop_message_only(self):
         self._write_state({
             "current_day": 1, "overall_completion_percentage": 0,
@@ -223,6 +224,84 @@ class TestCommandTailNoStreamer(ArchFixBase):
         out = self._drive("[超前学习]")  # 单元未完成 → handler 纯消息分支
         self.assertIn("不能超前学习", out)
         self.assertIn('"done"', out)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class TestSessionLocks(ArchFixBase):
+    """R4/R2：session 两级锁——短锁防 tmp 互踩、流程锁跨线程安全序列化。"""
+
+    def test_concurrent_save_never_corrupts(self):
+        import threading
+        store = self.deps.session_store
+        errors = []
+
+        def worker(i):
+            try:
+                for _ in range(20):
+                    s = store.load()
+                    s.chat_history.append({"role": "user", "content": f"m{i}"})
+                    store.save(s)
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=worker, args=(i,))
+                   for i in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(errors, [])
+        json.loads((self.tmp / "s.json").read_text(encoding="utf-8"))  # 合法 JSON
+
+    def test_flow_lock_serializes_and_cross_thread_release(self):
+        import threading
+        import time
+        store = self.deps.session_store
+        order = []
+
+        def hold_a():
+            with store.locked():
+                order.append("a-in")
+                time.sleep(0.3)
+                order.append("a-out")
+
+        t = threading.Thread(target=hold_a)
+        t.start()
+        time.sleep(0.1)  # A 已持锁
+        with store.locked():  # 主线程被序列化到 A 之后
+            order.append("b-in")
+        t.join()
+        self.assertEqual(order, ["a-in", "a-out", "b-in"])
+        # 跨线程释放不炸（threading.Lock 非线程绑定，SSE 生成器跨线程场景）
+        cm = store.locked()
+        cm.__enter__()
+        threading.Thread(
+            target=lambda: cm.__exit__(None, None, None)).start()
+        time.sleep(0.1)
+
+    def test_mode_switch_clears_phase_fields(self):
+        """🟡-9：进行中相位切模式 → 清相位字段 + note 明示。"""
+        from backend.api import routes
+        from backend.engine.orchestrator import ChatOrchestrator
+        orch = ChatOrchestrator(self.config, self.deps.stages,
+                                self.deps.quiz, self.deps.state_store,
+                                self.deps.memory, self.deps.templates)
+        routes.init(self.deps, orch)
+        self.deps.session_store.save(
+            SessionContext(day_phase="interviewing",
+                           interview_cid="Day1-A", interview_round=1,
+                           interview_score=4.0))
+        r = routes.set_session_mode({"mode": "code"})
+        self.assertTrue(r["ok"])
+        self.assertTrue(r["note"])
+        saved = self.deps.session_store.load()
+        self.assertEqual(saved.day_phase, "studying")
+        self.assertEqual(saved.interview_cid, "")
+        self.assertEqual(saved.mode, "code")
+
 
 
 if __name__ == "__main__":

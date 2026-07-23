@@ -155,7 +155,7 @@ class LLMStreamer:
 def chat(body: TextIn):
     deps, orch = _deps, _orchestrator
 
-    def gen():
+    def _flow():
         session = deps.session_store.load()
         text = body.text.strip()
         engine = build_turn_engine(session, deps, tutor=orch)  # M5a 引擎路由
@@ -197,6 +197,12 @@ def chat(body: TextIn):
         ContextManager(deps).maybe_compress(session, streamer.ctx_plan)
         deps.session_store.save(session)
 
+    def gen():
+        # R2/R4 修复：流程锁覆盖整个 chat 流（load→多次 save 与 mode/reset/
+        # 并发 chat 互斥；threading.Lock 支持 SSE 生成器跨线程释放）
+        with deps.session_store.locked():
+            yield from _flow()
+
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
@@ -204,7 +210,7 @@ def chat(body: TextIn):
 def command(body: TextIn):
     deps, orch = _deps, _orchestrator
 
-    def gen():
+    def _flow():
         from ..engine.commands.registry import CommandRegistry
         registry = CommandRegistry(deps.config)
         matched = registry.match(body.text)
@@ -260,6 +266,10 @@ def command(body: TextIn):
         ContextManager(deps).maybe_compress(
             session, streamer.ctx_plan if streamer else {})
         deps.session_store.save(session)
+
+    def gen():
+        with deps.session_store.locked():  # 同 chat 流：全程流程锁
+            yield from _flow()
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 
@@ -988,13 +998,14 @@ def reload_config():
 @router.post("/api/session/reset")
 def reset_session():
     """清空对话历史（不影响 docx 学习数据）。用于清除上下文污染。"""
-    session = _deps.session_store.load()
-    n = len(session.chat_history)
-    session.chat_history = []
-    session.archive_summary = ""  # M5b：归档层同步重置
-    session.archive_upto = 0
-    session.compress_cooldown = 0
-    _deps.session_store.save(session)
+    with _deps.session_store.locked():  # 与在途 chat 流互斥（R2 修复）
+        session = _deps.session_store.load()
+        n = len(session.chat_history)
+        session.chat_history = []
+        session.archive_summary = ""  # M5b：归档层同步重置
+        session.archive_upto = 0
+        session.compress_cooldown = 0
+        _deps.session_store.save(session)
     return {"cleared": n}
 
 
@@ -1021,10 +1032,25 @@ def set_session_mode(body: dict):
     if mode not in _SESSION_MODES:
         return {"ok": False,
                 "error": f"非法模式: {mode or '（空）'}（枚举: {_SESSION_MODES}）"}
-    session = _deps.session_store.load()
-    session.mode = mode
-    _deps.session_store.save(session)
-    return {"ok": True, "mode": mode}
+    note = ""
+    with _deps.session_store.locked():  # 与在途 chat 流互斥（R2 修复）
+        session = _deps.session_store.load()
+        session.mode = mode
+        # 🟡-9：进行中的面试/诊断/复盘相位在切模式后不可恢复（指令全被
+        # AGENT_COMMAND_HINT 锁死）——清相位字段并明示，防状态机缠绕
+        from ..domain.enums import DayPhase
+        if session.day_phase in (DayPhase.INTERVIEW.value,
+                                 DayPhase.PREREQ.value,
+                                 DayPhase.REVIEWING.value):
+            session.interview_cid = ""
+            session.interview_round = 0
+            session.interview_score = None
+            session.prereq_targets = []
+            session.prereq_retry = 0
+            session.day_phase = DayPhase.STUDYING.value
+            note = "（进行中的面试/诊断/复盘已中断）"
+        _deps.session_store.save(session)
+    return {"ok": True, "mode": mode, "note": note}
 
 
 # ---------- 模型配置页面 ----------

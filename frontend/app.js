@@ -346,6 +346,11 @@ function setSendEnabled(on) {
   const btn = document.querySelector("#input-form button");
   if (btn) btn.disabled = !on;
   document.getElementById("command-chips").style.pointerEvents = on ? "" : "none";
+  // R2 修复：流式中禁切模式/清历史（防旧快照覆盖后端状态）
+  for (const id of ["mode-tutor", "mode-pair", "reset-history"]) {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !on;
+  }
 }
 
 async function streamPost(url, text) {
