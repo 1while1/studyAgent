@@ -232,6 +232,12 @@ class TestResolveAndPrefetch(MaterialsTestBase):
         hit = self.ms.resolve_doc(tokens[0])
         self.assertEqual(hit["id"], "AI & RAG 基础扫盲/3.Prompt工程入门")
 
+    def test_extract_doc_paths_windows_absolute(self):
+        # 回归：旧 CLI 时代 Study.md 用 Windows 绝对路径（D:/AI学习/...）
+        from backend.services.study_plan import extract_doc_paths
+        tokens = extract_doc_paths("`D:/AI学习/RAgent文档/1认识大模型.txt`")
+        self.assertEqual(tokens, ["D:/AI学习/RAgent文档/1认识大模型.txt"])
+
     def test_short_stem_no_guess(self):
         # 词干 <4 字符不做模糊猜测（防 "ai" 之类短词乱命中）
         self.assertIsNone(self.ms.resolve_doc("RAgent文档/AI"))

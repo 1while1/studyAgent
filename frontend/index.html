@@ -44,6 +44,7 @@
       </div>
       <div class="topbar-actions">
         <span id="llm-pill" class="hidden" title=""></span>
+        <button id="open-learner" title="掌握度热力图">🧠</button>
         <button id="open-usage" title="Token 用量统计">📊</button>
         <button id="open-docs" title="学习资料（StudyMemory / 面试话术库）">📚</button>
         <button id="open-llm-config" title="模型配置">⚙</button>
@@ -186,6 +187,23 @@
     </div>
     <div class="modal-foot">
       <button id="ws-create" class="primary">开始初始化</button>
+    </div>
+  </div>
+</div>
+
+<div id="learner-modal" class="modal hidden">
+  <div class="modal-box wide">
+    <div class="modal-head">
+      <h2>掌握度热力图（证据驱动，非 LLM 自评）</h2>
+      <button id="learner-close">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="learner-migrate" class="hidden"></div>
+      <div class="learner-legend">
+        <span class="lg low"></span>&lt;0.4　<span class="lg mid"></span>&lt;0.7　<span class="lg high"></span>≥0.7　△=封顶（缺构建验证）　⏰=到期
+      </div>
+      <div id="learner-grid"></div>
+      <div id="learner-detail"></div>
     </div>
   </div>
 </div>

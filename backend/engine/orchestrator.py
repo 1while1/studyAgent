@@ -69,6 +69,14 @@ class ChatOrchestrator:
                 BackupService(self._config).atomic_persist(
                     {self._state_store.path: self._state_store.dump(state)},
                     validator=make_validator(self._config))
+                try:
+                    from ..services.learner_service import LearnerService
+                    svc = LearnerService(self._config)
+                    svc.ensure_concepts(state)
+                    svc.record_review(state["current_day"],
+                                      day_data.get("units", []), score)
+                except Exception:
+                    pass  # 学习者模型写入失败不阻断复盘流程
                 session.day_phase = DayPhase.STUDYING.value
                 extra.append(f"复盘评分已落盘：{score} 分。")
 

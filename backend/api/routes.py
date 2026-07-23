@@ -438,6 +438,53 @@ def observability_usage(days: int = 7):
     return get_observer(_deps.config).usage_summary(days)
 
 
+# ---------- 学习者模型（M3） ----------
+
+from ..services.learner_service import LearnerService
+
+
+@router.get("/api/learner/model")
+def learner_model():
+    deps = _deps
+    if deps.state_store.exists():
+        state = deps.state_store.load()
+    else:
+        state = {"days": {}, "current_day": 1}
+    try:
+        # concepts + materials 挂接统一入口（幂等 upsert）
+        from ..engine.commands.base import CommandHandler
+        CommandHandler.learner_with_concepts(deps)
+    except Exception:
+        pass
+    svc = LearnerService(deps.config)
+    model = svc.get_model(state.get("current_day", 1))
+    model["has_ratings_source"] = any(
+        u.get("rating") for d in state.get("days", {}).values()
+        for u in d.get("units", []))
+    model["has_draft"] = svc.draft_path.exists()
+    return model
+
+
+@router.post("/api/learner/migrate/preview")
+def learner_migrate_preview():
+    deps = _deps
+    if not deps.state_store.exists():
+        return {"ok": False, "error": "StudyState.json 不存在"}
+    state = deps.state_store.load()
+    memory_by_day = {}
+    for day_key in state.get("days", {}):
+        d = int(day_key)
+        if deps.memory.exists(d):
+            memory_by_day[d] = deps.memory.read(d)
+    summary = LearnerService(deps.config).migrate_preview(state, memory_by_day)
+    return {"ok": True, **summary}
+
+
+@router.post("/api/learner/migrate/apply")
+def learner_migrate_apply():
+    return LearnerService(_deps.config).migrate_apply()
+
+
 # ---------- 学习资料库 ----------
 
 from ..services.materials_service import MaterialsService
