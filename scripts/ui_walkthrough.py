@@ -63,7 +63,7 @@ def main():
         page.wait_for_timeout(2000)
         check("页面加载-侧栏可见", page.locator("#sidebar").is_visible())
         check("页面加载-单元列表", page.locator("#units li").count() == 3)
-        check("页面加载-指令胶囊 12 个", page.locator("#command-chips .chip").count() == 12)
+        check("页面加载-指令胶囊 13 个", page.locator("#command-chips .chip").count() == 13)
         check("消息容器就绪", page.locator("#messages").is_visible())
 
         # ---- 2. 指令：FAIL-FAST ----
@@ -571,6 +571,13 @@ def main():
               page.locator(".rl-row").count() == 4)
         check("雷达热力格", page.locator(".heat-cell2").count() >= 80)
         check("课程时间轴渲染", page.locator(".tl-row").count() >= 1)
+        # M7 图谱增强：上游未达标徽标 + hover 上游链高亮
+        check("上游未达标徽标", page.locator(".tl-badge").count() >= 1)
+        page.locator(".tl-row").nth(1).hover()
+        page.wait_for_timeout(300)
+        check("hover 上游链高亮", page.locator(".tl-row.tl-upstream").count() >= 1)
+        page.locator(".tl-row").nth(0).hover()  # 移开（触发 mouseleave 清除）
+        page.wait_for_timeout(200)
         # 时间轴节点点击 → 跳回战术板展开详情
         page.locator(".tl-row").first.click()
         page.wait_for_timeout(1800)
@@ -666,6 +673,67 @@ def main():
         check("话术原文视图", "面试话术" in page.locator("#doc-content").text_content())
         page.locator("#doc-close").click()
         page.wait_for_timeout(300)
+
+        # ---- 9i. 先修诊断（M7，Mock 渠道；prereq 证据写真实库 → 先备份事后还原） ----
+        mark("9i 先修诊断")
+        _sess_p2 = _sess_p  # 复用 9c+ 解析出的 session/learner_model 路径
+        _lm_p2 = _lm_p
+        _bak2 = {p: (p.exists(), p.read_bytes() if p.exists() else b"")
+                 for p in (_sess_p2, _lm_p2)}
+        _orig2 = page.request.get(BASE + "/api/llm-config").json()
+        try:
+            page.request.post(BASE + "/api/llm-config", data={
+                "provider": "mock",
+                "fallback_provider": _orig2.get("fallback_provider", ""),
+                "warmup_on_start": False, "sections": {}})
+            page.locator("#command-chips .chip", has_text="先修诊断").click()
+            ok_pq = False
+            for i in range(30):
+                page.wait_for_timeout(1000)
+                last = page.locator("#messages .bubble").last.text_content() or ""
+                if "先修诊断开始" in last and "【Day" in last:
+                    ok_pq = True
+                    break
+            check("先修诊断出题", ok_pq)
+            page.fill("#input", "都会，随便答")
+            page.locator("#input-form button").click()
+            ok_pg = False
+            for i in range(30):
+                page.wait_for_timeout(1000)
+                last = page.locator("#messages .bubble").last.text_content() or ""
+                if "先修诊断完成" in last:
+                    ok_pg = True
+                    break
+            check("先修诊断评分落盘", ok_pg and "已置初始掌握度" in
+                  (page.locator("#messages").text_content() or ""))
+            # 同日幂等：再来一场 → 幂等跳过文案
+            page.locator("#command-chips .chip", has_text="先修诊断").click()
+            for i in range(30):
+                page.wait_for_timeout(1000)
+                last = page.locator("#messages .bubble").last.text_content() or ""
+                if "先修诊断开始" in last:
+                    break
+            page.fill("#input", "再答一次")
+            page.locator("#input-form button").click()
+            ok_idem = False
+            for i in range(30):
+                page.wait_for_timeout(1000)
+                last = page.locator("#messages .bubble").last.text_content() or ""
+                if "先修诊断完成" in last:
+                    ok_idem = "今日已记录过（幂等跳过）" in last
+                    break
+            check("先修诊断同日幂等", ok_idem)
+        finally:
+            for p, (existed, data) in _bak2.items():
+                if existed:
+                    p.write_bytes(data)
+                elif p.exists():
+                    p.unlink()
+            page.request.post(BASE + "/api/llm-config", data={
+                "provider": _orig2.get("provider", "openai_compat"),
+                "fallback_provider": _orig2.get("fallback_provider", ""),
+                "warmup_on_start": _orig2.get("warmup_on_start", True),
+                "sections": {}})
 
         # ---- 汇总 ----
         check("全程零 JS 错误", len(errors) == 0, "; ".join(errors[:3]))

@@ -35,6 +35,8 @@ class SessionContext:
     interview_cid: str = ""           # 模拟面试知识点 concept id（M5c；空=非面试中）
     interview_round: int = 0          # 面试回合（0=待口述评估，1/2=追问回合）
     interview_score: float | None = None  # 面试口述分（独立于 quiz pending_score，R4）
+    prereq_targets: list | None = None   # 先修诊断目标 [{cid,title,question}]（M7；空/None=非诊断中）
+    prereq_retry: int = 0                # 诊断评分机械校验已重试次数
     chat_history: list[dict] = field(default_factory=list)  # [{role, content}]
 
     def to_dict(self) -> dict:

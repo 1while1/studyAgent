@@ -115,6 +115,11 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 - **进程管理**：进程面板启动/停止/日志（SSE tail）/端口链接——`python -m http.server`、demo `npm start` 均可；**真实杀树**（psutil children+self terminate→kill 残余）、**cmdline 哈希 PID 复用守卫**（失配报 stopped 绝不误杀）、端口快探 + 列表实时兜底；启动 cwd 白名单（demo/replica/项目目录/代码根，支持"启动原项目看效果"）
 - **新工具 5 个**：scaffold_create / edit_file（写·白名单）+ process_start / process_stop / process_logs（沙箱执行），planner 清单自动收录
 
+**课程本体（M7）**
+- **知识点图谱增强**：域纯函数先修闭包/拓扑序（环守卫）+ 服务图查询；战术板「需要行动」改**拓扑补弱序**（上游先补，remediation_order API 下发）；战略雷达时间轴**上游未达标徽标 ▲N** + **hover 高亮上游链**
+- **感召式复习**（验收=复习按相关性而非日历）：`[开始今日学习]` Step 1 与开场回顾注入【上游感召】——今日单元的先修链未达标节点（含未学），感召优先、日历项补充、总量封顶、拓扑排序
+- **先修诊断**：`[先修诊断]` 进入新分支前 3-5 题快测——代码强制选题（上游未达标闭包前 5，**含零证据节点**），出题/评分双重机械校验（缺 cid 重试、缺分重试一次、再不齐取消不写证据）；通过节点写 `prereq_pass`（+0.40）置初始掌握度，未过写 `prereq_fail`（−0.10），同日幂等；行为矩阵与模拟面试对称（仅导学中可发起、复盘/结束拦截、新开始清字段）
+
 **模型管理**
 - 「模型配置」页面：主/备渠道切换、模型 ID、Base URL、API Key（掩码显示）、测试连接、保存热生效
 - 主备自动 fallback：主渠道失败自动切备用（中途断流会标注重新生成）
@@ -125,8 +130,8 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 
 ```bash
 cd study-web
-python -m unittest discover -s tests    # 355 个后端测试，stdlib，无需真实 LLM
-python scripts/ui_walkthrough.py        # UI 真实点击走查 132 项（需服务运行中）
+python -m unittest discover -s tests    # 379 个后端测试，stdlib，无需真实 LLM
+python scripts/ui_walkthrough.py        # UI 真实点击走查 137 项（需服务运行中）
 python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name]
 ```
 

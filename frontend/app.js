@@ -1660,8 +1660,13 @@ async function openLearner(expandCid) {
   const curDay = model.current_day;
   const isToday = (c) => c.id.startsWith(`Day${curDay}-`);
   const isUrgent = (c) => c.evidence.length && (c.due || c.mastery < 0.4);
+  // M7 拓扑计划：remediation_order（有证据未达标的拓扑补弱序）为主排序键，
+  // 不在序列中的（到期但已达标项）沉底，再按到期/掌握度/id 逐层 tiebreak
+  const remediation = model.remediation_order || [];
+  const ridx = (c) => { const i = remediation.indexOf(c.id); return i < 0 ? 9999 : i; };
   const urgent = concepts.filter(isUrgent).sort(
-    (a, b) => (b.due - a.due) || (a.mastery - b.mastery) || a.id.localeCompare(b.id));
+    (a, b) => (ridx(a) - ridx(b)) || (b.due - a.due) ||
+              (a.mastery - b.mastery) || a.id.localeCompare(b.id));
   const today = concepts.filter(c => isToday(c) && !isUrgent(c));
   const rest = concepts.filter(c => !isToday(c) && !isUrgent(c));
 
@@ -2018,6 +2023,22 @@ function renderRadarTimeline(model) {
     if (!byDay.has(day)) byDay.set(day, []);
     byDay.get(day).push(c);
   }
+  // M7 图谱增强：先修链闭包（客户端由 prerequisites 递归，环守卫）
+  const pmap = {};
+  for (const c of concepts) pmap[c.id] = c.prerequisites || [];
+  const unmastered = new Set(concepts
+    .filter(c => c.evidence.length && c.mastery < 0.7).map(c => c.id));
+  const upstreamOf = (cid) => {
+    const out = [], seen = new Set([cid]);
+    const stack = [...(pmap[cid] || [])];
+    while (stack.length) {
+      const n = stack.pop();
+      if (seen.has(n)) continue;
+      seen.add(n); out.push(n);
+      stack.push(...(pmap[n] || []));
+    }
+    return out;
+  };
   let currentRow = null;
   for (const [day, items] of [...byDay.entries()].sort((a, b) => a[0] - b[0])) {
     const dh = document.createElement("div");
@@ -2044,6 +2065,27 @@ function renderRadarTimeline(model) {
       pct.className = "tl-pct " + band;
       pct.textContent = c.evidence.length ? (c.mastery * 100).toFixed(0) + "%" : "—";
       row.append(dot, main, pct);
+      // M7：上游未达标徽标（▲N）
+      const ups = upstreamOf(c.id);
+      const weakUps = ups.filter(id => unmastered.has(id));
+      if (weakUps.length) {
+        const badge = document.createElement("span");
+        badge.className = "tl-badge";
+        badge.textContent = `▲${weakUps.length}`;
+        badge.title = `上游未达标 ${weakUps.length} 个（先补根基再学本节点）`;
+        row.appendChild(badge);
+      }
+      // M7：hover 高亮上游链（点击已占用为跳战术板，高亮走 hover）
+      row.addEventListener("mouseenter", () => {
+        for (const id of ups) {
+          const r = box.querySelector(`.tl-row[data-cid="${id}"]`);
+          if (r) r.classList.add("tl-upstream");
+        }
+      });
+      row.addEventListener("mouseleave", () => {
+        box.querySelectorAll(".tl-upstream")
+          .forEach(r => r.classList.remove("tl-upstream"));
+      });
       row.onclick = () => {
         document.querySelector(".drawer-tab[data-mtab='tactical']").click();
         openLearner(c.id);

@@ -9,6 +9,7 @@ class DayPhase(str, Enum):
     STUDYING = "studying"          # 导学中
     REVIEWING = "reviewing"        # 今日复盘拷打中
     INTERVIEW = "interviewing"     # 模拟面试中（M5c）
+    PREREQ = "prereq_diagnosing"   # 先修诊断中（M7）
     ENDED = "ended"                # 已结束
 
 

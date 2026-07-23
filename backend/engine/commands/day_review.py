@@ -16,6 +16,8 @@ class DayReviewHandler(CommandHandler):
             return "StudyState.json 不存在，请先 [开始今日学习]。"
         if session.day_phase == DayPhase.INTERVIEW.value:
             return "模拟面试进行中，请先完成本场面试再复盘。"
+        if session.day_phase == DayPhase.PREREQ.value:
+            return "先修诊断进行中，请先完成本场诊断再复盘。"
         state = deps.state_store.load()
         day = state["current_day"]
         if not deps.memory.exists(day):

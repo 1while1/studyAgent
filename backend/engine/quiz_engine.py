@@ -33,6 +33,25 @@ class QuizEngine:
         score = float(m.group(1))
         return score if 1.0 <= score <= 5.0 else None  # 超出契约范围视为无效标记
 
+    @staticmethod
+    def extract_scores_by_cid(text: str, cids: list[str]) -> dict[str, float | None]:
+        """逐 concept 提取 `DayN-X：【评分：X.X】`（M7 先修诊断）。
+
+        返回 {cid: score|None}——缺失或越界（铁律 6：1.0-5.0 契约）均为 None。
+        """
+        out: dict[str, float | None] = {}
+        for cid in cids:
+            m = re.search(
+                rf"{re.escape(cid)}[^\n【]{{0,6}}?"
+                r"【\s*评分\s*[:：]\s*(\d+(?:\.\d+)?)\s*分?\s*】",
+                text)
+            if not m:
+                out[cid] = None
+                continue
+            score = float(m.group(1))
+            out[cid] = score if 1.0 <= score <= 5.0 else None
+        return out
+
     def ask_and_score(self, messages: list[Message], max_retries: int = 1
                       ) -> tuple[str, float | None]:
         """请求 LLM 评价并提取【评分：X.X】。无标记则追加提醒重试，仍无 → None（不推进）。"""

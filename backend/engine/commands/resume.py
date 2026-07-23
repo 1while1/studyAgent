@@ -52,6 +52,9 @@ class ResumeHandler(CommandHandler):
         session.interview_cid = ""
         session.interview_round = 0
         session.interview_score = None
+        # M7：同步清诊断残留字段
+        session.prereq_targets = []
+        session.prereq_retry = 0
         deps.session_store.save(session)
 
         msg = (deps.templates.get("resume_summary")

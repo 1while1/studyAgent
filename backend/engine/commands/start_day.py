@@ -161,20 +161,43 @@ class StartDayHandler(CommandHandler):
         except Exception:
             due = []
 
-        # 双选项分支：[恢复学习] → 引导走恢复流程
+        # 双选项分支：[恢复学习] → 引导走恢复流程（不解析当日大纲，保持原行为）
         if any(k in args for k in RESUME_KEYWORDS):
             return CommandResult(messages=["请直接发送 [恢复学习]，我会从中断单元继续。"])
 
         restart = any(k in args for k in RESTART_KEYWORDS)
 
-        messages: list[str] = [
-            self._render_step1(deps, state, day, due),
-            self._render_step2(deps),
-        ]
-
         plan = deps.study_plan.parse_day(day)  # 可能抛 StudyPlanError → API 层转 STOP
         if not plan["units"]:
             raise StudyPlanError(f"Day {day} 大纲中未解析到导学单元")
+
+        # 感召通道（M7 §4/§13：复习按相关性而非日历）：今日首单元的上游
+        # 未达标链（先修闭包，拓扑序根基先补，含零证据节点；失败静默不阻塞）
+        relevance: list[dict] = []
+        try:
+            from ...domain.learner import concept_id
+            from ...services.learner_service import LearnerService
+            first_cid = concept_id(day, plan["units"][0]["id"])
+            for x in LearnerService(deps.config).unmastered_upstream(
+                    [first_cid], day):
+                m = re.match(r"Day(\d+)-", x["cid"])
+                relevance.append({
+                    "type": "上游感召",
+                    "from_day": int(m.group(1)) if m else day,
+                    "text": f"{x['cid']}：{x['title']}"
+                            f"（掌握度 {x['mastery']:.2f}"
+                            f"{'' if x['has_evidence'] else '，未学'}）"})
+        except Exception:
+            relevance = []
+        # 合并：感召优先（相关性）+ 日历补充，总量封顶（§13 验收形态）
+        max_items = int(deps.config.get("review_max_items", 6))
+        merged = (relevance + due)[:max_items]
+
+        messages: list[str] = [
+            self._render_step1(deps, state, day, merged),
+            self._render_step2(deps),
+        ]
+
         today = date.today().isoformat()
         day_data = deps.state_store.ensure_day(state, day)
         day_data["date"] = today
@@ -217,21 +240,39 @@ class StartDayHandler(CommandHandler):
         session.archive_summary = ""  # M5b：归档层同步重置（防 archive_upto 越界）
         session.archive_upto = 0
         session.compress_cooldown = 0
-        # R3：新开始同步清面试残留字段
+        # R3：新开始同步清面试残留字段；M7：同步清诊断残留字段
         session.interview_cid = ""
         session.interview_round = 0
         session.interview_score = None
+        session.prereq_targets = []
+        session.prereq_retry = 0
         deps.session_store.save(session)
 
         messages.append(self._render_unit_open(deps, first, plan))
         review_prefix = ""
-        if due:
-            lines = "\n".join(f"- {i['type']}·Day {i['from_day']}：{i['text']}"
-                              for i in due)
+        rel_items = [i for i in merged if i["type"] == "上游感召"]
+        cal_items = [i for i in merged if i["type"] != "上游感召"]
+
+        def _lines(items):
+            return "\n".join(f"- {i['type']}·Day {i['from_day']}：{i['text']}"
+                             for i in items)
+
+        if rel_items:
+            # M7 感召形态：相关性优先分组（先修链未达标 → 日历到期）
+            blocks = ["【上游感召】今日单元的先修链未达标节点"
+                      f"（按拓扑序优先补）：\n{_lines(rel_items)}"]
+            if cal_items:
+                blocks.append(f"【间隔复习】历史薄弱项（日历到期）：\n{_lines(cal_items)}")
             review_prefix = (
+                "正式开讲前，用 ≤5 分钟快速回顾以下项目"
+                "（逐条向用户提问确认是否还记得，答错用一句话纠正，不展开重讲）：\n"
+                + "\n\n".join(blocks) +
+                "\n回顾完毕后无缝进入单元开场讲解。\n")
+        elif cal_items:
+            review_prefix = (  # 无感召时与 M7 前逐字节一致
                 "【间隔复习】正式开讲前，用 ≤5 分钟快速回顾以下历史薄弱项"
                 "（逐条向用户提问确认是否还记得，答错用一句话纠正，不展开重讲）：\n"
-                f"{lines}\n回顾完毕后无缝进入单元开场讲解。\n")
+                f"{_lines(cal_items)}\n回顾完毕后无缝进入单元开场讲解。\n")
         return CommandResult(
             messages=messages,
             llm_instruction=(
