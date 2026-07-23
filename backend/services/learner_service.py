@@ -20,7 +20,7 @@ from datetime import date
 from .backup_service import BackupService
 from .config_service import ConfigService
 from ..domain.learner import (compute_mastery, concept_id, is_due,
-                              review_interval)
+                              review_interval, topo_order, upstream_closure)
 
 SCHEMA_VERSION = 1
 
@@ -207,6 +207,63 @@ class LearnerService:
         return {"concepts": out, "current_day": current_day,
                 "exists": self.model_path.exists(),
                 "has_ratings_source": False}  # 由路由按 StudyState 补充
+
+    # ---- 图谱查询（M7 §4：复习感召与拓扑补弱的图基础） ----
+
+    def _prereq_map(self) -> dict[str, list[str]]:
+        concepts = self._load_json(
+            self.concepts_path,
+            {"schema_version": SCHEMA_VERSION, "concepts": {}})["concepts"]
+        return {cid: c.get("prerequisites", []) for cid, c in concepts.items()}
+
+    def _mastery_by_id(self, current_day: int) -> dict[str, dict]:
+        """cid → {title, mastery, has_evidence}（get_model 同口径实时重算）。"""
+        return {c["id"]: {"title": c.get("title", c["id"]),
+                          "mastery": c.get("mastery", 0.0),
+                          "has_evidence": bool(c.get("evidence"))}
+                for c in self.get_model(current_day)["concepts"]}
+
+    def upstream_chain(self, cid: str) -> list[str]:
+        """cid 的传递上游闭包（根基在前、近邻在后）。"""
+        return upstream_closure(cid, self._prereq_map())
+
+    def unmastered_upstream(self, cids: list[str], current_day: int,
+                            threshold: float = 0.7) -> list[dict]:
+        """给定节点的上游未达标链（拓扑序，根基先补；**含零证据节点**——
+        先修诊断"已会节点置初始 mastery"的核心场景）。
+
+        返回 [{cid, title, mastery, has_evidence, prereq_of}]，prereq_of 记录
+        它是哪个目标节点的上游（取最近的一个目标）。
+        """
+        pmap = self._prereq_map()
+        nearest: dict[str, str] = {}
+        pooled: set[str] = set()
+        for cid in cids:
+            for u in upstream_closure(cid, pmap):
+                pooled.add(u)
+                nearest.setdefault(u, cid)
+        view = self._mastery_by_id(current_day)
+        out = []
+        for cid in topo_order(pooled, pmap):
+            info = view.get(cid)
+            if info is None or info["mastery"] >= threshold:
+                continue
+            out.append({"cid": cid, "title": info["title"],
+                        "mastery": info["mastery"],
+                        "has_evidence": info["has_evidence"],
+                        "prereq_of": nearest.get(cid, "")})
+        return out
+
+    def remediation_order(self, current_day: int,
+                          threshold: float = 0.7) -> list[str]:
+        """全部**有证据且未达标** concept 的拓扑补弱序（上游先补，§13 拓扑计划 v1）。
+
+        零证据节点不计入（标「未学」而非「未达标」，M5b R4 先例）。
+        """
+        model = self.get_model(current_day)["concepts"]
+        weak = [c["id"] for c in model
+                if c.get("evidence") and c.get("mastery", 0) < threshold]
+        return topo_order(weak, self._prereq_map())
 
     # ---- 迁移（草稿 + 人审） ----
 

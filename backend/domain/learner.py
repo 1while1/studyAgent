@@ -57,3 +57,48 @@ def review_interval(mastery: float) -> int:
 def is_due(review_due: list[int], current_day: int) -> bool:
     """到期未复习即保持到期（累积不消失），直到有新证据重排。"""
     return bool(review_due) and current_day >= min(review_due)
+
+
+# ---- 课程图谱（M7 §4）：先修链闭包与拓扑序。零 IO，prereq_map 由调用方装配 ----
+
+def upstream_closure(cid: str, prereq_map: dict[str, list[str]]) -> list[str]:
+    """cid 的全部传递上游（先修链闭包），DFS 后序 = 根基在前、近邻在后。
+
+    - 环守卫：异常数据成环时不死循环，成环节点按首次访问序返回
+    - 缺失容忍：prereq_map 中不存在的节点按无上游处理
+    - 返回不含 cid 本身
+    """
+    ordered: list[str] = []
+    state: dict[str, int] = {}  # 0=未访 1=在栈 2=完成
+
+    def dfs(node: str) -> None:
+        if state.get(node, 0) != 0:
+            return
+        state[node] = 1
+        for pre in prereq_map.get(node, []):
+            if state.get(pre, 0) == 1:
+                continue  # 环：跳过回边
+            dfs(pre)
+        state[node] = 2
+        if node != cid:
+            ordered.append(node)
+
+    dfs(cid)
+    return ordered
+
+
+def topo_order(cids: list[str] | set[str],
+               prereq_map: dict[str, list[str]]) -> list[str]:
+    """给定节点集合的拓扑补弱序（上游先补）：闭包深度小者（根基）在前，同层按 id 稳定序。
+
+    深度 = 该节点上游闭包大小（根基=0、越下游越大），使集合内任何节点的
+    上游都排在其前面（只要上游也在集合内）。
+    """
+    depth_cache: dict[str, int] = {}
+
+    def depth(cid: str) -> int:
+        if cid not in depth_cache:
+            depth_cache[cid] = len(upstream_closure(cid, prereq_map))
+        return depth_cache[cid]
+
+    return sorted(set(cids), key=lambda c: (depth(c), c))
