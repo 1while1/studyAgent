@@ -245,8 +245,8 @@ def main():
                   (page.locator("#demo-msg").text_content() or ""))
             check("demo 代码根注册", any(r["name"] == "demo"
                   for r in api("/api/code/roots")["roots"]))
-            page.locator("#demo-close").click()
-            page.wait_for_timeout(300)
+            page.wait_for_timeout(1000)  # 创建成功后弹窗 900ms 自动关闭
+            check("demo 弹窗自动关闭", page.locator("#demo-modal").is_hidden())
             # Monaco 编辑 + 保存（demo 白名单可写）
             page.evaluate("openCodeFile('demo','wt-demo/src/app.js')")
             page.wait_for_timeout(1500)

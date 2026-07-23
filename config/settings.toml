@@ -180,27 +180,6 @@ sop_card = "SOP_结束今日学习.md"
 handler = "jump_day"
 sop_card = "SOP_跳转天数.md"
 
-[[code_roots]]
-name = "ragent原项目"
-path = "../ragent原项目"
-workspace = "ragent"
-
-[[code_roots]]
-name = "ragent-replica"
-path = "../ragent-replica"
-workspace = "ragent"
-
-[[code_roots]]
-name = "temp_tinyrag"
-path = "../temp_tinyrag"
-workspace = "tinyrag"
-
-[[code_roots]]
-name = "onecoupon"
-path = "D:\\IntelliJ IDEA 2025.1.2\\onecoupon"
-workspace = "onecoupon"
-
-
 [[workspaces]]
 slug = "ragent"
 title = "Ragent AI 面试冲刺"
@@ -231,3 +210,14 @@ project_dir = "D:\\IntelliJ IDEA 2025.1.2\\onecoupon"
 session_path = "workspaces/onecoupon/session.json"
 total_days = 25
 replica_name = "onecoupon-replica"
+
+
+[[code_roots]]
+name = "ragent原项目"
+path = "../ragent原项目"
+workspace = "ragent"
+
+[[code_roots]]
+name = "ragent-replica"
+path = "../ragent-replica"
+workspace = "ragent"

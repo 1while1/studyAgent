@@ -754,9 +754,19 @@ function loadMonaco() {
       try {
         const base = location.origin + "/vendor/monaco/vs";
         // worker 经 data-URL 包装引入（无构建步骤下的官方做法）
+        // 语言智能感知 worker 各指各的真实文件，其余走通用 editor worker
+        const WORKERS = {
+          "vs/language/css/cssWorker": "language/css/cssWorker.js",
+          "vs/language/html/htmlWorker": "language/html/htmlWorker.js",
+          "vs/language/json/jsonWorker": "language/json/jsonWorker.js",
+          "vs/language/typescript/tsWorker": "language/typescript/tsWorker.js",
+        };
         window.MonacoEnvironment = {
-          getWorkerUrl: () => "data:text/javascript;charset=utf-8," + encodeURIComponent(
-            `self.MonacoEnvironment={baseUrl:'${base}/'};importScripts('${base}/base/worker/workerMain.js');`),
+          getWorkerUrl: (moduleId) => {
+            const rel = WORKERS[moduleId] || "base/worker/workerMain.js";
+            return "data:text/javascript;charset=utf-8," + encodeURIComponent(
+              `self.MonacoEnvironment={baseUrl:'${base}/'};importScripts('${base}/${rel}');`);
+          },
         };
         require.config({
           paths: { vs: base },
