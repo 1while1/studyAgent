@@ -326,6 +326,24 @@ def main():
         page.locator("#usage-close").click()
         page.wait_for_timeout(300)
 
+        # ---- 9f. 学习者模型热力图（M3） ----
+        page.locator("#open-learner").click()
+        page.wait_for_timeout(1500)
+        # 模型不存在时先走迁移（幂等：已存在则迁移条不出现，直接跳过）
+        if page.locator("#learner-migrate").is_visible():
+            page.locator("#learner-migrate button").click()
+            page.wait_for_timeout(1000)
+            page.locator("#learner-migrate button", has_text="确认应用迁移").click()
+            page.wait_for_timeout(1500)
+        check("热力图有知识点格", page.locator(".heat-cell").count() >= 1)
+        check("迁移后有掌握度着色格", page.locator(
+            ".heat-cell.low,.heat-cell.mid,.heat-cell.high").count() >= 1)
+        page.locator(".heat-cell").first.click()
+        page.wait_for_timeout(600)
+        check("知识点证据明细展开", page.locator("#learner-detail h3").is_visible())
+        page.locator("#learner-close").click()
+        page.wait_for_timeout(300)
+
         # ---- 汇总 ----
         check("全程零 JS 错误", len(errors) == 0, "; ".join(errors[:3]))
         page.screenshot(path="/tmp/walkthrough_final.png")

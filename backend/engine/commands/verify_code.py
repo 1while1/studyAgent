@@ -58,6 +58,12 @@ class VerifyCodeHandler(CommandHandler):
         summary = (f"已在 `{root}` 执行 {kind_label}验证：\n"
                    f"- 命令：`{result['cmd']}`\n"
                    f"- 结果：{status}（耗时 {result['seconds']}s）")
+        try:
+            day = deps.state_store.load().get("current_day", 1)
+            self.learner_with_concepts(deps).record_verify(
+                day, session.current_unit_id, result["code"] == 0)
+        except Exception:
+            pass  # 学习者模型写入失败不阻断点评流程
         instruction = (
             "【系统任务：构建结果点评】本次回复的唯一任务是点评构建输出，"
             "与当前学习阶段无关，忽略阶段指令中的其他教学要求，点评完即止。\n"

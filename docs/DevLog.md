@@ -1,7 +1,7 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-23（**M2 可观测交付**：agent.log + 状态条 + 用量页 + 访问密码门；147 单测/58 走查全绿）
+> 最近更新：2026-07-23（**M3 学习者模型交付**：concepts 注册 + 三张硬表 + 三路证据写入 + 迁移 + 掌握度热力图；167 单测/61 走查全绿）
 
 ## 当前运行状态
 
@@ -11,12 +11,21 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 147 个全绿；UI 走查 58 项全绿
+- 测试：`python -m unittest discover -s tests` → 167 个全绿；UI 走查 61 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步
 
-v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 `docs/AgentDesign.md` v3 封板版为准：M1 资料库 ✅ → M2 可观测 ✅（2026-07-23 交付）→ **下一步 = M3 学习者模型**（schema + 三张硬表 + 迁移 + evidence 三路写入 + 掌握度热力图）。
+v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 `docs/AgentDesign.md` v3 封板版为准：M1 资料库 ✅ → M2 可观测 ✅ → M3 学习者模型 ✅（2026-07-23 交付）→ **下一步 = M4 笔记管理**（四层 + 整理动作 + 笔记页 + 话术层收编 InterviewQA）。
+
+## M3 学习者模型（2026-07-23 交付）
+
+- **域层**（`domain/learner.py` 纯函数）：`concept_id()` 代码铸造（Day{N}-{单元id}）、`compute_mastery()`（Σ(delta×0.5^(天数/半衰期))，无 code_verify_pass 封顶 0.6）、`review_interval()`（<0.4→1 / <0.7→3 / 否则 7 天）、`is_due()`（过期累积不消失）
+- **LearnerService**：`concepts.json`（确定性先修链：天内链+跨天链）+ `learner_model.json`（evidence 落盘，mastery 读取时按衰减重算，存储值仅冗余）；delta 查 settings `[evidence_delta]` 表写入定死；`source_ref` 幂等（同键重复写不产生重复证据）
+- **三路证据写入**（commands 统一入口 `learner_with_concepts`，try/except 不阻断学习流程）：next_content 单元终期评分 → quiz_right/wrong；[同步] 已掌握/卡壳 → sync_mastered/stuck；[验证代码] → code_verify_pass/fail（每日每单元一条）；复盘评分 → 当日每单元 quiz 类一条
+- **迁移（草稿+人审）**：历史 rating → quiz_score 证据（delta=rating/5，ts=学习日期，**遗忘衰减照算**——Day1 距今 60 天 mastery≈0.04，属设计意图）；卡壳/疑问 → notes.json 开放条目（needs_review，M4 人工挂接）；learner_model.json 已存在拒绝重复迁移
+- **热力图**：顶栏 🧠 → 知识点红黄绿格 + △封顶 + ⏰到期，点格看证据明细；旧评分存在时迁移引导条（预览→确认→应用）
+- **材料挂接**：concepts.materials 由 commands 编排（study_plan doc tokens → MaterialsService.resolve_doc）；`extract_doc_paths` 加盘符容忍（旧 CLI 时代 `D:/AI学习/...` 绝对路径），stem 兜底命中
 
 ## M2 可观测（2026-07-23 交付）
 
@@ -67,6 +76,7 @@ v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 
 | AI 读文件 tool-use | 导师输出 `[READ:路径:L起-止]` → `engine/tool_use.ToolUseLoop` 增量扫描截获（反引号包裹/行内出现均容错，标记不进 SSE/历史）→ code_browser 只读注入真实代码（≤200 行）→ 续写；单回复限 3 次（`ai_read_max_per_reply`，超限静默丢弃）；读取失败注入**模糊候选文件**（`code_browser.suggest`）供模型纠正；SSE 事件 `tool_read` → 前端 chip，点击跳转代码浏览器行高亮 |
 | **资料库（M1）** | `materials_dir` 扫描注册（txt/md/docx/pdf）→ 解析索引缓存；**备课确定性预取**（讲解回合按单元文档引用 transient 注入教材节选，📚 chip）；`[READ_DOC:资料id#章节]` 与 READ 同管线同限流（📄 chip）；资料库弹窗（清单/预览/重扫/注册） |
 | **可观测性（M2）** | agent.log 全量 LLM/工具记账（ObservedLLM 逐渠道包裹）；token 三层统计（usage→tiktoken→公式）+ 滑动校准；顶栏状态 pill；📊 用量页；**访问密码门**（bcrypt@.env + 签名 cookie + 限速 + 开放模式默认） |
+| **学习者模型（M3）** | concepts 注册（确定性先修链）+ evidence 三路写入（考核/同步/构建）+ mastery 衰减实时计算（无构建验证封顶 0.6）；🧠 掌握度热力图（着色/△/⏰ + 证据明细）；旧评分一键迁移（草稿人审），卡壳疑问转 notes 开放条目 |
 | Mermaid 图 | vendor mermaid@11；```mermaid 块终渲染为 SVG（流式中不渲染）；主题随布局 pair=dark/tutor=default；`securityLevel: strict`；渲染失败回退代码块 |
 | 模型配置页 | 主/备渠道、模型/URL/Key（掩码）、测试连接、保存热生效 |
 
@@ -137,6 +147,7 @@ v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 
 
 ## UI 版本
 
+- **v8（2026-07-23）**：M3 学习者模型 —— 顶栏 🧠 掌握度热力图（红黄绿格 + △封顶 + ⏰到期），点格展开证据明细表；迁移引导条（预览→确认→应用）。
 - **v7（2026-07-23）**：M2 可观测 —— 顶栏 LLM 状态 pill（渠道+耗时/失败标红）；📊 用量弹窗（日×渠道×task 聚合表 + 成本 + auth 管理区）；登录 overlay（401 自动唤起 + 登录后重放原请求）；设置/删除访问密码、退出登录入口收在用量弹窗底部。
 - **v6（2026-07-22）**：M1 资料库 —— 学习资料弹窗加「资料库」tab（清单/预览/重扫/注册）；📚 备课 chip（讲解回合确定性预取教材节选）与 📄 READ_DOC chip（AI 主动读教材，章节自导航），资料 chip 不跳代码浏览器。
 - **v5（2026-07-22）**：P0 教学真实性 —— AI 读文件 tool-use 闭环（`[READ:路径:Lx-y]` 行缓冲截获 → 真实代码注入续写，前端 📖 chip 可点击跳转行高亮，限 3 次/回复）；Mermaid 图渲染（vendor mermaid@11，主题随布局，失败回退代码块）；prompt 硬约束扩到 8 条；走查 49 项全绿（新增 mermaid/tool-use 5 项）。

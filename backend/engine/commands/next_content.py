@@ -37,6 +37,10 @@ class NextContentHandler(CommandHandler):
             {deps.state_store.path: deps.state_store.dump(state),
              deps.memory.path_for(day): content},
             validator=deps.validator())
+        try:
+            self.learner_with_concepts(deps).record_quiz(day, unit_id, score)
+        except Exception:
+            pass  # 学习者模型写入失败不阻断学习流程
 
         next_unit = next(
             (u for u in deps.state_store.day(state)["units"]

@@ -72,6 +72,13 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 - 「📊 用量」页：近 7 天 渠道×任务×日 的调用量/token/估算成本（定价表可在 settings 配）
 - **访问密码门**：「📊 用量」页设置密码后全 API 锁定（bcrypt 哈希存 .env，签名 cookie 7 天，失败限速）；未设置 = 开放模式
 
+**学习者模型（M3）**
+- 每个学习单元自动铸造知识点（concept）：`concepts.json` 注册表 + 确定性先修链（天内 A→B→C、跨天衔接）
+- **evidence 三路写入**：单元考核评分 / [同步] 已掌握·卡壳 / [验证代码] 构建结果，全部落为带权证据（delta 表在 settings，LLM 只选类型）
+- **mastery 证据驱动**：衰减公式（14 天半衰期）实时计算，不再只靠 LLM 自评；**无构建验证通过记录封顶 0.6**（防"看懂"幻觉）
+- **🧠 掌握度热力图**：知识点红黄绿着色 + 封顶 △ + 复习到期 ⏰，点格看证据明细（类型/权重/时间/来源）
+- 旧数据一键迁移：历史单元评分 → quiz_score 证据（rating/5 映射），卡壳/疑问 → 开放笔记条目（草稿预览→人审确认→应用）
+
 **代码浏览器与联动提问**
 - 目录树懒加载 + 行号 gutter + 语法高亮（只读，路径穿越防护）；树折叠、长行换行、树宽拖拽记忆
 - **片段提问**：选中代码 → 浮动按钮 → 自动填入「`路径:L行号` + 代码块」到输入框；聊天中渲染为片段卡片，点 📎 跳回代码浏览器定位 + 行高亮
@@ -89,8 +96,8 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 
 ```bash
 cd study-web
-python -m unittest discover -s tests    # 147 个后端测试，stdlib，无需真实 LLM
-python scripts/ui_walkthrough.py        # UI 真实点击走查 58 项（需服务运行中）
+python -m unittest discover -s tests    # 167 个后端测试，stdlib，无需真实 LLM
+python scripts/ui_walkthrough.py        # UI 真实点击走查 61 项（需服务运行中）
 python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name]
 ```
 

@@ -77,3 +77,40 @@ class CommandHandler(ABC):
         from ...services.config_service import SOP_DIR
         path = SOP_DIR / filename
         return path.read_text(encoding="utf-8") if path.exists() else ""
+
+    @staticmethod
+    def learner_with_concepts(deps: Deps):
+        """学习者模型写入统一入口（M3）：同步 concepts + materials 挂接后返回服务。
+
+        concepts 挂接材料需要 study_plan（doc tokens）与 materials_service
+        （resolve_doc）编排——service 互不引用，故在此（engine 层）组装。
+        """
+        from ...domain.learner import concept_id
+        from ...services.learner_service import LearnerService
+        from ...services.materials_service import MaterialsService
+        from ...services.study_plan import extract_doc_paths
+        svc = LearnerService(deps.config)
+        try:
+            state = deps.state_store.load()
+        except Exception:
+            return svc
+        ms = MaterialsService(deps.config)
+        mats: dict[str, list[str]] = {}
+        for day_key in state.get("days", {}):
+            try:
+                plan = deps.study_plan.parse_day(int(day_key))
+            except Exception:
+                continue  # 未细化天无 doc 信息，跳过不阻塞
+            for u in plan.get("units", []):
+                ids = []
+                for token in extract_doc_paths(u.get("doc", "")):
+                    try:
+                        e = ms.resolve_doc(token)
+                    except Exception:
+                        e = None
+                    if e:
+                        ids.append(e["id"])
+                if ids:
+                    mats[concept_id(int(day_key), u["id"])] = ids
+        svc.ensure_concepts(state, mats)
+        return svc

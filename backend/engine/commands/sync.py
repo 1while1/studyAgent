@@ -66,8 +66,18 @@ class SyncHandler(CommandHandler):
                 validator=deps.validator())
 
             if subtype == "已掌握":
+                try:
+                    self.learner_with_concepts(deps).record_sync(
+                        day, session.current_unit_id, "sync_mastered")
+                except Exception:
+                    pass
                 messages.append(deps.templates.render("sync_mastered", XXX=content_text))
             elif subtype == "卡壳":
+                try:
+                    self.learner_with_concepts(deps).record_sync(
+                        day, session.current_unit_id, "sync_stuck")
+                except Exception:
+                    pass
                 messages.append(f"已记录卡壳：「{content_text}」，复盘时会重点拷问。")
                 llm_instruction = f"请用画图/类比/简化的方式重新讲解：{content_text}"
             elif subtype == "疑问":

@@ -463,6 +463,28 @@ body[data-layout="pair"] #input-form { margin: 2px 12px 12px; }
 #login-error { color: #e5534b; font-size: 12px; min-height: 18px; margin: 8px 0; }
 .login-box .primary { width: 100%; padding: 10px; border-radius: 10px; }
 
+/* ---------- 掌握度热力图（M3） ---------- */
+.learner-legend { font-size: 12px; color: var(--text-dim); margin-bottom: 14px; }
+.learner-legend .lg { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; }
+.lg.low { background: #e5534b; } .lg.mid { background: #e3b341; } .lg.high { background: #57ab5a; }
+#learner-migrate { display: flex; gap: 10px; align-items: center; font-size: 13px; background: var(--accent-soft); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; }
+#learner-migrate.hidden { display: none; }
+#learner-migrate button { background: var(--accent-grad); color: #fff; border: none; border-radius: 8px; padding: 6px 14px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.heat-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.heat-day { width: 54px; font-size: 12px; color: var(--text-dim); font-family: var(--font-mono); flex: none; }
+.heat-cell { border: none; border-radius: 8px; padding: 8px 12px; font-size: 12.5px; font-family: var(--font-mono); cursor: pointer; transition: transform .12s; min-width: 46px; }
+.heat-cell:hover { transform: translateY(-1px); }
+.heat-cell.none { background: var(--inline-code-bg); color: var(--text-dim); }
+.heat-cell.low { background: #e5534b; color: #fff; }
+.heat-cell.mid { background: #e3b341; color: #3d2e00; }
+.heat-cell.high { background: #57ab5a; color: #fff; }
+#learner-detail { margin-top: 16px; }
+#learner-detail h3 { font-size: 14px; margin-bottom: 8px; }
+.learner-meta { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+.ev-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.ev-table th, .ev-table td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); }
+.ev-table th { color: var(--text-dim); font-weight: 500; }
+
 /* 阅读排版 */
 .markdown-body { line-height: 1.9; font-size: 14.5px; }
 .markdown-body h2 { font-family: var(--font-serif); font-size: 19px; margin: 24px 0 12px; padding-left: 12px; border-left: 4px solid var(--accent); letter-spacing: 1px; }

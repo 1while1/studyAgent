@@ -1342,6 +1342,128 @@ function renderUsageAuth(a) {
   }
 }
 
+// ---- 掌握度热力图（M3） ----
+
+const learnerModal = document.getElementById("learner-modal");
+document.getElementById("open-learner").onclick = openLearner;
+document.getElementById("learner-close").onclick = () => learnerModal.classList.add("hidden");
+learnerModal.addEventListener("click", (e) => {
+  if (e.target === learnerModal) learnerModal.classList.add("hidden");
+});
+
+function masteryClass(m, hasEvidence) {
+  if (!hasEvidence) return "none";
+  if (m < 0.4) return "low";
+  if (m < 0.7) return "mid";
+  return "high";
+}
+
+async function openLearner() {
+  learnerModal.classList.remove("hidden");
+  const grid = document.getElementById("learner-grid");
+  const detail = document.getElementById("learner-detail");
+  const mbar = document.getElementById("learner-migrate");
+  grid.innerHTML = "";
+  detail.innerHTML = "";
+  mbar.classList.add("hidden");
+  const model = await (await fetch("/api/learner/model")).json();
+
+  // 迁移引导条：模型未建且有旧评分数据
+  if (!model.exists && model.has_ratings_source) {
+    mbar.classList.remove("hidden");
+    mbar.innerHTML = "";
+    const tip = document.createElement("span");
+    tip.textContent = "检测到旧评分数据，可一键迁移为掌握度证据（草稿→确认）：";
+    const btn = document.createElement("button");
+    btn.textContent = "生成迁移预览";
+    btn.onclick = async () => {
+      const r = await (await fetch("/api/learner/migrate/preview", { method: "POST" })).json();
+      if (!r.ok) { showToast(r.error || "预览失败"); return; }
+      tip.textContent = `草稿就绪：${r.quiz_scores} 条评分证据、${r.notes} 条卡壳/疑问笔记。`;
+      btn.textContent = "确认应用迁移";
+      btn.onclick = async () => {
+        const r2 = await (await fetch("/api/learner/migrate/apply", { method: "POST" })).json();
+        if (r2.ok) { showToast(`迁移完成：${r2.concepts} 个知识点、${r2.notes} 条笔记`); openLearner(); }
+        else showToast(r2.error || "迁移失败");
+      };
+    };
+    mbar.append(tip, btn);
+  }
+
+  // 按 Day 分组渲染热力格
+  const byDay = new Map();
+  for (const c of model.concepts) {
+    const day = (c.id.match(/^Day(\d+)-/) || [0, "?"])[1];
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(c);
+  }
+  if (!model.concepts.length) {
+    grid.textContent = "（暂无知识点——完成迁移或开始学习后自动生成）";
+  }
+  for (const [day, items] of [...byDay.entries()].sort((a, b) => a[0] - b[0])) {
+    const row = document.createElement("div");
+    row.className = "heat-row";
+    const label = document.createElement("span");
+    label.className = "heat-day";
+    label.textContent = `Day ${day}`;
+    row.appendChild(label);
+    for (const c of items) {
+      const cell = document.createElement("button");
+      const hasEv = c.evidence.length > 0;
+      cell.className = "heat-cell " + masteryClass(c.mastery, hasEv);
+      cell.textContent = c.id.split("-")[1] + (c.capped ? " △" : "") + (c.due ? " ⏰" : "");
+      cell.title = `${c.id} ${c.title}\n掌握度 ${c.mastery}` +
+        (c.capped ? `（未封顶 ${c.uncapped}，缺构建验证封顶 0.6）` : "") +
+        (c.due ? "\n复习已到期" : "");
+      cell.onclick = () => showConceptDetail(c);
+      row.appendChild(cell);
+    }
+    grid.appendChild(row);
+  }
+}
+
+function showConceptDetail(c) {
+  const detail = document.getElementById("learner-detail");
+  detail.innerHTML = "";
+  const h = document.createElement("h3");
+  h.textContent = `${c.id}：${c.title}（掌握度 ${c.mastery}）`;
+  detail.appendChild(h);
+  if (c.prerequisites.length) {
+    const p = document.createElement("div");
+    p.className = "learner-meta";
+    p.textContent = `先修：${c.prerequisites.join("、")}`;
+    detail.appendChild(p);
+  }
+  if (c.materials.length) {
+    const p = document.createElement("div");
+    p.className = "learner-meta";
+    p.textContent = `关联资料：${c.materials.join("、")}`;
+    detail.appendChild(p);
+  }
+  if (!c.evidence.length) {
+    const p = document.createElement("div");
+    p.className = "learner-meta";
+    p.textContent = "暂无证据。";
+    detail.appendChild(p);
+    return;
+  }
+  const table = document.createElement("table");
+  table.className = "ev-table";
+  table.innerHTML = "<thead><tr><th>类型</th><th>Δ</th><th>日期</th><th>来源</th></tr></thead>";
+  const tb = document.createElement("tbody");
+  for (const ev of [...c.evidence].reverse()) {
+    const tr = document.createElement("tr");
+    for (const v of [ev.type, ev.delta, ev.ts, ev.source_ref]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.appendChild(td);
+    }
+    tb.appendChild(tr);
+  }
+  table.appendChild(tb);
+  detail.appendChild(table);
+}
+
 // ---------- 启动 ----------
 
 (async () => {
