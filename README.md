@@ -46,10 +46,11 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 - **`[验证代码]`**：一键在 replica/项目目录跑 Maven/Gradle/npm 编译或测试，AI 基于真实输出点评
 - 所有进度实时写入当前工作区并过 `validate_study.py` 校验
 
-**双模式 UI**
-- **知识学习**：暖纸书房风（米白 + 赭石 + 衬线标题），侧栏纯学习仪表盘
-- **源码学习**：IDE 深色风（左目录树 + 中代码 + 右 AI 工具窗口），标签页文件头 + 底部状态栏（路径·语言·行数·UTF-8）
-- 顶栏分段控件一键切换，模式绑定主题
+**双模式 UI（M6 双轴钉死）**
+- **知识学习**（study/tutor）：暖纸书房风（米白 + 赭石 + 衬线标题），侧栏纯学习仪表盘
+- **源码学习**（code/pair）：IDE 深色风（左目录树 + 中 Monaco 编辑器 + 右 AI 工具窗口），标签页文件头 + 底部状态栏（路径·语言·行数·UTF-8·可编辑/只读）
+- 顶栏分段控件切换的是 **agent 模式**（`session.mode` 服务端落盘）：code → planner 引擎 + 写/沙箱工具武装，study → 导学引擎；布局（tutor/pair）只是展示层配对，code 模式下代码面板可收起（悬浮钮随时重开）
+- 旧导学指令在 code 会话返回固定提示「该指令请在导学模式使用」（确定性不过 planner）
 
 **页面体验**
 - AI 回复 Markdown 渲染（标题/加粗/表格/引用），代码块语法高亮 + 一键复制
@@ -107,6 +108,13 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 - **教学策略库**：`resources/pedagogy/` 策略卡（口述引导/四档评估/追问策略），面试指令与 quiz_generate/retell_assess 工具共用同源
 - 新 LLM 档工具：quiz_generate（基于知识点+薄弱证据出题）/ retell_assess（四档评估口述）
 
+**实战工坊（M6）**
+- **正规工程脚手架**：`resources/scaffolds/{npm,maven-module,gradle}`（标准布局 + 构建文件齐全 + **零外部依赖可离线构建**）；「+ 新建 demo」弹窗或 AI `scaffold_create` 工具一键生成到 demo 根，自动注册代码根
+- **平台内编码（Monaco 0.52.2，vendor 本地）**：源码学习布局内查看/编辑一体——原项目只读，`demo/`、`replica/` 白名单内可编辑（保存按钮 + Ctrl+S，atomic_write 落盘、脏标记、敏感文件拒写）；Monaco 加载失败静默降级旧 gutter 渲染
+- **写白名单铁律**：仅 `demo/`、`replica/` 别名可写；原项目（project_dir / 代码根）永远只读；AI `edit_file` 工具与 UI 保存共用同一份白名单校验
+- **进程管理**：进程面板启动/停止/日志（SSE tail）/端口链接——`python -m http.server`、demo `npm start` 均可；**真实杀树**（psutil children+self terminate→kill 残余）、**cmdline 哈希 PID 复用守卫**（失配报 stopped 绝不误杀）、端口快探 + 列表实时兜底；启动 cwd 白名单（demo/replica/项目目录/代码根，支持"启动原项目看效果"）
+- **新工具 5 个**：scaffold_create / edit_file（写·白名单）+ process_start / process_stop / process_logs（沙箱执行），planner 清单自动收录
+
 **模型管理**
 - 「模型配置」页面：主/备渠道切换、模型 ID、Base URL、API Key（掩码显示）、测试连接、保存热生效
 - 主备自动 fallback：主渠道失败自动切备用（中途断流会标注重新生成）
@@ -117,8 +125,8 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 
 ```bash
 cd study-web
-python -m unittest discover -s tests    # 306 个后端测试，stdlib，无需真实 LLM
-python scripts/ui_walkthrough.py        # UI 真实点击走查 108 项（需服务运行中）
+python -m unittest discover -s tests    # 348 个后端测试，stdlib，无需真实 LLM
+python scripts/ui_walkthrough.py        # UI 真实点击走查 131 项（需服务运行中）
 python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name]
 ```
 
@@ -151,7 +159,9 @@ services/   state_store / memory_store / study_plan / template_service（SOP 锚
             / backup_service（规则 14 落盘编排）/ config_service / config_writer
             / code_browser（代码浏览+路径解析）/ repo_scanner（项目画像）
             / doc_initializer（初始化生成+验证管线）/ workspace_service（工作区编排）
+            / workshop_service（M6 实战工坊：写白名单+脚手架）/ process_mgr（M6 进程管理）
 domain/     纯模型零 IO（SessionContext / Workspace / paths 常量）
 llm/        LLMClient 接口 + openai_compat / mock / fallback + factory 注册表
 resources/  sop/（模板锚点）/ hooks/（校验脚本）/ templates/（初始化骨架）/ prompts/（生成提示词）
+            / scaffolds/（M6 工程脚手架 npm/maven-module/gradle）
 ```

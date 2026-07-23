@@ -1,8 +1,9 @@
 """UI 全功能走查（Playwright 无头浏览器真实点击）。
 
 用法：服务运行中（8765）执行  python scripts/ui_walkthrough.py
-覆盖：加载/指令/聊天/主题/侧栏/双布局/代码浏览器/片段卡片/弹窗/面板控件/
-Mermaid 渲染/AI 读文件 tool-use（Mock 渠道全链路）。
+覆盖：加载/指令/聊天/主题/侧栏/双布局/代码浏览器（Monaco）/片段卡片/弹窗/
+面板控件/Mermaid 渲染/AI 读文件 tool-use（Mock 渠道全链路）/code 模式与
+实战工坊（模式落盘/demo 脚手架/编辑保存/进程起停/面板显隐，存在性清理）。
 """
 import sys
 import time
@@ -41,12 +42,20 @@ def main():
     orig_ws = next((w["slug"] for w in ws_list["workspaces"] if w["active"]), None)
     if orig_ws != "ragent":
         api("/api/workspaces/switch", {"slug": "ragent"})
+    # 会话模式归一化：残留 code 模式会让侧栏隐藏/指令走 guard（走查前提自愈）
+    api("/api/session/mode", {"mode": "study"})
 
     with sync_playwright() as p:
         b = p.chromium.launch(headless=True)
         page = b.new_page(viewport={"width": 1500, "height": 820})
         errors = []
+        step = {"cur": "加载"}
+
+        def mark(s):
+            step["cur"] = s
+
         page.on("pageerror", lambda e: errors.append(
+            f"<{step['cur']}> " +
             (str(e)[:150] + " | " + str(getattr(e, "stack", ""))[:250])))
 
         # ---- 1. 加载 ----
@@ -120,7 +129,8 @@ def main():
         page.locator("#llm-close").click()
         page.wait_for_timeout(400)
 
-        # ---- 7. 源码学习模式 + 代码浏览器 ----
+        mark("7 代码浏览")
+        # ---- 7. 源码学习模式 + 代码浏览器（M6：Monaco 宿主） ----
         page.locator("#mode-pair").click()
         page.wait_for_timeout(1500)
         check("源码学习-布局切换", page.evaluate("document.body.dataset.layout") == "pair")
@@ -129,24 +139,24 @@ def main():
         h1 = page.locator("#chat-topbar").evaluate("el=>el.offsetHeight")
         h2 = page.locator(".code-panel-head").evaluate("el=>el.offsetHeight")
         check("双头部对齐", h1 == h2, f"{h1} vs {h2}")
+        # 双轴钉住：布局留在 pair，agent 模式回 study（7b 聊天仍走导学引擎，语义同旧走查）
+        api("/api/session/mode", {"mode": "study"})
+        check("双轴-模式回 study 布局不动", page.evaluate("document.body.dataset.layout") == "pair")
         page.locator("#code-root-select").select_option("ragent-replica")
         page.wait_for_timeout(800)
         page.evaluate("openCodeFile('ragent-replica','day01/src/main/java/com/my/ragent/day01/StreamingChatClient.java')")
-        page.wait_for_timeout(1500)
-        check("文件打开-行号", page.locator(".code-gutter").text_content().strip() != "")
-        check("文件打开-高亮", page.locator(".code-body code span").count() > 5)
+        page.wait_for_timeout(2500)  # Monaco 首次动态加载（loader + editor.main）
+        check("Monaco 动态加载", page.evaluate(
+            "typeof monaco !== 'undefined' && !!window.__codeEditor"))
+        check("文件打开-内容", "StreamingChatClient" in page.evaluate(
+            "window.__codeEditor ? window.__codeEditor.getValue() : ''"))
+        check("文件打开-高亮", page.locator(".code-content .view-line span").count() > 5)
         check("IDE 状态栏", "行" in page.locator("#csb-meta").text_content())
-        # 选中 → 浮动按钮 → 插入
-        page.locator(".code-body").evaluate("""el => {
-          const r = document.createRange();
-          const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-          let first = walker.nextNode(), last = first, n = 0;
-          while (walker.nextNode() && n < 5) { last = walker.nextNode() || last; n++; }
-          r.setStart(first, 0); r.setEnd(last, (last.textContent||'').length);
-          const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        # Monaco 选区 → 浮动按钮 → 插入
+        page.evaluate("""(() => {
+          window.__codeEditor.setSelection(new monaco.Selection(1, 1, 3, 20));
           document.dispatchEvent(new MouseEvent('mouseup', {clientX: 800, clientY: 350}));
-          document.dispatchEvent(new Event('selectionchange'));
-        }""")
+        })()""")
         page.wait_for_timeout(400)
         check("浮动插入按钮", page.locator("#snippet-float").is_visible())
         page.locator("#snippet-float").click()
@@ -161,9 +171,11 @@ def main():
         page.locator("#code-tree-toggle").click()
         page.locator("#code-wrap-toggle").click()
         page.wait_for_timeout(300)
-        check("换行模式-gutter 隐藏", not page.locator(".code-gutter").is_visible())
+        check("换行模式", page.evaluate(
+            "window.__codeEditor.getOption(monaco.editor.EditorOption.wordWrap)") == "on")
         page.locator("#code-wrap-toggle").click()
 
+        mark("7c 引用芯片")
         # ---- 7c. 代码引用芯片（AI 回答中的路径 → 点击跳转 + 高亮） ----
         page.evaluate("addMessage('assistant', '请看 `ragent-replica/day01/pom.xml:L1-L3` 这个文件', true)")
         page.wait_for_timeout(300)
@@ -171,13 +183,14 @@ def main():
         page.locator(".code-ref").last.click()
         page.wait_for_timeout(1500)
         check("引用跳转-文件打开", "pom.xml" in page.locator("#code-file-path").text_content())
-        check("引用跳转-行高亮", page.locator(".line-flash").count() >= 1)
+        check("引用跳转-行高亮", page.locator(".line-flash-mc").count() >= 1)
         page.evaluate("addMessage('assistant', '再看 `no/such/File.java`', true)")
         page.wait_for_timeout(300)
         page.locator(".code-ref").last.click()
         page.wait_for_timeout(600)
         check("引用未找到-toast", page.locator(".toast").is_visible())
 
+        mark("7b 片段提问")
         # ---- 7b. 发送片段提问 → 卡片渲染 → 刷新历史回填 ----
         page.locator("#input").press("End")
         page.type("#input", "只回复OK", delay=5)
@@ -198,16 +211,144 @@ def main():
         page.wait_for_timeout(2000)
         check("历史回填渲染卡片", page.locator(".snippet-jump").count() >= 1)
 
+        mark("8 片段跳转")
         # ---- 8. 片段跳转 + 切回知识学习 ----
         page.locator(".snippet-jump").first.click()
         page.wait_for_timeout(2500)
-        check("片段跳转-行高亮", page.locator(".line-flash").count() >= 1)
+        check("片段跳转-行高亮", page.locator(".line-flash-mc").count() >= 1)
         page.locator("#mode-tutor").click()
         page.wait_for_timeout(800)
         check("切回知识学习", page.evaluate("document.body.dataset.layout") == "tutor")
         check("知识学习-侧栏恢复", page.locator("#sidebar").is_visible())
         check("知识学习-代码面板隐藏", not page.locator("#code-panel").is_visible())
 
+        mark("8b 实战工坊")
+        # ---- 8b. code 模式 + 实战工坊（M6）：模式持久化/Monaco 编辑保存/
+        #      demo 脚手架/进程起停/面板显隐；存在性感知清理（9c+ 同款） ----
+        demo_root_existed = any(r["name"] == "demo"
+                                for r in api("/api/code/roots")["roots"])
+        wt_proc_id = None
+
+        def _port_free(port):
+            import socket
+            s = socket.socket()
+            try:
+                s.bind(("127.0.0.1", port))
+                return True
+            except OSError:
+                return False
+            finally:
+                s.close()
+
+        try:
+            # 模式切换 = 服务端 agent 状态落盘（双轴）
+            page.locator("#mode-pair").click()
+            page.wait_for_timeout(1200)
+            check("code 模式落盘", api("/api/session/mode").get("mode") == "code")
+            check("code 模式布局配对", page.evaluate("document.body.dataset.layout") == "pair")
+            # 新建 demo（脚手架）
+            page.locator("#demo-new").click()
+            page.wait_for_timeout(600)
+            check("demo 弹窗打开", page.locator("#demo-modal").is_visible())
+            page.locator("#demo-type").select_option("npm")
+            page.fill("#demo-name", "wt-demo")
+            page.locator("#demo-create").click()
+            page.wait_for_timeout(1800)
+            check("demo 创建成功", "已创建 demo/wt-demo" in
+                  (page.locator("#demo-msg").text_content() or ""))
+            check("demo 代码根注册", any(r["name"] == "demo"
+                  for r in api("/api/code/roots")["roots"]))
+            page.wait_for_timeout(1000)  # 创建成功后弹窗 900ms 自动关闭
+            check("demo 弹窗自动关闭", page.locator("#demo-modal").is_hidden())
+            # Monaco 编辑 + 保存（demo 白名单可写）
+            page.evaluate("openCodeFile('demo','wt-demo/src/app.js')")
+            page.wait_for_timeout(1500)
+            check("demo 文件可编辑", "可编辑" in
+                  (page.locator("#csb-meta").text_content() or ""))
+            check("保存按钮可见", page.locator("#code-save").is_visible())
+            page.evaluate("window.__codeEditor.setValue('// walkthrough edit\\n')")
+            page.wait_for_timeout(200)
+            check("编辑后脏标记", page.locator("#code-save.dirty").count() == 1)
+            page.evaluate("saveCurrentFile()")
+            page.wait_for_timeout(800)
+            back = api("/api/code/file?root=demo&path=wt-demo/src/app.js")
+            check("保存回读一致", back.get("content") == "// walkthrough edit\n")
+            # 原项目只读（写白名单不含原项目）
+            page.evaluate("openCodeFile('ragent原项目','frontend/index.html')")
+            page.wait_for_timeout(1200)
+            check("原项目只读标记", "只读" in
+                  (page.locator("#csb-meta").text_content() or ""))
+            check("原项目无保存钮", page.locator("#code-save").is_hidden())
+            # 进程面板：启动 → 端口链接 → 日志 tail → 停止 → 端口释放
+            page.locator("#proc-toggle").click()
+            page.wait_for_timeout(600)
+            check("进程抽屉打开", page.locator("#proc-drawer").is_visible())
+            import socket as _sk
+            _s = _sk.socket(); _s.bind(("127.0.0.1", 0))
+            wt_port = _s.getsockname()[1]; _s.close()
+            page.locator("#proc-cwd").select_option(label="demo")
+            page.fill("#proc-cmd",
+                      f'"{sys.executable}" -m http.server {wt_port} --bind 127.0.0.1')
+            page.locator("#proc-start-btn").click()
+            page.wait_for_timeout(3500)  # 端口快探窗口 2.5s
+            check("进程行出现", page.locator(".proc-row").count() >= 1)
+            check("进程端口链接", page.locator(
+                f".proc-row a.p-port[href$=':{wt_port}']").count() >= 1)
+            plist = api("/api/processes")["processes"]
+            wt_proc_id = next((p["id"] for p in plist
+                               if p["status"] == "running"
+                               and str(wt_port) in " ".join(p["cmd"])), None)
+            check("进程登记 running", wt_proc_id is not None)
+            page.locator(".proc-row button", has_text="日志").first.click()
+            page.wait_for_timeout(800)
+            page.request.get(f"http://127.0.0.1:{wt_port}/")
+            page.wait_for_timeout(1500)
+            check("进程日志 tail", "GET" in
+                  (page.locator("#proc-log").text_content() or ""))
+            page.locator(".proc-row button", has_text="停止").first.click()
+            page.wait_for_timeout(2000)
+            check("进程停止", "已停止" in
+                  (page.locator("#proc-list").text_content() or ""))
+            check("端口已释放", _port_free(wt_port))
+            wt_proc_id = None
+            page.locator("#proc-close").click()
+            page.wait_for_timeout(300)
+            # 面板显隐 override（收起 → 悬浮钮 → 重开）
+            page.locator("#code-panel-hide").click()
+            page.wait_for_timeout(300)
+            check("面板收起", not page.locator("#code-panel").is_visible())
+            check("悬浮重开钮", page.locator("#code-panel-show").is_visible())
+            page.locator("#code-panel-show").click()
+            page.wait_for_timeout(400)
+            check("面板重开", page.locator("#code-panel").is_visible())
+            page.locator("#mode-tutor").click()
+            page.wait_for_timeout(800)
+            check("切回 study 模式", api("/api/session/mode").get("mode") == "study")
+        finally:
+            # 清理：进程 / 模式 / demo 目录 / demo 代码根（存在性感知）
+            try:
+                if wt_proc_id:
+                    api("/api/processes/stop", {"id": wt_proc_id})
+                for p_ in api("/api/processes")["processes"]:
+                    if p_["status"] == "running":
+                        api("/api/processes/stop", {"id": p_["id"]})
+            except Exception:
+                pass
+            try:
+                api("/api/session/mode", {"mode": "study"})
+            except Exception:
+                pass
+            import shutil as _sh
+            _wt = ROOT / "workspaces" / "ragent" / "demo" / "wt-demo"
+            if _wt.exists():
+                _sh.rmtree(_wt, ignore_errors=True)
+            if not demo_root_existed:
+                try:
+                    api("/api/code/roots/delete", {"name": "demo"})
+                except Exception:
+                    pass
+
+        mark("9 聊天")
         # ---- 9. 聊天（真实 LLM，短请求） ----
         before = page.locator("#messages .bubble").count()
         page.fill("#input", "回复OK即可")
@@ -224,6 +365,7 @@ def main():
         check("无 LLM 错误泡", page.locator(".msg.error").count() == 0,
               page.locator(".msg.error .bubble").first.text_content()[:100] if page.locator(".msg.error").count() else "")
 
+        mark("9b Mermaid")
         # ---- 9b. Mermaid 渲染（前端确定性注入，不依赖 LLM 发挥） ----
         page.evaluate("""(() => {
           const div = document.createElement('div');
@@ -236,6 +378,7 @@ def main():
               page.locator("#mermaid-test svg").count() >= 1)
         page.evaluate("document.getElementById('mermaid-test').remove()")
 
+        mark("9c tool-use")
         # ---- 9c. AI 读文件 tool-use 全链路（临时切 Mock 渠道，事后还原） ----
         orig_cfg = page.request.get(BASE + "/api/llm-config").json()
         mock_cfg = {"provider": "mock",
@@ -263,9 +406,10 @@ def main():
             page.wait_for_timeout(2000)
             check("chip 跳转打开文件",
                   "index.html" in page.locator("#code-file-path").text_content())
-            check("chip 跳转行高亮", page.locator(".line-flash").count() >= 1)
+            check("chip 跳转行高亮", page.locator(".line-flash-mc").count() >= 1)
             page.locator("#mode-tutor").click()
             page.wait_for_timeout(600)
+        mark("9c+ 模拟面试")
         # ---- 9c+. 模拟面试（M5c，Mock 渠道；teach_back 写真实库 → 先备份事后还原） ----
         import tomllib
         _cfg = tomllib.load(open(ROOT / "config" / "settings.toml", "rb"))
@@ -311,6 +455,7 @@ def main():
                 "warmup_on_start": orig_cfg.get("warmup_on_start", True),
                 "sections": {}})
 
+        mark("9d 资料库")
         # ---- 9d. 资料库（M1）：API + 弹窗列表 + 预览 ----
         mats = page.request.get(BASE + "/api/materials").json()
         check("资料库 API 非空", mats.get("ok") and len(mats.get("materials", [])) >= 1)
@@ -329,6 +474,7 @@ def main():
         page.locator("#doc-close").click()
         page.wait_for_timeout(400)
 
+        mark("9e 可观测")
         # ---- 9e. 可观测性与密码门（M2） ----
         page.wait_for_timeout(1000)
         pill = page.locator("#llm-pill")
@@ -370,6 +516,7 @@ def main():
         page.locator("#usage-close").click()
         page.wait_for_timeout(300)
 
+        mark("9f 掌握度")
         # ---- 9f. 掌握度抽屉（战术板 + 战略雷达 + 侧栏预警） ----
         page.locator("#open-learner").click()
         page.wait_for_timeout(1500)
@@ -433,6 +580,7 @@ def main():
         page.locator("#mastery-close").click()
         page.wait_for_timeout(300)
 
+        mark("9g 笔记")
         # ---- 9g. 笔记页 v2（书架三栏 + MD 编辑器） ----
         # 全程只用「走查测试」前缀笔记（无 concept：销账不写证据，零污染真实数据）
         page.locator("#open-notes").click()
@@ -495,6 +643,7 @@ def main():
         page.locator("#notes-close").click()
         page.wait_for_timeout(300)
 
+        mark("9h 话术")
         # ---- 9h. 面试话术库（M4）：卡片视图 + 原文切换 ----
         page.locator("#open-docs").click()
         page.wait_for_timeout(800)

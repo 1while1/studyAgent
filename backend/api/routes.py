@@ -16,6 +16,8 @@ from ..engine.turn_engine import AGENT_COMMAND_HINT, build_turn_engine
 from ..services.doc_initializer import InitError
 from ..services.repo_scanner import scan as repo_scan
 from ..services.workspace_service import WorkspaceError, WorkspaceService
+from ..services.workshop_service import WorkshopError, WorkshopService
+from ..services.process_mgr import ProcessError, ProcessManager, split_cmd
 
 router = APIRouter()
 
@@ -47,12 +49,16 @@ def _build_tool_context(deps: Deps) -> "ToolContext":
     from ..engine.tool_registry import ToolContext
     from ..services.code_browser import CodeBrowser
     from ..services.materials_service import MaterialsService
+    from ..services.process_mgr import ProcessManager
+    from ..services.workshop_service import WorkshopService
     return ToolContext(config=deps.config,
                        browser=CodeBrowser(deps.config),
                        materials=MaterialsService(deps.config),
                        state_store=deps.state_store,
                        validator=deps.validator(),
-                       llm=deps.llm)
+                       llm=deps.llm,
+                       workshop=WorkshopService(deps.config),
+                       process_mgr=ProcessManager(deps.config))
 
 
 class LLMStreamer:
@@ -327,6 +333,10 @@ def _code_browser() -> CodeBrowser:
     return CodeBrowser(_deps.config)
 
 
+def _workshop() -> WorkshopService:
+    return WorkshopService(_deps.config)
+
+
 @router.get("/api/code/roots")
 def code_roots():
     return {"roots": _code_browser().roots()}
@@ -383,9 +393,112 @@ def code_tree(root: str, path: str = ""):
 @router.get("/api/code/file")
 def code_file(root: str, path: str):
     try:
-        return {"ok": True, **_code_browser().read_file(root, path)}
+        data = _code_browser().read_file(root, path)
+        # M6：可编辑标记（demo/replica 白名单 + 非敏感文件；异常一律 False）
+        data["editable"] = _workshop().editable(root, path)
+        return {"ok": True, **data}
     except CodeBrowserError as e:
         return {"ok": False, "error": str(e)}
+
+
+@router.post("/api/code/save")
+def code_save(body: dict):
+    """UI 保存（M6）：仅 demo/replica 白名单可写，atomic_write 落盘。"""
+    root = (body or {}).get("root", "")
+    path = (body or {}).get("path", "")
+    content = (body or {}).get("content")
+    if not root.strip() or not path.strip() or content is None:
+        return {"ok": False, "error": "root / path / content 均不能为空"}
+    try:
+        return {"ok": True, **_workshop().save_via_root(root, path, str(content))}
+    except WorkshopError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"保存失败: {e}"}
+
+
+@router.get("/api/demo/scaffolds")
+def demo_scaffolds():
+    return {"ok": True, "scaffolds": _workshop().scaffold_types()}
+
+
+@router.post("/api/demo/scaffold")
+def demo_scaffold(body: dict):
+    """平台内建 demo（M6）：脚手架复制到 demo 根 + 自动注册代码根。"""
+    try:
+        r = _workshop().scaffold_create((body or {}).get("type", ""),
+                                        (body or {}).get("name", ""))
+        return {"ok": True, **r}
+    except WorkshopError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"创建 demo 失败: {e}"}
+
+
+# ---------- 进程管理（M6 实战工坊） ----------
+
+def _process_mgr() -> ProcessManager:
+    return ProcessManager(_deps.config)
+
+
+@router.get("/api/processes")
+def process_list():
+    return {"ok": True, "processes": _process_mgr().list(),
+            "allowed_cwds": {k: str(v)
+                             for k, v in _process_mgr().allowed_cwds().items()}}
+
+
+@router.post("/api/processes/start")
+def process_start(body: dict):
+    cwd = (body or {}).get("cwd", "")
+    raw_cmd = (body or {}).get("cmd")
+    name = (body or {}).get("name", "")
+    if isinstance(raw_cmd, str):
+        cmd = split_cmd(raw_cmd)
+    elif isinstance(raw_cmd, list):
+        cmd = [str(c) for c in raw_cmd]
+    else:
+        cmd = []
+    if not cmd:
+        return {"ok": False, "error": "cmd 不能为空（字符串或字符串数组）"}
+    try:
+        return {"ok": True, **_process_mgr().start(cwd, cmd, name)}
+    except ProcessError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"启动失败: {e}"}
+
+
+@router.post("/api/processes/stop")
+def process_stop(body: dict):
+    pid_id = (body or {}).get("id", "")
+    try:
+        return {"ok": True, **_process_mgr().stop(pid_id)}
+    except ProcessError as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.get("/api/processes/logs")
+def process_logs(id: str, tail: int = 200):
+    try:
+        return {"ok": True, **_process_mgr().logs_tail(id, tail)}
+    except ProcessError as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.get("/api/processes/logs/stream")
+def process_logs_stream(id: str):
+    """SSE 日志 tail：只转增量；进程退出且读尽后服务端发 end 并关流。"""
+    mgr = _process_mgr()
+
+    def gen():
+        try:
+            for ev in mgr.logs_stream(id):
+                yield sse(ev)
+        except ProcessError as e:
+            yield sse({"type": "error", "content": str(e)})
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 @router.get("/api/code/resolve")
@@ -864,6 +977,35 @@ def reset_session():
     session.compress_cooldown = 0
     _deps.session_store.save(session)
     return {"cleared": n}
+
+
+# ---------- 会话模式（M6：study/code 双轴之 agent 状态轴） ----------
+
+_SESSION_MODES = ("study", "code")
+
+
+@router.get("/api/session/mode")
+def get_session_mode():
+    """当前会话模式（前端加载时同步模式按钮态与默认布局）。"""
+    session = _deps.session_store.load()
+    return {"ok": True, "mode": getattr(session, "mode", "study")}
+
+
+@router.post("/api/session/mode")
+def set_session_mode(body: dict):
+    """切换会话模式：code → planner 引擎 + ACTION 工具武装；study → 导学引擎。
+
+    模式是会话级 agent 状态（SessionContext.mode，落盘）；布局（tutor/pair）
+    是前端展示层偏好，两端各管各的（§7 双轴钉死）。
+    """
+    mode = ((body or {}).get("mode") or "").strip()
+    if mode not in _SESSION_MODES:
+        return {"ok": False,
+                "error": f"非法模式: {mode or '（空）'}（枚举: {_SESSION_MODES}）"}
+    session = _deps.session_store.load()
+    session.mode = mode
+    _deps.session_store.save(session)
+    return {"ok": True, "mode": mode}
 
 
 # ---------- 模型配置页面 ----------

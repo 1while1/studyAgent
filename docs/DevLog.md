@@ -1,7 +1,7 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-23（**M5c planner 交付 + 审查修复批**——ACTION 契约 + plan-act-observe + pedagogy 策略库 + 模拟面试；修复批：ACTION 按引擎武装/生产 ctx 补 llm/read 类 ACTION 注入/面试状态机矩阵/interview_score 独立字段；320 单测/108 走查全绿）
+> 最近更新：2026-07-23（**M6 实战工坊交付**——脚手架 + Monaco + edit_file 白名单 + process_mgr + study/code 模式分离；348 单测/131 走查全绿）
 
 ## 当前运行状态
 
@@ -11,12 +11,26 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 320 个全绿；UI 走查 108 项全绿
+- 测试：`python -m unittest discover -s tests` → 348 个全绿；UI 走查 131 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步
 
-v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 `docs/AgentDesign.md` v3 封板版为准：M1 资料库 ✅ → M2 可观测 ✅ → M3 学习者模型 ✅ → M4 笔记管理 ✅ → M5a 工具骨架 ✅ → M5b 上下文+路由 ✅ → M5c planner ✅（2026-07-23 交付）→ **下一步 = M6 实战工坊**（脚手架 + Monaco + edit_file 白名单 + process_mgr + study/code 模式分离，验收=平台内建 demo → 构建 → 启动看效果 → 杀树验证）。
+v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 `docs/AgentDesign.md` v3 封板版为准：M1 资料库 ✅ → M2 可观测 ✅ → M3 学习者模型 ✅ → M4 笔记管理 ✅ → M5a 工具骨架 ✅ → M5b 上下文+路由 ✅ → M5c planner ✅ → M6 实战工坊 ✅（2026-07-23 交付）→ **下一步 = M7 课程本体**（知识点图谱 + 感召式复习 + 拓扑计划 + 先修诊断，验收=复习按相关性而非日历）。mark_wrong 工具（§9）留档待 M7 前另立小项。
+
+## M6 实战工坊（2026-07-23 交付）
+
+- **正规工程脚手架**（`resources/scaffolds/{npm,maven-module,gradle}`）：标准布局 + 构建文件齐全 + **零外部依赖可离线构建**（npm 套 build=复制 src→dist、start=零依赖静态服务器、test=自断言——验收主路径；maven/gradle 仅模板）。`{{name}}` token 替换；npm test.js 内令牌字面量必须动态拼接（`"{{"+"name"+"}}"`）防替换误改逻辑（冒烟抓到的真 bug）
+- **workshop_service**（`services/workshop_service.py`，不进 Deps）：写白名单 `{demo: Workspace.demo_dir, replica: WEB_ROOT.parent/<replica_name>（存在时）}`——**原项目永远只读**；`scaffold_create`（名称清洗/重名拒绝/复制+替换/自动注册 demo 代码根带 workspace 归属）；`write_alias`（AI edit_file 入口）与 `save_via_root`（UI 保存入口，代码根须与白名单根重合或位于其内部——反向祖先包含不允许，防写范围放大）；`editable()` 供 /api/code/file 标记
+- **Workspace.demo_dir** 新字段：默认 `workspaces/<slug>/demo`（gitignored、删除守卫兼容、零硬编码可覆盖）
+- **Monaco 0.52.2**（`frontend/vendor/monaco/`，12MB 95 文件，jsdelivr 字节数+node --check 双校验，版本登记 vendor/README.md）：**仅 pair 布局首次打开文件时动态加载**（loader.js → require editor.main，zh-cn nls）；**替换整个 viewer**（非白名单 readOnly），行高亮=deltaDecorations、片段选区=onDidChangeCursorSelection、换行=wordWrap、状态栏照旧；workers 经 data-URL 包装**按 moduleId 各指真实文件**（css/html/json/ts worker 全 vendor——初版未 vendor language/ 导致打开 html/js 时 AMD 404 loadError，走查"全程零 JS 错误"当场抓住）；加载失败静默降级旧 gutter+hljs 渲染；`window.__codeEditor` 暴露供走查 evaluate
+- **edit_file 白名单落盘**：代码文件走 `atomic_write`（tmp+os.replace）——validate_study 是 docx 专用校验器无 validator 可挂，**有意偏离**规则 14 的 atomic_persist 形态（原子替换保崩溃安全）
+- **process_mgr**（`services/process_mgr.py`）：psutil 驱动。注册表 `runtime/processes.json`（schema_version + atomic_write + 损坏留 .corrupt.bak）；启动 `CREATE_NEW_PROCESS_GROUP`（nt）/ `start_new_session`（posix）；**cmdline 哈希基准取启动时 psutil 规范化值**（python→C:\Python314\python.exe 差异会让输入 argv 永远对不上——首版 bug，改启动时抓取）；**PID 复用守卫**：list/stop 前哈希再校验，失配报 stopped 绝不动 kill；**真实杀树**（children(recursive=True)+self terminate→3s 宽限→kill 残余）；端口快探 2.5s（慢服务由 list() 每次实时探测兜底，不阻塞 start）；**stdout 直接重定向日志文件**（有意偏离设计"独立线程读 stdout"——抗服务重启、无管道断裂风险；SSE 仍只转 tail）；cwd 白名单=demo/replica/project_dir/当前工作区代码根（"启动原项目看效果"合法；写白名单不放宽）
+- **study/code 模式双轴钉死**：`/api/session/mode` GET/POST（非法值拒）；`session.mode` 是会话级 agent 状态（服务端落盘），layout(tutor/pair) 是展示层配对；顶栏模式按钮 = POST mode + setLayout 默认配对（study→tutor/code→pair）；**code 模式布局覆盖**=代码面板可收起（面板头 » + 悬浮重开钮，localStorage 记忆——吸取"侧栏收不回"教训）；页面加载以服务端 mode 定初始布局；**`agent_mode_enabled` 默认改 true**（mode 默认 study，存量零影响——M5a 审查已证）
+- **前端**：Monaco 保存（文件头按钮仅 editable 显示 + Ctrl+S + 脏标记 ●）/ demo 弹窗（类型+名称 → 创建成功自动刷新选中 demo 根，900ms 自关——走查初版点关闭撞 auto-close 不可见）/ 进程抽屉（cwd 白名单下拉 + cmd 启动 + 行内停止 + SSE 日志 tail + 端口链接新窗口看效果，进程行 textContent 构建防 XSS）
+- **API**：/api/code/save、/api/code/file+editable、/api/demo/scaffold(s)、/api/processes(+allowed_cwds)/start/stop/logs/logs/stream(SSE)、/api/session/mode
+- **新工具 5 个**：scaffold_create/edit_file（WRITE）+ process_start/process_stop/process_logs（SANDBOX）；ToolContext + workshop/process_mgr 字段；planner 工具清单自动收录（schemas 遍历零改动）
+- **测试**：+28（test_workshop 12：白名单/脚手架/保存/editable/路由；test_process_mgr 9：真实杀树父子双亡+端口释放/PID 复用守卫/损坏恢复/SSE 流/路由起停；test_tool_registry +4：16 工具权限/工坊工具成败/planner 清单；test_turn_engine +3：mode 端点/非法拒/引擎路由）→ **348 全绿**；走查 131 项全绿（+8b code 模式段 23 项，Monaco 适配改造 + 存在性感知清理：进程/模式/demo 目录/demo 代码根 finally 还原）
 
 ## M5c planner（2026-07-23 交付）
 

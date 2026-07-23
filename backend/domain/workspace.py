@@ -21,6 +21,7 @@ class Workspace:
     replica_name: str = "replica"  # 复现项目名（编码目标/StudyMemory 小节前缀）
     preset: str = ""         # 学习模式预设（resources/presets/<name>.toml），空=全局 stages
     materials_dir: str = ""  # 学习资料根目录（相对 WEB_ROOT 或绝对路径），空=未配置
+    demo_dir: Path | None = None  # 实战工坊 demo 根（M6），默认 workspaces/<slug>/demo
 
     @classmethod
     def from_dict(cls, data: dict, web_root: Path) -> "Workspace":
@@ -41,4 +42,5 @@ class Workspace:
             replica_name=data.get("replica_name") or "replica",
             preset=data.get("preset") or "",
             materials_dir=data.get("materials_dir") or "",
+            demo_dir=_path("demo_dir", f"workspaces/{slug}/demo"),
         )

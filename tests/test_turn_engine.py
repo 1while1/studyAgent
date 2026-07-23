@@ -169,5 +169,54 @@ class TestAgentCommandGuard(unittest.TestCase):
         self.assertEqual(saved.get("chat_history", []), [])
 
 
+class TestSessionModeApi(unittest.TestCase):
+    """会话模式端点（M6 双轴之 agent 状态轴）：GET/POST /api/session/mode。"""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="sessmode_"))
+        self.docx = self.tmp / "docx"
+        (self.docx / "StudyMemory").mkdir(parents=True)
+        config = _write_settings(self.tmp, self.docx, "settings.toml",
+                                 agent_flag=True)
+        self.deps, self.tutor = _make(config, self.tmp)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_get_default_study(self):
+        routes.init(self.deps, self.tutor)
+        r = routes.get_session_mode()
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["mode"], "study")
+
+    def test_post_persists_and_routes_engine(self):
+        routes.init(self.deps, self.tutor)
+        r = routes.set_session_mode({"mode": "code"})
+        self.assertTrue(r["ok"])
+        self.assertEqual(routes.get_session_mode()["mode"], "code")
+        # 落盘证实：引擎路由读取的正是该字段（flag on + code → planner）
+        saved = json.loads(
+            (self.tmp / "session.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved.get("mode"), "code")
+        session = self.deps.session_store.load()
+        engine = build_turn_engine(session, self.deps, tutor=self.tutor)
+        self.assertIsInstance(engine, PlannerEngine)
+        # 切回 study → tutor
+        r = routes.set_session_mode({"mode": "study"})
+        self.assertTrue(r["ok"])
+        session = self.deps.session_store.load()
+        self.assertIs(build_turn_engine(session, self.deps,
+                                        tutor=self.tutor), self.tutor)
+
+    def test_post_invalid_mode_rejected(self):
+        routes.init(self.deps, self.tutor)
+        r = routes.set_session_mode({"mode": "agent"})
+        self.assertFalse(r["ok"])
+        self.assertIn("非法模式", r["error"])
+        r = routes.set_session_mode({})
+        self.assertFalse(r["ok"])
+        self.assertEqual(routes.get_session_mode()["mode"], "study")  # 未变
+
+
 if __name__ == "__main__":
     unittest.main()

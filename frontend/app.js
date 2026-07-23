@@ -658,7 +658,17 @@ const wrapBtn = document.getElementById("code-wrap-toggle");
 wrapBtn.onclick = () => {
   const on = codeContentEl.classList.toggle("wrap-mode");
   wrapBtn.textContent = on ? "换行: 开" : "换行: 关";
+  if (mcEditor) mcEditor.updateOptions({ wordWrap: on ? "on" : "off" });
 };
+
+// 轻提示（.toast 样式早已存在，M6 补上助手）
+function toast(text) {
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.textContent = text;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2600);
+}
 
 async function loadCodeRoots(keepSelection) {
   const res = await fetch("/api/code/roots");
@@ -685,7 +695,7 @@ document.getElementById("code-root-select").onchange = (e) => {
   document.getElementById("code-file-path").textContent = "← 从左侧目录树选择文件";
   document.getElementById("csb-path").textContent = "未打开文件";
   document.getElementById("csb-meta").textContent = "";
-  codeContentEl.innerHTML = '<div class="code-hint">选择文件查看代码</div>';
+  showCodeHint("选择文件查看代码");
   loadTreeLevel(codeState.root, "", codeTreeEl, true);
 };
 
@@ -730,17 +740,126 @@ async function loadTreeLevel(root, rel, container, replace) {
   if (!r.entries.length) container.innerHTML = '<div class="code-hint">（空目录）</div>';
 }
 
-async function openCodeFile(root, rel) {
-  document.getElementById("code-file-path").textContent = `${root}/${rel}`;
-  codeContentEl.innerHTML = '<div class="code-hint">加载中…</div>';
-  floatBtn.classList.add("hidden");
-  const res = await fetch(`/api/code/file?root=${encodeURIComponent(root)}&path=${encodeURIComponent(rel)}`);
+// ---- Monaco（M6：pair 布局首次打开文件时动态加载；失败静默降级 legacy 渲染） ----
+let monacoReady = null;   // Promise|null（加载单例）
+let mcEditor = null;      // monaco editor 实例（null = legacy 模式）
+let mcDecorations = [];   // 行高亮 decoration 句柄
+
+function loadMonaco() {
+  if (monacoReady) return monacoReady;
+  monacoReady = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "/vendor/monaco/vs/loader.js";
+    s.onload = () => {
+      try {
+        const base = location.origin + "/vendor/monaco/vs";
+        // worker 经 data-URL 包装引入（无构建步骤下的官方做法）。
+        // 关键：worker 内 AMD 解析根 baseUrl 必须是 vs 的【父级】——Monaco 0.52
+        // 传 workerId='workerMain.js'，目标模块（vs/language/typescript/tsWorker
+        // 等）经 init 消息下发，由 worker 按 baseUrl+模块id 加载（模块 id 自带 vs/ 前缀）；
+        // baseUrl 误指到 vs 会拼出 vs/vs 404（已踩坑，走查 8b 当场抓住）。
+        const baseRoot = location.origin + "/vendor/monaco";
+        window.MonacoEnvironment = {
+          getWorkerUrl: () => "data:text/javascript;charset=utf-8," + encodeURIComponent(
+            `self.MonacoEnvironment={baseUrl:'${baseRoot}/'};importScripts('${base}/base/worker/workerMain.js');`),
+        };
+        require.config({
+          paths: { vs: base },
+          "vs/nls": { availableLanguages: { "*": "zh-cn" } },
+        });
+        require(["vs/editor/editor.main"], () => resolve(window.monaco), reject);
+      } catch (e) { reject(e); }
+    };
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+  return monacoReady;
+}
+
+// 代码区提示（Monaco 宿主存在时先销毁编辑器，防 innerHTML 抹掉其 DOM）
+function showCodeHint(text) {
+  if (mcEditor) {
+    mcEditor.dispose();
+    mcEditor = null;
+    window.__codeEditor = null;
+    codeContentEl.classList.remove("mc-host");
+  }
+  codeContentEl.innerHTML = "";
+  const d = document.createElement("div");
+  d.className = "code-hint";
+  d.textContent = text;
+  codeContentEl.appendChild(d);
+}
+
+function setDirty(v) {
+  document.getElementById("code-save").classList.toggle("dirty", v);
+}
+
+function updateSaveBtn() {
+  document.getElementById("code-save").classList.toggle("hidden", !codeState.editable);
+}
+
+async function saveCurrentFile() {
+  if (!codeState.editable || !mcEditor) return;
+  const res = await fetch("/api/code/save", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ root: codeState.root, path: codeState.path, content: mcEditor.getValue() }),
+  });
   const r = await res.json();
-  if (!r.ok) { codeContentEl.innerHTML = `<div class="code-hint">${r.error}</div>`; return; }
-  codeState = { root, path: rel, lang: r.lang };
+  if (r.ok) { setDirty(false); toast(`已保存 ${codeState.path}`); }
+  else toast(`保存失败：${r.error}`);
+}
+document.getElementById("code-save").onclick = saveCurrentFile;
+
+function openInMonaco(r) {
+  if (!mcEditor) {
+    codeContentEl.innerHTML = "";
+    codeContentEl.classList.add("mc-host");
+    const host = document.createElement("div");
+    host.className = "mc-editor";
+    codeContentEl.appendChild(host);
+    mcEditor = monaco.editor.create(host, {
+      value: r.content, language: r.lang, theme: "vs-dark",
+      readOnly: !r.editable,
+      minimap: { enabled: false }, automaticLayout: true,
+      fontSize: 13,
+      fontFamily: "'JetBrains Mono','Cascadia Code',Consolas,monospace",
+      scrollBeyondLastLine: false,
+      wordWrap: codeContentEl.classList.contains("wrap-mode") ? "on" : "off",
+    });
+    window.__codeEditor = mcEditor;  // 走查 evaluate 用
+    mcEditor.onDidChangeCursorSelection(onMonacoSelection);
+    mcEditor.onDidChangeModelContent(() => setDirty(true));
+    mcEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, saveCurrentFile);
+  } else {
+    mcEditor.setValue(r.content);
+    monaco.editor.setModelLanguage(mcEditor.getModel(), r.lang);
+    mcEditor.updateOptions({ readOnly: !r.editable });
+  }
+  mcEditor.setScrollTop(0);
+  mcEditor.setPosition({ lineNumber: 1, column: 1 });
+  mcDecorations = mcEditor.deltaDecorations(mcDecorations, []);
+  setDirty(false);  // setValue 会触发 change 事件误标脏
+}
+
+// Monaco 选区 → 片段提问（沿用 lastMouse 定位浮动按钮）
+function onMonacoSelection(e) {
+  const sel = e.selection;
+  if (!sel || sel.isEmpty()) { snippetSel = null; floatBtn.classList.add("hidden"); return; }
+  const text = mcEditor.getModel().getValueInRange(sel).replace(/\n$/, "");
+  if (!text.trim()) { snippetSel = null; floatBtn.classList.add("hidden"); return; }
+  snippetSel = { startLine: sel.startLineNumber, endLine: sel.endLineNumber, text };
+  floatBtn.classList.remove("hidden");
+  const x = Math.min(lastMouse.x + 12, window.innerWidth - 110);
+  const y = Math.max(lastMouse.y - 42, 8);
+  floatBtn.style.left = `${x}px`;
+  floatBtn.style.top = `${y}px`;
+}
+
+// legacy 渲染（Monaco 加载失败的降级路径，保留原 gutter+hljs 实现）
+function openLegacy(r) {
+  codeContentEl.classList.remove("mc-host");
   const lines = r.content.split("\n");
-  document.getElementById("csb-path").textContent = `${root}/${rel}`;
-  document.getElementById("csb-meta").textContent = `${r.lang} · ${lines.length} 行 · UTF-8`;
   const wrap = document.createElement("div");
   wrap.className = "code-wrap";
   wrap.style.position = "relative";  // 行高亮定位基准
@@ -758,6 +877,25 @@ async function openCodeFile(root, rel) {
   codeContentEl.innerHTML = "";
   codeContentEl.appendChild(wrap);
   hljs.highlightElement(code);
+}
+
+async function openCodeFile(root, rel) {
+  document.getElementById("code-file-path").textContent = `${root}/${rel}`;
+  floatBtn.classList.add("hidden");
+  const res = await fetch(`/api/code/file?root=${encodeURIComponent(root)}&path=${encodeURIComponent(rel)}`);
+  const r = await res.json();
+  if (!r.ok) { showCodeHint(r.error); return; }
+  codeState = { root, path: rel, lang: r.lang, editable: !!r.editable };
+  document.getElementById("csb-path").textContent = `${root}/${rel}`;
+  document.getElementById("csb-meta").textContent =
+    `${r.lang} · ${r.lines || r.content.split("\n").length} 行 · UTF-8${r.editable ? " · 可编辑" : " · 只读"}`;
+  updateSaveBtn();
+  try {
+    await loadMonaco();
+    openInMonaco(r);
+  } catch (e) {
+    openLegacy(r);  // vendor 缺失/加载失败：静默降级旧渲染（mermaid 同款策略）
+  }
 }
 
 // 选区 → 行号范围
@@ -788,6 +926,7 @@ function getSnippetSelection() {
 document.addEventListener("mouseup", (e) => { lastMouse = { x: e.clientX, y: e.clientY }; });
 
 document.addEventListener("selectionchange", () => {
+  if (mcEditor) return;  // Monaco 模式由 onDidChangeCursorSelection 驱动
   if (codePanel.classList.contains("hidden")) {
     floatBtn.classList.add("hidden");
     return;
@@ -832,6 +971,14 @@ document.addEventListener("click", async (e) => {
 });
 
 function flashLines(s, e) {
+  if (mcEditor) {  // Monaco：decoration + 滚动定位（替代旧绝对定位 div）
+    mcDecorations = mcEditor.deltaDecorations(mcDecorations, [{
+      range: new monaco.Range(s, 1, e, 1),
+      options: { isWholeLine: true, className: "line-flash-mc" },
+    }]);
+    mcEditor.revealLineInCenter(s);
+    return;
+  }
   const wrap = codeContentEl.querySelector(".code-wrap");
   const body = codeContentEl.querySelector(".code-body");
   if (!wrap || !body) return;
@@ -880,30 +1027,75 @@ document.getElementById("code-root-del").onclick = async () => {
   await loadCodeRoots();
 };
 
-// ---------- 双模式（知识学习 / 源码学习） ----------
+// ---------- 双模式（知识学习=study/tutor · 源码学习=code/pair，M6 双轴钉死） ----------
 
 const modeBtns = {
   tutor: document.getElementById("mode-tutor"),
   pair: document.getElementById("mode-pair"),
 };
+const panelShowBtn = document.getElementById("code-panel-show");
 
+// layout（tutor/pair）= 展示层偏好；mode（study/code）= 会话级 agent 状态（服务端）
 function setLayout(mode) {
   document.body.dataset.layout = mode;
   localStorage.setItem("layout", mode);
   modeBtns.tutor.classList.toggle("active", mode === "tutor");
   modeBtns.pair.classList.toggle("active", mode === "pair");
   if (mode === "pair") {
-    codePanel.classList.remove("hidden");  // 源码学习模式强制打开代码面板
-    if (!codeTreeEl.querySelector(".tree-row")) loadCodeRoots();
+    // code 模式默认展示代码面板；用户可收起（覆盖仅作用面板显隐，不换引擎）
+    const hiddenPref = localStorage.getItem("codePanelHidden") === "1";
+    codePanel.classList.toggle("hidden", hiddenPref);
+    panelShowBtn.classList.toggle("hidden", !hiddenPref);
+    if (!hiddenPref && !codeTreeEl.querySelector(".tree-row")) loadCodeRoots();
   } else {
     codePanel.classList.add("hidden");
+    panelShowBtn.classList.add("hidden");
     floatBtn.classList.add("hidden");
   }
 }
 
-modeBtns.tutor.onclick = () => setLayout("tutor");
-modeBtns.pair.onclick = () => setLayout("pair");
-setLayout(localStorage.getItem("layout") || "tutor");
+// 模式按钮 = 切换 agent 模式（服务端 session.mode），布局跟随默认配对
+async function setAgentMode(mode) {
+  try {
+    const res = await fetch("/api/session/mode", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    });
+    const r = await res.json();
+    if (!r.ok) { toast(r.error || "模式切换失败"); return; }
+    setLayout(mode === "code" ? "pair" : "tutor");
+    if (mode === "code") toast("已切换到源码学习（agent 模式：AI 可建 demo / 改文件 / 起进程）");
+  } catch (e) {
+    toast("模式切换失败：" + e.message);
+  }
+}
+modeBtns.tutor.onclick = () => setAgentMode("study");
+modeBtns.pair.onclick = () => setAgentMode("code");
+
+// 面板显隐（覆盖入口成对存在，吸取"侧栏收不回"教训）
+document.getElementById("code-panel-hide").onclick = () => {
+  codePanel.classList.add("hidden");
+  localStorage.setItem("codePanelHidden", "1");
+  panelShowBtn.classList.remove("hidden");
+};
+panelShowBtn.onclick = () => {
+  localStorage.setItem("codePanelHidden", "0");
+  panelShowBtn.classList.add("hidden");
+  if (document.body.dataset.layout !== "pair") setLayout("pair");
+  codePanel.classList.remove("hidden");
+  if (!codeTreeEl.querySelector(".tree-row")) loadCodeRoots();
+};
+
+// 初始布局：以服务端会话模式为准；接口不可达时退回本地布局记忆
+(async () => {
+  let mode = null;
+  try {
+    const res = await fetch("/api/session/mode");
+    mode = (await res.json()).mode;
+  } catch (e) { /* 离线降级 */ }
+  setLayout(mode ? (mode === "code" ? "pair" : "tutor")
+                 : (localStorage.getItem("layout") || "tutor"));
+})();
 
 // ---------- 清空历史 ----------
 
@@ -2609,3 +2801,183 @@ loadHistory();
 loadWorkspaces();
 setInterval(refreshState, 10000);
 setInterval(refreshLlmStatus, 15000);
+
+// ---------- M6 实战工坊：新建 demo 弹窗 ----------
+
+const demoModal = document.getElementById("demo-modal");
+document.getElementById("demo-new").onclick = async () => {
+  const res = await fetch("/api/demo/scaffolds");
+  const r = await res.json();
+  const sel = document.getElementById("demo-type");
+  sel.innerHTML = "";
+  for (const s of r.scaffolds || []) {
+    const opt = document.createElement("option");
+    opt.value = s.type;
+    opt.textContent = s.description ? `${s.type} — ${s.description}` : s.type;
+    sel.appendChild(opt);
+  }
+  const msg = document.getElementById("demo-msg");
+  msg.textContent = "";
+  msg.className = "";
+  demoModal.classList.remove("hidden");
+};
+document.getElementById("demo-close").onclick = () => demoModal.classList.add("hidden");
+demoModal.addEventListener("click", (e) => {
+  if (e.target === demoModal) demoModal.classList.add("hidden");
+});
+document.getElementById("demo-create").onclick = async () => {
+  const type = document.getElementById("demo-type").value;
+  const name = document.getElementById("demo-name").value.trim();
+  const msg = document.getElementById("demo-msg");
+  if (!name) { msg.textContent = "请填写 demo 名称"; msg.className = "error"; return; }
+  msg.textContent = "创建中…";
+  msg.className = "";
+  const res = await fetch("/api/demo/scaffold", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type, name }),
+  });
+  const r = await res.json();
+  if (!r.ok) { msg.textContent = r.error || "创建失败"; msg.className = "error"; return; }
+  msg.textContent = `已创建 ${r.path}（${r.files} 个文件）`;
+  msg.className = "ok";
+  codeState.root = r.code_root || "demo";
+  await loadCodeRoots(true);  // demo 代码根已自动注册，刷新并选中
+  toast(`demo 已创建：${r.path}（可选中文件编辑，或让 AI 构建/启动）`);
+  setTimeout(() => demoModal.classList.add("hidden"), 900);
+};
+
+// ---------- M6 实战工坊：进程面板 ----------
+
+const procDrawer = document.getElementById("proc-drawer");
+let procTimer = null;
+let procLogSource = null;
+
+function stopProcWatch() {
+  if (procTimer) { clearInterval(procTimer); procTimer = null; }
+  if (procLogSource) { procLogSource.close(); procLogSource = null; }
+}
+
+document.getElementById("proc-toggle").onclick = () => {
+  const opening = procDrawer.classList.contains("hidden");
+  procDrawer.classList.toggle("hidden");
+  if (opening) {
+    refreshProcesses();
+    procTimer = setInterval(refreshProcesses, 5000);
+  } else {
+    stopProcWatch();
+  }
+};
+document.getElementById("proc-close").onclick = () => {
+  procDrawer.classList.add("hidden");
+  stopProcWatch();
+};
+document.getElementById("proc-refresh").onclick = refreshProcesses;
+
+async function refreshProcesses() {
+  const res = await fetch("/api/processes");
+  const r = await res.json();
+  const sel = document.getElementById("proc-cwd");
+  if (!sel.options.length && r.allowed_cwds) {
+    for (const [label, path] of Object.entries(r.allowed_cwds)) {
+      const opt = document.createElement("option");
+      opt.value = path;
+      opt.textContent = label;
+      opt.title = path;
+      sel.appendChild(opt);
+    }
+  }
+  const list = document.getElementById("proc-list");
+  const items = r.processes || [];
+  const running = items.filter(p => p.status === "running").length;
+  document.getElementById("proc-status").textContent =
+    items.length ? `${running} 运行 / 共 ${items.length}` : "";
+  list.innerHTML = "";
+  if (!items.length) {
+    const d = document.createElement("div");
+    d.className = "proc-empty";
+    d.textContent = "暂无登记进程。上方输入命令启动，或让 AI 经 process_start 启动。";
+    list.appendChild(d);
+    return;
+  }
+  for (const p of items) {
+    const row = document.createElement("div");
+    row.className = "proc-row";
+    const nameEl = document.createElement("span");
+    nameEl.className = "p-name";
+    nameEl.textContent = p.name;
+    nameEl.title = p.name;
+    const statusEl = document.createElement("span");
+    statusEl.className = `p-status ${p.status}`;
+    statusEl.textContent = p.status === "running" ? "运行中" : "已停止";
+    const cmdEl = document.createElement("span");
+    cmdEl.className = "p-cmd";
+    cmdEl.textContent = (p.cmd || []).join(" ");
+    cmdEl.title = cmdEl.textContent;
+    row.appendChild(nameEl);
+    row.appendChild(statusEl);
+    row.appendChild(cmdEl);
+    for (const pt of p.ports || []) {
+      const a = document.createElement("a");
+      a.className = "p-port";
+      a.href = `http://127.0.0.1:${pt}`;
+      a.target = "_blank";
+      a.title = "打开看效果";
+      a.textContent = `:${pt}`;
+      row.appendChild(a);
+    }
+    const logBtn = document.createElement("button");
+    logBtn.textContent = "日志";
+    logBtn.onclick = () => tailProcLog(p.id, p.name);
+    row.appendChild(logBtn);
+    if (p.status === "running") {
+      const stopBtn = document.createElement("button");
+      stopBtn.textContent = "停止";
+      stopBtn.onclick = async () => {
+        await fetch("/api/processes/stop", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: p.id }),
+        });
+        refreshProcesses();
+      };
+      row.appendChild(stopBtn);
+    }
+    list.appendChild(row);
+  }
+}
+
+document.getElementById("proc-start-btn").onclick = async () => {
+  const cwd = document.getElementById("proc-cwd").value;
+  const cmd = document.getElementById("proc-cmd").value.trim();
+  if (!cmd) return;
+  const res = await fetch("/api/processes/start", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cwd, cmd }),
+  });
+  const r = await res.json();
+  if (!r.ok) { toast(r.error || "启动失败"); return; }
+  document.getElementById("proc-cmd").value = "";
+  toast(`进程已启动（${r.id}）${r.ports && r.ports.length ? "，端口 " + r.ports.join("/") : ""}`);
+  refreshProcesses();
+  tailProcLog(r.id, r.name);
+};
+
+function tailProcLog(id, name) {
+  if (procLogSource) procLogSource.close();
+  const el = document.getElementById("proc-log");
+  el.classList.remove("hidden");
+  el.textContent = `# ${name} (${id}) 日志 tail\n`;
+  const es = new EventSource(`/api/processes/logs/stream?id=${encodeURIComponent(id)}`);
+  procLogSource = es;
+  es.onmessage = (ev) => {
+    const d = JSON.parse(ev.data);
+    if (d.type === "log") {
+      el.textContent += d.line + "\n";
+      el.scrollTop = el.scrollHeight;
+    } else {
+      el.textContent += `# ${d.reason || d.content || "流结束"}\n`;
+      es.close();
+      procLogSource = null;
+    }
+  };
+  es.onerror = () => { es.close(); procLogSource = null; };
+}
