@@ -512,6 +512,7 @@ async function openDoc(name) {
   document.querySelectorAll(".doc-tab").forEach(t =>
     t.classList.toggle("active", t.dataset.doc === name));
   if (name === "materials") { openMaterials(); return; }
+  if (name === "interview_qa") { openQa(false); return; }  // M4：话术层收编为卡片视图
   const box = document.getElementById("doc-content");
   box.textContent = "加载中…";
   docModal.classList.remove("hidden");
@@ -1463,6 +1464,424 @@ function showConceptDetail(c) {
   table.appendChild(tb);
   detail.appendChild(table);
 }
+
+// ---------- 面试话术库（M4 话术层：卡片视图 + 编辑/删除 + 原文切换） ----------
+
+async function openQa(raw) {
+  const box = document.getElementById("doc-content");
+  box.textContent = "加载中…";
+  docModal.classList.remove("hidden");
+  document.getElementById("doc-title").textContent = "面试话术库";
+  if (raw) {
+    const r = await (await fetch("/api/doc?name=interview_qa")).json();
+    box.innerHTML = "";
+    box.appendChild(qaToolbar(true));
+    const body = document.createElement("div");
+    box.appendChild(body);
+    renderMarkdownInto(body, r.ok ? r.content : `加载失败：${r.error}`);
+    return;
+  }
+  const r = await (await fetch("/api/qa/entries")).json();
+  box.innerHTML = "";
+  box.appendChild(qaToolbar(false));
+  if (!r.ok) {
+    const err = document.createElement("div");
+    err.textContent = `加载失败：${r.error || "未知错误"}`;
+    box.appendChild(err);
+    return;
+  }
+  if (!r.entries.length) {
+    const hint = document.createElement("div");
+    hint.className = "qa-empty";
+    hint.textContent = "暂无话术条目。产出途径：指令 [同步] 面试话术 XXX；或每日复盘拷打结束后自动反喂沉淀。";
+    box.appendChild(hint);
+    return;
+  }
+  for (const e of r.entries) box.appendChild(qaEntry(e));
+}
+
+function qaToolbar(isRaw) {
+  const bar = document.createElement("div");
+  bar.className = "qa-toolbar";
+  const card = document.createElement("button");
+  card.textContent = "卡片视图";
+  card.className = isRaw ? "" : "active";
+  card.onclick = () => openQa(false);
+  const rawBtn = document.createElement("button");
+  rawBtn.textContent = "原文";
+  rawBtn.className = isRaw ? "active" : "";
+  rawBtn.onclick = () => openQa(true);
+  bar.append(card, rawBtn);
+  return bar;
+}
+
+function qaEntry(e) {
+  const card = document.createElement("div");
+  card.className = "qa-entry";
+  const head = document.createElement("div");
+  head.className = "qa-head";
+  const title = document.createElement("span");
+  title.className = "qa-title";
+  title.textContent = e.title;
+  head.appendChild(title);
+  for (const t of e.tags || []) {
+    const tag = document.createElement("span");
+    tag.className = "note-chip concept";
+    tag.textContent = "#" + t;
+    head.appendChild(tag);
+  }
+  const src = document.createElement("span");
+  src.className = "qa-src";
+  src.textContent = e.source;
+  head.appendChild(src);
+  card.appendChild(head);
+  if (e.code_ref && e.code_ref !== "待补") {
+    const cr = document.createElement("div");
+    cr.className = "qa-code";
+    cr.textContent = "关联代码：" + e.code_ref;
+    card.appendChild(cr);
+  }
+  const bLabel = document.createElement("div");
+  bLabel.className = "qa-label";
+  bLabel.textContent = "精简版（30秒）";
+  const bBody = document.createElement("div");
+  bBody.className = "qa-brief";
+  bBody.textContent = e.brief;
+  card.append(bLabel, bBody);
+  if (e.detail) {
+    const det = document.createElement("details");
+    const sum = document.createElement("summary");
+    sum.textContent = "展开版（2分钟）";
+    const body = document.createElement("div");
+    body.className = "qa-fold-body";
+    body.textContent = e.detail;
+    det.append(sum, body);
+    card.appendChild(det);
+  }
+  if ((e.followups || []).length) {
+    const det = document.createElement("details");
+    const sum = document.createElement("summary");
+    sum.textContent = `追问预案（${e.followups.length}）`;
+    const body = document.createElement("div");
+    body.className = "qa-fold-body";
+    for (const [q, a] of e.followups) {
+      const qa = document.createElement("div");
+      qa.className = "qa-fu";
+      const qEl = document.createElement("div");
+      qEl.className = "qa-q";
+      qEl.textContent = "Q: " + q;
+      const aEl = document.createElement("div");
+      aEl.className = "qa-a";
+      aEl.textContent = "A: " + a;
+      qa.append(qEl, aEl);
+      body.appendChild(qa);
+    }
+    det.append(sum, body);
+    card.appendChild(det);
+  }
+  const ops = document.createElement("div");
+  ops.className = "note-ops";
+  const edit = document.createElement("button");
+  edit.textContent = "编辑";
+  edit.onclick = () => qaEdit(card, e);
+  const del = document.createElement("button");
+  del.textContent = "删除";
+  del.onclick = async () => {
+    if (!confirm(`删除话术「${e.title}」？（不可恢复）`)) return;
+    const r = await notesApi("/api/qa/delete", { id: e.id });
+    if (!r.ok) { showToast(r.error || "删除失败"); return; }
+    openQa(false);
+  };
+  ops.append(edit, del);
+  card.appendChild(ops);
+  return card;
+}
+
+function qaEdit(card, e) {
+  card.innerHTML = "";
+  const mk = (labelText, value, rows) => {
+    const label = document.createElement("div");
+    label.className = "qa-label";
+    label.textContent = labelText;
+    const ta = document.createElement("textarea");
+    ta.rows = rows || 2;
+    ta.value = value || "";
+    card.append(label, ta);
+    return ta;
+  };
+  const titleTa = mk("标题", e.title, 1);
+  const briefTa = mk("精简版（30秒）", e.brief, 3);
+  const detailTa = mk("展开版（2分钟）", e.detail, 5);
+  const fuText = (e.followups || []).map(([q, a]) => `Q: ${q}\nA: ${a}`).join("\n");
+  const fuTa = mk("追问预案（每条两行：Q: / A:）", fuText, 6);
+  const row = document.createElement("div");
+  row.className = "note-edit-row";
+  const save = document.createElement("button");
+  save.textContent = "保存";
+  save.className = "primary";
+  const cancel = document.createElement("button");
+  cancel.textContent = "取消";
+  row.append(save, cancel);
+  card.appendChild(row);
+  save.onclick = async () => {
+    const followups = [];
+    const lines = fuTa.value.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const qm = lines[i].match(/^Q[:：]\s*(.*)$/);
+      if (!qm) continue;
+      const am = (lines[i + 1] || "").match(/^A[:：]\s*(.*)$/);
+      followups.push([qm[1], am ? am[1] : ""]);
+      if (am) i++;
+    }
+    const r = await notesApi("/api/qa/update", {
+      id: e.id, title: titleTa.value.trim(), brief: briefTa.value,
+      detail: detailTa.value, followups,
+    });
+    if (!r.ok) { showToast(r.error || "保存失败"); return; }
+    showToast("已保存");
+    openQa(false);
+  };
+  cancel.onclick = () => openQa(false);
+}
+
+// ---------- 笔记页（M4 条目层） ----------
+
+const notesModal = document.getElementById("notes-modal");
+document.getElementById("open-notes").onclick = () => {
+  notesModal.classList.remove("hidden");
+  renderNotes();
+};
+document.getElementById("notes-close").onclick = () => notesModal.classList.add("hidden");
+notesModal.addEventListener("click", (e) => {
+  if (e.target === notesModal) notesModal.classList.add("hidden");
+});
+
+const NOTE_KINDS = { stuck: "卡壳", question: "疑问", mastered: "已掌握", insight: "心得" };
+const notesFilter = { status: "", kind: "" };
+let notesMergeMode = false;
+
+async function notesApi(url, body) {
+  const r = await fetch(url, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+  return r.json();
+}
+
+async function renderNotes() {
+  const list = document.getElementById("notes-list");
+  list.textContent = "加载中…";
+  const q = new URLSearchParams();
+  if (notesFilter.status) q.set("status", notesFilter.status);
+  if (notesFilter.kind) q.set("kind", notesFilter.kind);
+  const r = await (await fetch("/api/notes?" + q)).json();
+  list.innerHTML = "";
+  if (!r.ok || !r.notes.length) {
+    list.textContent = "（暂无笔记——[同步] 卡壳/疑问会自动进条目层，也可「＋新建」或「⇩ 从日志蒸馏」）";
+    return;
+  }
+  for (const n of r.notes) list.appendChild(noteItem(n));
+}
+
+function noteItem(n) {
+  const item = document.createElement("div");
+  item.className = "note-item" + (n.status === "resolved" ? " resolved" : "");
+  const head = document.createElement("div");
+  head.className = "note-head";
+  const kind = document.createElement("span");
+  kind.className = "note-chip kind-" + n.kind;
+  kind.textContent = NOTE_KINDS[n.kind] || n.kind;
+  head.appendChild(kind);
+  if (n.concept_id) {
+    const c = document.createElement("span");
+    c.className = "note-chip concept";
+    c.textContent = n.concept_id;
+    c.title = "已挂接知识点";
+    head.appendChild(c);
+  }
+  if (n.needs_review) {
+    const w = document.createElement("span");
+    w.className = "note-chip warn";
+    w.textContent = "⚠ 待挂接";
+    w.title = "迁移/蒸馏产物，需人工挂接知识点后才能销账写证据";
+    head.appendChild(w);
+  }
+  if (n.status === "resolved") {
+    const s = document.createElement("span");
+    s.className = "note-chip done";
+    s.textContent = "✓ 已解决";
+    head.appendChild(s);
+  }
+  if (n.merged_into) {
+    const m = document.createElement("span");
+    m.className = "note-chip merged";
+    m.textContent = "⇄ 已合并";
+    head.appendChild(m);
+  }
+  const text = document.createElement("div");
+  text.className = "note-text";
+  text.textContent = n.text;
+  const meta = document.createElement("div");
+  meta.className = "note-meta";
+  const bits = [];
+  if (n.created_day) bits.push(`Day ${n.created_day}`);
+  if (n.resolved_day) bits.push(`解决于 Day ${n.resolved_day}`);
+  bits.push(n.source_ref);
+  meta.textContent = bits.join(" · ");
+  const ops = document.createElement("div");
+  ops.className = "note-ops";
+  if (notesMergeMode) {
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.dataset.nid = n.id;
+    cb.className = "note-merge-cb";
+    ops.appendChild(cb);
+  }
+  if (n.status !== "resolved") {
+    const edit = document.createElement("button");
+    edit.textContent = "编辑";
+    edit.onclick = () => noteEdit(item, n);
+    const resolve = document.createElement("button");
+    resolve.textContent = "标记解决";
+    resolve.className = "primary";
+    resolve.onclick = async () => {
+      const tip = n.concept_id
+        ? "标记为解决？（将沉淀 note_distilled 证据到掌握度模型）"
+        : "标记为解决？（未挂接知识点，不写证据）";
+      if (!confirm(tip)) return;
+      const r = await notesApi("/api/notes/resolve", { id: n.id });
+      if (!r.ok) { showToast(r.error || "操作失败"); return; }
+      showToast(r.evidence ? "已销账并沉淀证据（+0.05）" : "已标记解决");
+      renderNotes();
+    };
+    ops.append(edit, resolve);
+    if (n.needs_review) {
+      const attach = document.createElement("button");
+      attach.textContent = "挂接知识点";
+      attach.onclick = () => noteAttach(item, n);
+      ops.appendChild(attach);
+    }
+  }
+  const del = document.createElement("button");
+  del.textContent = "删除";
+  del.onclick = async () => {
+    if (!confirm("删除这条笔记？（不可恢复）")) return;
+    await notesApi("/api/notes/delete", { id: n.id });
+    renderNotes();
+  };
+  ops.appendChild(del);
+  item.append(head, text, meta, ops);
+  return item;
+}
+
+function noteEdit(item, n) {
+  const textEl = item.querySelector(".note-text");
+  const ta = document.createElement("textarea");
+  ta.rows = 3;
+  ta.value = n.text;
+  const row = document.createElement("div");
+  row.className = "note-edit-row";
+  const save = document.createElement("button");
+  save.textContent = "保存";
+  save.className = "primary";
+  const cancel = document.createElement("button");
+  cancel.textContent = "取消";
+  row.append(save, cancel);
+  textEl.replaceWith(ta);
+  ta.after(row);
+  save.onclick = async () => {
+    const r = await notesApi("/api/notes/update", { id: n.id, text: ta.value });
+    if (!r.ok) { showToast(r.error || "保存失败"); return; }
+    renderNotes();
+  };
+  cancel.onclick = renderNotes;
+}
+
+async function noteAttach(item, n) {
+  const model = await (await fetch("/api/learner/model")).json();
+  if (!model.concepts || !model.concepts.length) {
+    showToast("暂无知识点（先开始学习或完成迁移）");
+    return;
+  }
+  const row = document.createElement("div");
+  row.className = "note-edit-row";
+  const sel = document.createElement("select");
+  for (const c of model.concepts) {
+    const opt = document.createElement("option");
+    opt.value = c.id;
+    opt.textContent = `${c.id} ${c.title}`;
+    sel.appendChild(opt);
+  }
+  const ok = document.createElement("button");
+  ok.textContent = "确认挂接";
+  ok.className = "primary";
+  const cancel = document.createElement("button");
+  cancel.textContent = "取消";
+  row.append(sel, ok, cancel);
+  item.querySelector(".note-ops").after(row);
+  ok.onclick = async () => {
+    const r = await notesApi("/api/notes/update", { id: n.id, concept_id: sel.value });
+    if (!r.ok) { showToast(r.error || "挂接失败"); return; }
+    showToast(`已挂接 ${sel.value}`);
+    renderNotes();
+  };
+  cancel.onclick = renderNotes;
+}
+
+// 工具条事件
+document.getElementById("notes-filter-status").onchange = (e) => {
+  notesFilter.status = e.target.value;
+  renderNotes();
+};
+document.getElementById("notes-filter-kind").onchange = (e) => {
+  notesFilter.kind = e.target.value;
+  renderNotes();
+};
+document.getElementById("notes-add-btn").onclick = () => {
+  document.getElementById("notes-add-form").classList.toggle("hidden");
+};
+document.getElementById("notes-add-cancel").onclick = () => {
+  document.getElementById("notes-add-form").classList.add("hidden");
+};
+document.getElementById("notes-add-save").onclick = async () => {
+  const kind = document.getElementById("notes-add-kind").value;
+  const text = document.getElementById("notes-add-text").value;
+  const r = await notesApi("/api/notes/add", { kind, text });
+  if (!r.ok) { showToast(r.error || "保存失败"); return; }
+  document.getElementById("notes-add-text").value = "";
+  document.getElementById("notes-add-form").classList.add("hidden");
+  showToast("已保存笔记");
+  renderNotes();
+};
+document.getElementById("notes-distill-btn").onclick = async () => {
+  const r = await notesApi("/api/notes/distill", {});
+  showToast(r.ok ? `日志蒸馏完成：新增 ${r.added} 条` : (r.error || "蒸馏失败"));
+  renderNotes();
+};
+document.getElementById("notes-merge-btn").onclick = async () => {
+  const btn = document.getElementById("notes-merge-btn");
+  if (!notesMergeMode) {
+    notesMergeMode = true;
+    btn.textContent = "完成合并";
+    btn.classList.add("active");
+    renderNotes();
+    return;
+  }
+  const cbs = [...document.querySelectorAll(".note-merge-cb:checked")];
+  notesMergeMode = false;
+  btn.textContent = "⇄ 合并";
+  btn.classList.remove("active");
+  if (cbs.length < 2) { renderNotes(); return; }
+  const ids = cbs.map(cb => cb.dataset.nid);
+  if (!confirm(`合并 ${ids.length} 条笔记？文本并入最早勾选的那条，其余标记为已合并。`)) {
+    renderNotes();
+    return;
+  }
+  const r = await notesApi("/api/notes/merge", { keep: ids[0], others: ids.slice(1) });
+  if (!r.ok) { showToast(r.error || "合并失败"); return; }
+  showToast("已合并");
+  renderNotes();
+};
 
 // ---------- 启动 ----------
 

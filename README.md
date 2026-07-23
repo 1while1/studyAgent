@@ -79,6 +79,14 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 - **🧠 掌握度热力图**：知识点红黄绿着色 + 封顶 △ + 复习到期 ⏰，点格看证据明细（类型/权重/时间/来源）
 - 旧数据一键迁移：历史单元评分 → quiz_score 证据（rating/5 映射），卡壳/疑问 → 开放笔记条目（草稿预览→人审确认→应用）
 
+**笔记管理（M4）**
+- **四层笔记体系**：日志层（StudyMemory append-only）→ 条目层（notes.json）→ 话术层（InterviewQA.md）→ 蒸馏层（掌握度证据）
+- **条目自动进层**：[同步] 已掌握/卡壳/疑问除写日志外同步产生笔记条目（内容哈希幂等，自动挂接当前单元知识点）
+- **📝 笔记页**：状态/类型筛选、新建、就地编辑、删除、多条合并、⇩ 从日志蒸馏（StudyMemory 历史卡壳/疑问行一键转条目，自动去重）
+- **卡壳销账**：「标记解决」单一代码路径——条目 resolved + 沉淀 note_distilled 证据（+0.05，source_ref 幂等，重复销账不重复加）；迁移/蒸馏条目先「挂接知识点」再销账
+- **话术库收编**：面试话术库升级为卡片视图（30 秒直显 / 2 分钟与追问预案折叠，就地编辑/删除，可切回原文视图）
+- **🎙 拷打反喂**：每日复盘评分落盘后，自动从拷问转录提炼 ≤2 条最有面试价值的话术写入 InterviewQA.md（LLM 只填内容，格式机械校验 + 产出来源行服务端强制覆写；`qa_capture_enabled` 可关）
+
 **代码浏览器与联动提问**
 - 目录树懒加载 + 行号 gutter + 语法高亮（只读，路径穿越防护）；树折叠、长行换行、树宽拖拽记忆
 - **片段提问**：选中代码 → 浮动按钮 → 自动填入「`路径:L行号` + 代码块」到输入框；聊天中渲染为片段卡片，点 📎 跳回代码浏览器定位 + 行高亮
@@ -96,8 +104,8 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 
 ```bash
 cd study-web
-python -m unittest discover -s tests    # 167 个后端测试，stdlib，无需真实 LLM
-python scripts/ui_walkthrough.py        # UI 真实点击走查 61 项（需服务运行中）
+python -m unittest discover -s tests    # 210 个后端测试，stdlib，无需真实 LLM
+python scripts/ui_walkthrough.py        # UI 真实点击走查 73 项（需服务运行中）
 python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name]
 ```
 

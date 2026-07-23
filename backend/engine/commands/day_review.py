@@ -51,6 +51,7 @@ class DayReviewHandler(CommandHandler):
 
         session.day_phase = DayPhase.REVIEWING.value
         session.review_question_count = 0
+        session.review_msg_start = len(session.chat_history)  # M4 拷打反喂转录起点
         deps.session_store.save(session)
 
         instruction = (

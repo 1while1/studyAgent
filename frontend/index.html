@@ -45,6 +45,7 @@
       <div class="topbar-actions">
         <span id="llm-pill" class="hidden" title=""></span>
         <button id="open-learner" title="掌握度热力图">🧠</button>
+        <button id="open-notes" title="笔记（卡壳/疑问/心得，销账沉淀掌握度证据）">📝</button>
         <button id="open-usage" title="Token 用量统计">📊</button>
         <button id="open-docs" title="学习资料（StudyMemory / 面试话术库）">📚</button>
         <button id="open-llm-config" title="模型配置">⚙</button>
@@ -204,6 +205,52 @@
       </div>
       <div id="learner-grid"></div>
       <div id="learner-detail"></div>
+    </div>
+  </div>
+</div>
+
+<div id="notes-modal" class="modal hidden">
+  <div class="modal-box wide">
+    <div class="modal-head">
+      <h2>笔记（卡壳 / 疑问 / 心得 —— 销账即沉淀掌握度证据）</h2>
+      <button id="notes-close">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="notes-toolbar">
+        <div class="nt-filters">
+          <select id="notes-filter-status">
+            <option value="">全部状态</option>
+            <option value="open">未解决</option>
+            <option value="resolved">已解决</option>
+          </select>
+          <select id="notes-filter-kind">
+            <option value="">全部类型</option>
+            <option value="stuck">卡壳</option>
+            <option value="question">疑问</option>
+            <option value="mastered">已掌握</option>
+            <option value="insight">心得</option>
+          </select>
+        </div>
+        <div class="nt-actions">
+          <button id="notes-add-btn">＋ 新建</button>
+          <button id="notes-distill-btn" title="从 StudyMemory [同步] 卡壳/疑问行蒸馏条目">⇩ 从日志蒸馏</button>
+          <button id="notes-merge-btn" title="勾选 ≥2 条后合并为一条">⇄ 合并</button>
+        </div>
+      </div>
+      <div id="notes-add-form" class="hidden">
+        <select id="notes-add-kind">
+          <option value="insight">心得</option>
+          <option value="stuck">卡壳</option>
+          <option value="question">疑问</option>
+          <option value="mastered">已掌握</option>
+        </select>
+        <textarea id="notes-add-text" rows="2" placeholder="笔记内容…"></textarea>
+        <div class="note-edit-row">
+          <button id="notes-add-save" class="primary">保存</button>
+          <button id="notes-add-cancel">取消</button>
+        </div>
+      </div>
+      <div id="notes-list"></div>
     </div>
   </div>
 </div>

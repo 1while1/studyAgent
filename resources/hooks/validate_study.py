@@ -225,6 +225,124 @@ def check_study_md(state, current_day, docx_dir):
         err(f"Study.md 整体完成度 is {m.group(1)}% but expected {expected}%")
 
 
+# ---- M3/M4 JSON schema 校验（AgentDesign §8.4：新 json 带 schema_version）----
+# 文件存在才校验（未启用学习者模型/笔记的工作区自动跳过）
+
+NOTE_KINDS = {"stuck", "question", "mastered", "insight"}
+NOTE_STATUSES = {"open", "resolved"}
+
+
+def _load_schema_json(path, label):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        err(f"{label}: parse failed: {e}")
+        return None
+    if not isinstance(data, dict):
+        err(f"{label}: root must be an object")
+        return None
+    if data.get("schema_version") != 1:
+        err(f"{label}: schema_version must be 1, "
+            f"got {data.get('schema_version')!r}")
+    return data
+
+
+def check_concepts_json(docx_dir):
+    path = os.path.join(docx_dir, "concepts.json")
+    if not os.path.exists(path):
+        return
+    data = _load_schema_json(path, "concepts.json")
+    if data is None:
+        return
+    cmap = data.get("concepts")
+    if not isinstance(cmap, dict):
+        err("concepts.json: 'concepts' must be an object")
+        return
+    for cid, entry in cmap.items():
+        if not isinstance(entry, dict) or entry.get("id") != cid:
+            err(f"concepts.json: entry {cid!r} missing or id mismatch")
+            continue
+        for key in ("prerequisites", "materials"):
+            if not isinstance(entry.get(key, []), list):
+                err(f"concepts.json: {cid}.{key} must be a list")
+
+
+def check_learner_model_json(docx_dir):
+    path = os.path.join(docx_dir, "learner_model.json")
+    if not os.path.exists(path):
+        return
+    data = _load_schema_json(path, "learner_model.json")
+    if data is None:
+        return
+    cmap = data.get("concepts")
+    if not isinstance(cmap, dict):
+        err("learner_model.json: 'concepts' must be an object")
+        return
+    for cid, entry in cmap.items():
+        evidence = entry.get("evidence") if isinstance(entry, dict) else None
+        if not isinstance(evidence, list):
+            err(f"learner_model.json: {cid}.evidence must be a list")
+            continue
+        for i, ev in enumerate(evidence):
+            if not isinstance(ev, dict):
+                err(f"learner_model.json: {cid}.evidence[{i}] must be an object")
+                continue
+            for key in ("type", "source_ref", "delta", "ts"):
+                if key not in ev:
+                    err(f"learner_model.json: {cid}.evidence[{i}] "
+                        f"missing {key!r}")
+
+
+def check_notes_json(docx_dir):
+    path = os.path.join(docx_dir, "notes.json")
+    if not os.path.exists(path):
+        return
+    data = _load_schema_json(path, "notes.json")
+    if data is None:
+        return
+    notes = data.get("notes")
+    if not isinstance(notes, list):
+        err("notes.json: 'notes' must be a list")
+        return
+    ids = set()
+    for i, n in enumerate(notes):
+        if not isinstance(n, dict):
+            err(f"notes.json: notes[{i}] must be an object")
+            continue
+        nid = n.get("id")
+        if not nid or not isinstance(nid, str):
+            err(f"notes.json: notes[{i}].id missing or not a string")
+        elif nid in ids:
+            err(f"notes.json: duplicate note id {nid!r}")
+        if n.get("kind") not in NOTE_KINDS:
+            err(f"notes.json: {nid or i}: invalid kind {n.get('kind')!r} "
+                f"(allowed: {sorted(NOTE_KINDS)})")
+        if not isinstance(n.get("text"), str) or not n.get("text", "").strip():
+            err(f"notes.json: {nid or i}: text empty")
+        if n.get("status") not in NOTE_STATUSES:
+            err(f"notes.json: {nid or i}: invalid status {n.get('status')!r} "
+                f"(allowed: {sorted(NOTE_STATUSES)})")
+        if not isinstance(n.get("source_ref"), str):
+            err(f"notes.json: {nid or i}: source_ref must be a string")
+        ids.add(nid)
+        if "needs_review" in n and not isinstance(n["needs_review"], bool):
+            err(f"notes.json: {nid}: needs_review must be bool")
+        for key in ("concept_id", "merged_into"):
+            if key in n and n[key] is not None and not isinstance(n[key], str):
+                err(f"notes.json: {nid}: {key} must be a string")
+        for key in ("created_day", "resolved_day"):
+            if key in n and n[key] is not None and not isinstance(n[key], int):
+                err(f"notes.json: {nid}: {key} must be an int")
+
+
+def check_json_schemas(docx_dir):
+    """M3/M4 产物 schema 校验：concepts / learner_model / notes。"""
+    check_concepts_json(docx_dir)
+    check_learner_model_json(docx_dir)
+    check_notes_json(docx_dir)
+
+
 def main(docx_dir, total_days=25, replica_name="replica"):
     """校验入口。docx_dir = 工作区学习数据目录（含 StudyState.json 等）。"""
     global TOTAL_DAYS, REQUIRED_MD_HEADERS, errors, warnings
@@ -248,6 +366,7 @@ def main(docx_dir, total_days=25, replica_name="replica"):
         if current_day is not None:
             check_day_consistency(state, current_day, docx_dir)
             check_study_md(state, current_day, docx_dir)
+    check_json_schemas(docx_dir)
 
     for msg in warnings:
         print(f"[WARNING] {msg}", file=sys.stderr)

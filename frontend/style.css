@@ -645,3 +645,70 @@ body[data-layout="pair"] #code-panel { order: 1; }
   box-shadow: var(--shadow);
 }
 .modal-foot .primary:hover { filter: brightness(1.08); }
+
+/* ---------- 笔记页（M4） ---------- */
+#notes-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.nt-filters, .nt-actions { display: flex; gap: 8px; align-items: center; }
+#notes-toolbar select { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 13px; background: var(--panel); color: var(--text); }
+.nt-actions button { background: var(--inline-code-bg); color: var(--text-dim); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.nt-actions button:hover { color: var(--accent); border-color: var(--accent); }
+.nt-actions button.active { background: var(--accent-grad); color: #fff; border-color: transparent; }
+#notes-add-form { display: flex; flex-direction: column; gap: 8px; border: 1px dashed var(--border); border-radius: 10px; padding: 12px; margin-bottom: 14px; }
+#notes-add-form.hidden { display: none; }
+#notes-add-form select { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 13px; background: var(--panel); color: var(--text); width: 140px; }
+#notes-add-form textarea, .note-item textarea, .qa-entry textarea {
+  width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 10px; font-size: 13px; font-family: inherit; background: var(--bg); color: var(--text); resize: vertical;
+}
+#notes-list { display: flex; flex-direction: column; gap: 10px; }
+.note-item { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; transition: border-color .15s; }
+.note-item:hover { border-color: var(--accent); }
+.note-item.resolved { opacity: .62; }
+.note-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 7px; }
+.note-chip { font-size: 11px; font-family: var(--font-mono); border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
+.note-chip.kind-stuck { background: rgba(229, 83, 75, .14); color: #e5534b; }
+.note-chip.kind-question { background: rgba(227, 179, 65, .18); color: #9a7209; }
+.note-chip.kind-mastered { background: rgba(87, 171, 90, .16); color: #3d7a40; }
+.note-chip.kind-insight { background: var(--accent-soft); color: var(--accent); }
+.note-chip.concept { background: var(--inline-code-bg); color: var(--accent); }
+.note-chip.warn { background: rgba(227, 179, 65, .2); color: #9a7209; }
+.note-chip.done { background: rgba(87, 171, 90, .16); color: #3d7a40; }
+.note-chip.merged { background: var(--inline-code-bg); color: var(--text-dim); }
+body[data-layout="pair"] .note-chip.kind-question,
+body[data-layout="pair"] .note-chip.warn { color: #e3b341; }
+body[data-layout="pair"] .note-chip.kind-mastered,
+body[data-layout="pair"] .note-chip.done { color: #57ab5a; }
+.note-text { font-size: 14px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
+.note-meta { font-size: 11.5px; color: var(--text-dim); font-family: var(--font-mono); margin-top: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note-ops { display: flex; gap: 8px; align-items: center; margin-top: 9px; flex-wrap: wrap; }
+.note-ops button, .note-edit-row button {
+  background: var(--inline-code-bg); color: var(--text-dim); border: 1px solid var(--border);
+  border-radius: 8px; padding: 5px 12px; font-size: 12.5px; cursor: pointer;
+}
+.note-ops button:hover, .note-edit-row button:hover { color: var(--accent); border-color: var(--accent); }
+.note-ops button.primary, .note-edit-row button.primary, #notes-add-form button.primary {
+  background: var(--accent-grad); color: #fff; border-color: transparent;
+}
+.note-edit-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.note-edit-row select { flex: 1; min-width: 220px; border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; background: var(--panel); color: var(--text); }
+.note-merge-cb { width: 16px; height: 16px; accent-color: var(--accent); }
+
+/* ---------- 面试话术卡片（M4） ---------- */
+.qa-toolbar { display: flex; gap: 6px; margin-bottom: 16px; }
+.qa-toolbar button { background: transparent; border: 1px solid var(--border); border-radius: 999px; padding: 5px 16px; font-size: 12.5px; cursor: pointer; color: var(--text-dim); }
+.qa-toolbar button.active { background: var(--accent-grad); color: #fff; border-color: transparent; }
+.qa-empty { font-size: 13.5px; color: var(--text-dim); line-height: 1.8; border: 1px dashed var(--border); border-radius: 10px; padding: 18px; }
+.qa-entry { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
+.qa-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.qa-title { font-size: 15px; font-weight: 600; margin-right: 4px; }
+.qa-src { margin-left: auto; font-size: 11.5px; color: var(--text-dim); font-family: var(--font-mono); }
+.qa-code { font-size: 12px; font-family: var(--font-mono); color: var(--accent); margin-bottom: 8px; }
+.qa-label { font-size: 11.5px; color: var(--text-dim); letter-spacing: 1px; margin: 8px 0 4px; }
+.qa-brief { font-size: 14px; line-height: 1.8; white-space: pre-wrap; }
+.qa-entry details { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 8px; }
+.qa-entry summary { font-size: 12.5px; color: var(--accent); cursor: pointer; user-select: none; }
+.qa-fold-body { font-size: 13.5px; line-height: 1.8; white-space: pre-wrap; padding: 8px 0 2px 12px; }
+.qa-fu { margin-bottom: 8px; }
+.qa-q { font-weight: 600; font-size: 13px; }
+.qa-a { color: var(--text-dim); font-size: 13px; padding-left: 14px; }
+.qa-entry .note-ops { justify-content: flex-end; }
