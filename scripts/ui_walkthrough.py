@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from playwright.sync_api import sync_playwright
 
 BASE = "http://127.0.0.1:8765"
+ROOT = Path(__file__).resolve().parents[1]
 ISSUES = []
 
 
@@ -53,7 +54,7 @@ def main():
         page.wait_for_timeout(2000)
         check("页面加载-侧栏可见", page.locator("#sidebar").is_visible())
         check("页面加载-单元列表", page.locator("#units li").count() == 3)
-        check("页面加载-指令胶囊 11 个", page.locator("#command-chips .chip").count() == 11)
+        check("页面加载-指令胶囊 12 个", page.locator("#command-chips .chip").count() == 12)
         check("消息容器就绪", page.locator("#messages").is_visible())
 
         # ---- 2. 指令：FAIL-FAST ----
@@ -265,6 +266,37 @@ def main():
             check("chip 跳转行高亮", page.locator(".line-flash").count() >= 1)
             page.locator("#mode-tutor").click()
             page.wait_for_timeout(600)
+        # ---- 9c+. 模拟面试（M5c，Mock 渠道；teach_back 写真实库 → 先备份事后还原） ----
+        import tomllib
+        _cfg = tomllib.load(open(ROOT / "config" / "settings.toml", "rb"))
+        _active = _cfg.get("active_workspace")
+        _ws = next(w for w in _cfg.get("workspaces", [])
+                   if w.get("slug") == _active)
+        _sess_p = (ROOT / _ws["session_path"]).resolve()
+        _lm_p = ((ROOT / _ws["docx_dir"]).resolve() / "learner_model.json")
+        _bak = {p: p.read_bytes() for p in (_sess_p, _lm_p) if p.exists()}
+        page.locator("#command-chips .chip", has_text="模拟面试").click()
+        ok_iv = False
+        for i in range(30):
+            page.wait_for_timeout(1000)
+            last = page.locator("#messages .bubble").last.text_content() or ""
+            if "口述" in last and "思考中" not in last:
+                ok_iv = True
+                break
+        check("模拟面试口述要求出现", ok_iv)
+        # 走完全场（口述 → 两轮追问 → 终评），验证 teach_back 落盘消息
+        for reply in ("我按结构讲一遍这个知识点", "追问回答一", "追问回答二"):
+            page.fill("#input", reply)
+            page.locator("#input-form button").click()
+            for i in range(30):
+                page.wait_for_timeout(1000)
+                last = page.locator("#messages .bubble").last.text_content() or ""
+                if "思考中" not in last and len(last.strip()) > 0:
+                    break
+        check("模拟面试 teach_back 落盘",
+              "模拟面试结束" in (page.locator("#messages").text_content() or ""))
+        for p, data in _bak.items():
+            p.write_bytes(data)  # 还原 session 与 learner_model（防真实数据污染）
         # 还原真实渠道配置
         page.request.post(BASE + "/api/llm-config", data={
             "provider": orig_cfg.get("provider", "openai_compat"),

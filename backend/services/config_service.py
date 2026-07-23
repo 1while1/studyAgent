@@ -22,6 +22,7 @@ HOOKS_DIR = RESOURCES_DIR / "hooks"
 TEMPLATES_DIR = RESOURCES_DIR / "templates"
 PROMPTS_DIR = RESOURCES_DIR / "prompts"
 PRESETS_DIR = RESOURCES_DIR / "presets"
+PEDAGOGY_DIR = RESOURCES_DIR / "pedagogy"
 
 
 def _load_env_file(path: Path) -> None:

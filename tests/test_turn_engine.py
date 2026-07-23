@@ -19,8 +19,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.api import routes
 from backend.domain.models import SessionContext
 from backend.engine.orchestrator import ChatOrchestrator
-from backend.engine.turn_engine import (AGENT_COMMAND_HINT, PlannerEngine,
-                                        TurnEngine, build_turn_engine)
+from backend.engine.planner import PlannerEngine
+from backend.engine.turn_engine import (AGENT_COMMAND_HINT, TurnEngine,
+                                        build_turn_engine)
 from backend.services.config_service import ConfigService
 
 _SETTINGS = (
@@ -103,10 +104,16 @@ class TestTurnEngine(unittest.TestCase):
         session = SessionContext()  # study
         self.assertIs(build_turn_engine(session, deps, tutor), tutor)
 
-    def test_planner_stub_callable(self):
-        engine = PlannerEngine()
+    def test_planner_real_engine_callable(self):
+        """M5c：PlannerEngine 真身——instruction_for 含 ACTION 契约与工具清单。"""
+        config = self._config(True)
+        deps, _ = _make(config, self.tmp)
+        engine = PlannerEngine(deps)
         session = SessionContext(mode="code")
-        self.assertIsInstance(engine.instruction_for(session, "你好"), str)
+        instruction = engine.instruction_for(session, "你好")
+        self.assertIsInstance(instruction, str)
+        self.assertIn("[ACTION:", instruction)
+        self.assertIn("read_model", instruction)  # 工具清单注入
         self.assertEqual(engine.post_process(session, "回复"), [])
 
     def test_agent_command_hint_fixed_text(self):

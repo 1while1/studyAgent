@@ -44,6 +44,7 @@ class ToolContext:
     materials: Any = None     # MaterialsService
     state_store: Any = None   # StateStore
     validator: Callable | None = None
+    llm: Any = None           # LLMClient（LLM 档工具依赖，M5c）
 
 
 @dataclass
@@ -110,6 +111,21 @@ def _current_day(ctx: ToolContext) -> int | None:
         return int(ctx.state_store.load().get("current_day", 0)) or None
     except Exception:
         return None
+
+
+def render_pedagogy(card: str, **placeholders: str) -> str:
+    """渲染教学策略卡（resources/pedagogy/，资源单源；M5c SOP 策略化）。
+
+    面试指令与 quiz_generate/retell_assess 工具共用同一卡。
+    """
+    from ..services.config_service import PEDAGOGY_DIR
+    path = PEDAGOGY_DIR / card
+    if not path.exists():
+        return ""
+    text = path.read_text(encoding="utf-8")
+    for k, v in placeholders.items():
+        text = text.replace(f"<{k}>", str(v))
+    return text
 
 
 # ---- read_code / read_doc（逻辑自 tool_use.py 原样迁入，文本逐字保留） ----
@@ -342,8 +358,6 @@ def _update_model(ctx: ToolContext, args: dict) -> ToolResult:
 
 
 _PERSIST_OPS = {"set_unit_status"}
-
-
 def _persist_state(ctx: ToolContext, args: dict) -> ToolResult:
     """StudyState 受限落盘（白名单操作集 + 规则 14）。
 
@@ -384,6 +398,75 @@ def _persist_state(ctx: ToolContext, args: dict) -> ToolResult:
     except Exception as e:
         return ToolResult(ok=False, error=f"落盘失败（已回滚）: {e}")
     return ToolResult(ok=True, data={"op": op, **detail})
+
+
+# ---- quiz_generate / retell_assess（LLM 档，M5c） ----
+
+def _concept_brief(ctx: ToolContext, cid: str) -> dict | None:
+    """取 concept 标题与证据摘要（LLM 档工具共用）。"""
+    from ..services.learner_service import LearnerService
+    day = _current_day(ctx) or 1
+    try:
+        model = LearnerService(ctx.config).get_model(day)
+    except Exception:
+        return None
+    for c in model["concepts"]:
+        if c["id"] == cid:
+            ev = c.get("evidence", [])
+            return {
+                "id": cid, "title": c.get("title", cid),
+                "mastery": c.get("mastery", 0),
+                "evidence_summary": "、".join(
+                    f"{e.get('type')}({e.get('ts', '')})"
+                    for e in ev[-5:]) or "（无证据）"}
+    return None
+
+
+def _quiz_generate(ctx: ToolContext, args: dict) -> ToolResult:
+    if ctx.llm is None:
+        return ToolResult(ok=False, error="quiz_generate 需要 LLM 上下文")
+    cid = (args.get("concept_id") or "").strip()
+    if not cid:
+        return ToolResult(ok=False, error="concept_id 不能为空")
+    brief = _concept_brief(ctx, cid)
+    if brief is None:
+        return ToolResult(ok=False, error=f"知识点不存在: {cid}")
+    strategy = render_pedagogy("probe_followup.md", 知识点=brief["title"])
+    prompt = (strategy + f"\n\n## 出题任务\n基于知识点「{brief['title']}」"
+              f"（当前掌握度 {brief['mastery']:.2f}，"
+              f"历史证据：{brief['evidence_summary']}），"
+              "出一道检验题（触及底层原理或源码定位），只输出题目本身。")
+    from ..services.observer import task_scope
+    try:
+        with task_scope("tool"):
+            question = ctx.llm.chat([{"role": "user", "content": prompt}],
+                                    max_tokens=1000)
+    except Exception as e:
+        return ToolResult(ok=False, error=f"出题 LLM 调用失败: {e}")
+    return ToolResult(ok=True, data={"concept_id": cid,
+                                     "question": question.strip()[:1500]})
+
+
+def _retell_assess(ctx: ToolContext, args: dict) -> ToolResult:
+    if ctx.llm is None:
+        return ToolResult(ok=False, error="retell_assess 需要 LLM 上下文")
+    cid = (args.get("concept_id") or "").strip()
+    transcript = (args.get("transcript") or "").strip()
+    if not cid or not transcript:
+        return ToolResult(ok=False, error="concept_id 与 transcript 均不能为空")
+    brief = _concept_brief(ctx, cid)
+    title = brief["title"] if brief else cid
+    rubric = render_pedagogy("retell_assess.md", 知识点=title)
+    prompt = (rubric + f"\n\n## 用户口述原文\n{transcript[:4000]}")
+    from ..services.observer import task_scope
+    try:
+        with task_scope("tool"):
+            assessment = ctx.llm.chat([{"role": "user", "content": prompt}],
+                                      max_tokens=2000)
+    except Exception as e:
+        return ToolResult(ok=False, error=f"评估 LLM 调用失败: {e}")
+    return ToolResult(ok=True, data={"concept_id": cid,
+                                     "assessment": assessment.strip()[:3000]})
 
 
 # ---- 默认注册表（v1 工具清单，§9 已有能力子集） ----
@@ -479,4 +562,23 @@ def build_default_registry() -> ToolRegistry:
                                         "completed", "postponed"]}},
                 "required": ["op"]},
         handler=_persist_state))
+    reg.register(ToolSpec(
+        name="quiz_generate", permission=LLM_LEVEL,
+        description="基于知识点+薄弱证据出一道检验题（LLM 生成）",
+        params={"type": "object",
+                "properties": {
+                    "concept_id": {"type": "string",
+                                   "description": "知识点 id（Day{N}-{单元}）"}},
+                "required": ["concept_id"]},
+        handler=_quiz_generate))
+    reg.register(ToolSpec(
+        name="retell_assess", permission=LLM_LEVEL,
+        description="评估用户对知识点的口述（结构/准确/源码定位/追问应对四档，LLM 生成）",
+        params={"type": "object",
+                "properties": {
+                    "concept_id": {"type": "string"},
+                    "transcript": {"type": "string",
+                                   "description": "用户口述原文"}},
+                "required": ["concept_id", "transcript"]},
+        handler=_retell_assess))
     return reg

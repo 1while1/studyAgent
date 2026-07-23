@@ -168,6 +168,17 @@ class Observer:
         self._write({"kind": "tool", "name": name, "ok": ok,
                      "detail": detail[:200]})
 
+    def log_plan(self, action: str, args: dict, reason: str, ok: bool,
+                 detail: str = "") -> None:
+        """plan 决策记账（M5c §10）：JSON action + reason + 执行结果。"""
+        try:
+            args_s = json.dumps(args or {}, ensure_ascii=False)[:200]
+        except Exception:
+            args_s = str(args)[:200]
+        self._write({"kind": "plan", "action": action, "args": args_s,
+                     "reason": (reason or "")[:200], "ok": ok,
+                     "detail": detail[:200]})
+
     # ---- 聚合 ----
 
     def status(self) -> dict:

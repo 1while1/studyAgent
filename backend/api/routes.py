@@ -11,8 +11,8 @@ from pydantic import BaseModel
 from ..engine.commands.base import CommandHandler, Deps
 from ..engine.context_manager import ContextManager
 from ..engine.orchestrator import ChatOrchestrator
-from ..engine.turn_engine import (AGENT_COMMAND_HINT, PlannerEngine,
-                                  build_turn_engine)
+from ..engine.planner import PlannerEngine
+from ..engine.turn_engine import AGENT_COMMAND_HINT, build_turn_engine
 from ..services.doc_initializer import InitError
 from ..services.repo_scanner import scan as repo_scan
 from ..services.workspace_service import WorkspaceError, WorkspaceService

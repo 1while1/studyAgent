@@ -24,6 +24,22 @@ class MockLLM(LLMClient):
     def _canned(self, messages: list[Message]) -> str:
         system = messages[0]["content"] if messages else ""
         last_user = messages[-1]["content"] if messages else ""
+        # 模拟面试（M5c）：按策略卡标记分支
+        if "口述环节" in system and "模拟面试" in system:
+            return ("【Mock 口述要求】请按「结构 → 概念准确 → 源码定位」"
+                    "用 300 字左右完整讲述该知识点，如同面试现场作答。"
+                    "讲述完毕我将按四档点评并追问。")
+        if "严格按四档打分" in system:
+            return ("【Mock 四档点评】结构：主线清晰；准确：无事实错误；"
+                    "源码定位：指到了真实类名；追问应对：含糊处需加强。\n"
+                    "【评分：4.2】\n"
+                    "追问：该机制在背压场景下的行为是什么？")
+        if "本回合是最后一轮" in system:
+            return ("【Mock 总评】两轮追问回答到位，源码定位准确，"
+                    "可以上战场。【评分：4.3】")
+        if "追问环节" in system:
+            return ("【Mock 追问】点评：回答基本正确，但定位不够深。\n"
+                    "下一题：这个设计为什么不采用另一种方案？")
         if "当前阶段：quiz_r2" in system:
             if "第二轮检验题" in last_user or "请出题" in last_user:
                 return "【Mock 第二轮检验题】请说明 OkHttp 流式响应为什么不能调用两次 string()？"

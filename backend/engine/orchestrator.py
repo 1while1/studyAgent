@@ -34,6 +34,17 @@ class ChatOrchestrator(TurnEngine):
     def instruction_for(self, session: SessionContext, user_text: str) -> str:
         """生成本次回复的附加指令。"""
         stage = session.current_stage
+        if session.day_phase == DayPhase.INTERVIEW.value:
+            # 模拟面试（M5c）：口述评估 → 两轮追问 → 终评落证据
+            from ..engine.tool_registry import render_pedagogy
+            title = self._interview_title(session)
+            if session.interview_round == 0:
+                return render_pedagogy("retell_assess.md", 知识点=title)
+            if session.interview_round == 1:
+                return render_pedagogy("probe_followup.md", 知识点=title)
+            return (render_pedagogy("probe_followup.md", 知识点=title)
+                    + "\n\n本回合是最后一轮：点评后给出终评，评分必须输出为"
+                      "【评分：X.X】（1.0-5.0），不再出新题。")
         if session.day_phase == DayPhase.REVIEWING.value:
             if "讲完" in user_text:
                 return ("用户自测结束。进入 Step 3 严格拷问：立即出 Q1（连环追问、不给提示、"
@@ -55,6 +66,27 @@ class ChatOrchestrator(TurnEngine):
         """LLM 回复完成后的状态处理。返回需要追加展示给用户的消息块。"""
         extra: list[str] = []
         stage = session.current_stage
+
+        if session.day_phase == DayPhase.INTERVIEW.value:
+            # 模拟面试（M5c）：round 0 收口述评分 → 两轮追问 → 终评落 teach_back
+            if session.interview_round == 0:
+                score = self._quiz.extract_score(assistant_text)
+                if score is None:
+                    extra.append("（系统提示：AI 未输出【评分：X.X】标记，"
+                                 "请追问「你的评分是多少」）")
+                else:
+                    session.pending_score = score
+                    session.interview_round = 1
+            elif session.interview_round == 1:
+                session.interview_round = 2
+            else:
+                score = self._quiz.extract_score(assistant_text)
+                if score is None:
+                    extra.append("（系统提示：AI 未输出终评【评分：X.X】标记，"
+                                 "请追问「最终评分是多少」）")
+                else:
+                    self._record_teach_back(session, score, extra)
+            return extra
 
         if session.day_phase == DayPhase.REVIEWING.value:
             session.review_question_count += len(
@@ -127,6 +159,45 @@ class ChatOrchestrator(TurnEngine):
             return unit["title"]
         except Exception:
             return session.current_unit_id or ""
+
+    def _interview_title(self, session: SessionContext) -> str:
+        """面试知识点标题（LearnerService 查找，失败回退 cid）。"""
+        try:
+            from ..services.learner_service import LearnerService
+            day = int(self._state_store.load().get("current_day", 1))
+            for c in LearnerService(self._config).get_model(day)["concepts"]:
+                if c["id"] == session.interview_cid:
+                    return c.get("title", session.interview_cid)
+        except Exception:
+            pass
+        return session.interview_cid or "当前知识点"
+
+    def _record_teach_back(self, session: SessionContext, score: float,
+                           extra: list[str]) -> None:
+        """teach_back 证据落盘（M5c 验收硬条）：终评 → pass/fail 证据（幂等）。
+
+        写入失败不阻断面试流程（铁律 15）；随后 phase 还原 STUDYING。
+        """
+        cid = session.interview_cid
+        passed = self._quiz.is_pass(score)
+        etype = "teach_back_pass" if passed else "teach_back_fail"
+        written = False
+        try:
+            from datetime import date
+            from ..services.learner_service import LearnerService
+            day = int(self._state_store.load().get("current_day", 1))
+            written = LearnerService(self._config).add_evidence(
+                cid, etype,
+                f"interview:{cid}:{date.today().isoformat()}", day)
+        except Exception:
+            pass
+        extra.append(
+            f"🎤 模拟面试结束：终评 {score} 分（{'通过' if passed else '未通过'}），"
+            f"teach_back 证据{'已落盘' if written else '落盘失败（不影响流程）'}。")
+        session.day_phase = DayPhase.STUDYING.value
+        session.interview_cid = ""
+        session.interview_round = 0
+        session.pending_score = None
 
     def _next_unit_title(self, session: SessionContext) -> str | None:
         state = self._state_store.load()

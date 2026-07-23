@@ -170,6 +170,13 @@ function addToolReadChip(p) {
     } else {
       chip.textContent = `📄 资料读取失败：${p.doc}${p.error ? "（" + p.error + "）" : ""}`;
     }
+  } else if (p.kind === "action") {
+    // planner ACTION（M5c）：工具调用 chip，不跳转
+    chip.classList.add("doc-chip");
+    chip.textContent = p.ok
+      ? `🔧 AI 调用了工具 ${p.tool}`
+      : `🔧 工具调用失败：${p.tool || "?"}${p.error ? "（" + p.error + "）" : ""}`;
+    chip.title = p.reason || "";
   } else if (p.ok) {
     chip.textContent = `📖 AI 读取了 ${p.path}${p.lines ? ":" + p.lines : ""}`;
     chip.dataset.path = p.path;
