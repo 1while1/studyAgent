@@ -48,6 +48,10 @@ class ResumeHandler(CommandHandler):
         session.current_stage = deps.stages.first
         session.round_count = 0
         session.quiz_round = 0
+        # R3：覆盖 phase 时同步清面试残留字段（防面试无声蒸发后字段残留）
+        session.interview_cid = ""
+        session.interview_round = 0
+        session.interview_score = None
         deps.session_store.save(session)
 
         msg = (deps.templates.get("resume_summary")

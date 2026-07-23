@@ -49,15 +49,22 @@ _MARK_PREFIXES = ("`[READ:", "[READ:", "`[READ_DOC:", "[READ_DOC:",
                   "`[ACTION:", "[ACTION:")
 # 等待 "]" 闭合的缓冲上限：超过即按普通文本下发（防模型忘闭合卡死输出）
 _MARKER_BUF_CAP = 2000
+# ACTION 载荷独立上限（R3：write_note 长文本/retell_assess 转录可超 2000）
+_ACTION_BUF_CAP = 16384
 
 
 class ToolUseLoop:
-    """包装 llm.chat_stream，产出 SSE 事件 dict（delta / tool_read）。"""
+    """包装 llm.chat_stream，产出 SSE 事件 dict（delta / tool_read）。
+
+    allow_actions：ACTION 标记武装开关（M5c 审查修复 R2）——仅 planner 引擎
+    会话开启；导学模式默认 False，ACTION 标记静默丢弃（不执行任何工具）。
+    """
 
     def __init__(self, config: ConfigService, llm: LLMClient,
                  browser: CodeBrowser, materials: MaterialsService | None = None,
                  registry: ToolRegistry | None = None,
-                 tool_context: ToolContext | None = None):
+                 tool_context: ToolContext | None = None,
+                 allow_actions: bool = False):
         self._config = config
         self._llm = llm
         self._browser = browser
@@ -65,6 +72,7 @@ class ToolUseLoop:
         self._ctx = tool_context or ToolContext(
             config=config, browser=browser, materials=materials)
         self._registry = registry or build_default_registry()
+        self._allow_actions = allow_actions
         self.text: str = ""  # 最终文本（不含标记行），供落 chat_history
 
     def run(self, messages: list[Message]) -> Iterator[dict]:
@@ -78,7 +86,8 @@ class ToolUseLoop:
             pending_read = None  # 本轮回合截获的标记
             for ev in self._stream_round(
                     convo, allow_read=reads < max_reads,
-                    allow_action=actions < max_actions):
+                    allow_action=self._allow_actions
+                    and actions < max_actions):
                 if ev["type"] == "delta":
                     self.text += ev["content"]
                     yield ev
@@ -137,13 +146,20 @@ class ToolUseLoop:
                 buf = ev.pop("_rest")
                 if ev["content"]:
                     yield ev
-        for ev in self._drain(buf, final=True, allow_read=allow_read,
-                              allow_action=allow_action):
-            if ev["type"] == "_marker":
-                yield ev
+        # final 排水：_rest 续排（R4：无法解析的 ACTION 不吞后续文本）
+        while buf:
+            drained_any = False
+            for ev in self._drain(buf, final=True, allow_read=allow_read,
+                                  allow_action=allow_action):
+                drained_any = True
+                if ev["type"] == "_marker":
+                    yield ev
+                    return
+                buf = ev.pop("_rest")
+                if ev["content"]:
+                    yield ev
+            if not drained_any:
                 return
-            if ev["content"]:
-                yield ev
 
     @staticmethod
     def _find_marker(buf: str) -> tuple[int, str]:
@@ -181,8 +197,8 @@ class ToolUseLoop:
                     return token, rest, raw
             except Exception:
                 continue
-        if first_j == -1 or (not final and len(buf) < _MARKER_BUF_CAP):
-            if not final and len(buf) < _MARKER_BUF_CAP:
+        if first_j == -1 or (not final and len(buf) < _ACTION_BUF_CAP):
+            if not final and len(buf) < _ACTION_BUF_CAP:
                 return None, buf, None  # 等 "]" 到达
         # 流结束/超长/含 ] 但全非合法 JSON：按普通文本下发首个 ] 前内容
         if first_j == -1:
@@ -274,6 +290,7 @@ class ToolUseLoop:
         try:
             payload = json.loads(raw)
         except Exception as e:
+            # 防御性，正常不可达：_scan_action 只放行可解析为 dict 的 raw
             event["error"] = "JSON 解析失败"
             self._log_plan("", {}, str(e)[:120], False)
             return event, (
@@ -295,19 +312,31 @@ class ToolUseLoop:
         event.update({"tool": action, "ok": result.ok, "reason": reason})
         if result.error:
             event["error"] = result.error[:100]
-        data_s = ""
-        if result.data is not None:
-            try:
-                data_s = json.dumps(result.data, ensure_ascii=False)[:2000]
-            except Exception:
-                data_s = str(result.data)[:2000]
-        injection = (
-            f"【系统注入】工具 `{action}` 执行结果"
-            f"（ok={str(result.ok).lower()}）：\n"
-            + (f"错误：{result.error}\n" if result.error else "")
-            + (f"```json\n{data_s}\n```\n" if data_s else "")
-            + "请基于该真实结果继续，禁止编造执行结果之外的信息。")
+        if result.injection:
+            # 读类工具（read_code/read_doc）：注入文本已由工具构造好（R1 修复）
+            injection = result.injection
+        else:
+            data_s = ""
+            if result.data is not None:
+                try:
+                    data_s = json.dumps(result.data, ensure_ascii=False)
+                except Exception:
+                    data_s = str(result.data)
+                if len(data_s) > 2000:
+                    data_s = data_s[:2000] + "…（已截断）"
+            injection = (
+                f"【系统注入】工具 `{action}` 执行结果"
+                f"（ok={str(result.ok).lower()}）：\n"
+                + (f"错误：{result.error}\n" if result.error else "")
+                + (f"```json\n{data_s}\n```\n" if data_s else "")
+                + "请基于该真实结果继续，禁止编造执行结果之外的信息。")
         self._log_plan(action, args, reason, result.ok, result.error or "")
+        try:
+            from ..services.observer import get_observer
+            get_observer(self._config).log_tool(
+                action, result.ok, f"ACTION:{reason[:80]}")
+        except Exception:
+            pass  # 工具维度用量单流可查（R10）；记账异常静默
         return event, injection
 
     def _log_plan(self, action: str, args: dict, reason: str, ok: bool,

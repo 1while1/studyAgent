@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ..domain.enums import DayPhase
 from ..domain.models import SessionContext
 from ..services.config_service import ConfigService
 from ..services.memory_store import MemoryStore
@@ -99,7 +100,9 @@ class PromptBuilder:
         if learner_summary:
             parts += ["## 学习者模型摘要（薄弱优先，供个性化讲解参考）",
                       learner_summary, ""]
-        if session.current_stage and self._stages.exists(session.current_stage):
+        if (session.current_stage and self._stages.exists(session.current_stage)
+                and session.day_phase != DayPhase.INTERVIEW.value):
+            # 面试期不注入阶段指令（R8：防"最高优先级带读"与面试 rubric 双指令矛盾）
             parts += [
                 "## 当前阶段指令（最高优先级）",
                 f"当前阶段：{session.current_stage}（{self._stages.sop_step(session.current_stage)}）",

@@ -274,35 +274,42 @@ def main():
                    if w.get("slug") == _active)
         _sess_p = (ROOT / _ws["session_path"]).resolve()
         _lm_p = ((ROOT / _ws["docx_dir"]).resolve() / "learner_model.json")
-        _bak = {p: p.read_bytes() for p in (_sess_p, _lm_p) if p.exists()}
-        page.locator("#command-chips .chip", has_text="模拟面试").click()
-        ok_iv = False
-        for i in range(30):
-            page.wait_for_timeout(1000)
-            last = page.locator("#messages .bubble").last.text_content() or ""
-            if "口述" in last and "思考中" not in last:
-                ok_iv = True
-                break
-        check("模拟面试口述要求出现", ok_iv)
-        # 走完全场（口述 → 两轮追问 → 终评），验证 teach_back 落盘消息
-        for reply in ("我按结构讲一遍这个知识点", "追问回答一", "追问回答二"):
-            page.fill("#input", reply)
-            page.locator("#input-form button").click()
+        # R6 加固：记录存在性——面试新建的文件还原时删除；try/finally 保还原
+        _bak = {p: (p.exists(), p.read_bytes() if p.exists() else b"")
+                for p in (_sess_p, _lm_p)}
+        try:
+            page.locator("#command-chips .chip", has_text="模拟面试").click()
+            ok_iv = False
             for i in range(30):
                 page.wait_for_timeout(1000)
                 last = page.locator("#messages .bubble").last.text_content() or ""
-                if "思考中" not in last and len(last.strip()) > 0:
+                if "口述" in last and "思考中" not in last:
+                    ok_iv = True
                     break
-        check("模拟面试 teach_back 落盘",
-              "模拟面试结束" in (page.locator("#messages").text_content() or ""))
-        for p, data in _bak.items():
-            p.write_bytes(data)  # 还原 session 与 learner_model（防真实数据污染）
-        # 还原真实渠道配置
-        page.request.post(BASE + "/api/llm-config", data={
-            "provider": orig_cfg.get("provider", "openai_compat"),
-            "fallback_provider": orig_cfg.get("fallback_provider", ""),
-            "warmup_on_start": orig_cfg.get("warmup_on_start", True),
-            "sections": {}})
+            check("模拟面试口述要求出现", ok_iv)
+            # 走完全场（口述 → 两轮追问 → 终评），验证 teach_back 落盘消息
+            for reply in ("我按结构讲一遍这个知识点", "追问回答一", "追问回答二"):
+                page.fill("#input", reply)
+                page.locator("#input-form button").click()
+                for i in range(30):
+                    page.wait_for_timeout(1000)
+                    last = page.locator("#messages .bubble").last.text_content() or ""
+                    if "思考中" not in last and len(last.strip()) > 0:
+                        break
+            check("模拟面试 teach_back 落盘",
+                  "模拟面试结束" in (page.locator("#messages").text_content() or ""))
+        finally:
+            for p, (existed, data) in _bak.items():
+                if existed:
+                    p.write_bytes(data)  # 还原 session 与 learner_model
+                elif p.exists():
+                    p.unlink()           # 面试新建的文件删除（防残留污染）
+            # 还原真实渠道配置
+            page.request.post(BASE + "/api/llm-config", data={
+                "provider": orig_cfg.get("provider", "openai_compat"),
+                "fallback_provider": orig_cfg.get("fallback_provider", ""),
+                "warmup_on_start": orig_cfg.get("warmup_on_start", True),
+                "sections": {}})
 
         # ---- 9d. 资料库（M1）：API + 弹窗列表 + 预览 ----
         mats = page.request.get(BASE + "/api/materials").json()
