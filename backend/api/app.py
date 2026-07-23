@@ -17,7 +17,7 @@ from ..engine.prompt_builder import PromptBuilder
 from ..engine.quiz_engine import QuizEngine
 from ..engine.session_store import SessionStore
 from ..engine.stage_machine import StageMachine
-from ..llm.factory import create_llm
+from ..llm.factory import create_llm, create_llm_cheap
 from ..services.backup_service import BackupService
 from ..services.config_service import get_config
 from ..services.materials_service import MaterialsService
@@ -47,6 +47,7 @@ def build_deps() -> Deps:
         backup=BackupService(config),
         stages=stages,
         llm=llm,
+        llm_cheap=create_llm_cheap(config) or llm,
         quiz=quiz,
         prompts=PromptBuilder(config, state_store, memory, stages,
                               MaterialsService(config)),

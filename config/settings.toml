@@ -49,6 +49,20 @@ sync_stuck = -0.10
 note_distilled = 0.05
 mark_wrong = -0.05
 
+# 上下文三层控制（M5b）：窗口预算/压缩触发/钉住/归档
+[context]
+budget_tokens = 256000      # 对话上下文预算（用户可调，模型配置页热生效，默认 256K）
+trigger_ratio = 0.8         # 未归档历史估算 > 生效预算×此值 → 收缩窗口并压缩
+pin_top_k = 5               # 钉住层 top-K 薄弱知识点
+archive_max_chars = 4000    # 归档摘要字符上限（超出逐出前部）
+max_messages = 200          # 窗口条数硬兜底（防估算失效）
+
+# 各模型上下文上限（标称值，以厂商为准，可自调）；未知模型用 default（保守）
+[model_context]
+default = 32768
+deepseek-chat = 65536
+deepseek-v4-pro = 256000
+
 [llm]
 provider = "openai_compat"
 fallback_provider = "deepseek_official"

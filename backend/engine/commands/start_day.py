@@ -214,6 +214,8 @@ class StartDayHandler(CommandHandler):
         session.quiz_round = 0
         # 新的一天/重新开始 = 全新对话上下文，防止历史中的陈旧讲解让模型误以为课程已在进行
         session.chat_history = []
+        session.archive_summary = ""  # M5b：归档层同步重置（防 archive_upto 越界）
+        session.archive_upto = 0
         deps.session_store.save(session)
 
         messages.append(self._render_unit_open(deps, first, plan))

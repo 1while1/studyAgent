@@ -43,6 +43,7 @@ def make_deps(config: ConfigService, session_path: Path) -> Deps:
         config=config, state_store=state_store, memory=memory,
         study_plan=StudyPlanStore(config), templates=TemplateService(config),
         backup=BackupService(config), stages=stages, llm=llm,
+        llm_cheap=llm,
         quiz=QuizEngine(config, llm),
         prompts=PromptBuilder(config, state_store, memory, stages),
         hooks=HookPipeline(), session_store=SessionStore(session_path))
@@ -98,6 +99,9 @@ class TestFlows(unittest.TestCase):
         self.assertIn("---【单元 1 开始】---", joined)
         self.assertEqual(session.current_stage, "teaching")
         self.assertEqual(session.current_unit_id, "A")
+        # M5b：新开始同步重置归档层（防 archive_upto 越界）
+        self.assertEqual(session.archive_summary, "")
+        self.assertEqual(session.archive_upto, 0)
         self._validate_tmp()
 
         # 3. [下一内容] → 掌握情况检查（默认需巩固）+ 进入 quiz_r1

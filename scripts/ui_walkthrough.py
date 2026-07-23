@@ -111,6 +111,11 @@ def main():
         page.wait_for_timeout(1200)
         check("配置弹窗可见", page.locator("#llm-modal").is_visible())
         check("配置弹窗-渠道数", page.locator(".provider-fieldset").count() == 2)
+        check("配置弹窗-上下文窗口区", page.locator("#context-section").is_visible())
+        page.locator("#ctx-budget").fill("128000")
+        page.wait_for_timeout(200)
+        check("上下文预算≈K 提示", "125K" in (page.locator("#ctx-budget-k").text_content() or ""))
+        check("上下文预览含模型上限", "上限" in (page.locator("#ctx-preview").text_content() or ""))
         page.locator("#llm-close").click()
         page.wait_for_timeout(400)
 

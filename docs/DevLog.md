@@ -1,7 +1,7 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-23（**M5a 工具骨架交付 + 审查修复批**——turn_engine 双引擎接口+路由、tool_registry 权限四级+9 工具化包装、update_model fail-closed、审查 🟡 全修；244 单测/102 走查全绿）
+> 最近更新：2026-07-23（**M5b 上下文+路由交付**——context_manager 三层（钉住/窗口/归档）+ 预算钳制（默认 256K、模型上限表、UI 可调热生效）+ 压缩机械校验 + cheap/strong 两档；268 单测/105 走查全绿）
 
 ## 当前运行状态
 
@@ -11,12 +11,25 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 244 个全绿；UI 走查 102 项全绿
+- 测试：`python -m unittest discover -s tests` → 268 个全绿；UI 走查 105 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步
 
-v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 `docs/AgentDesign.md` v3 封板版为准：M1 资料库 ✅ → M2 可观测 ✅ → M3 学习者模型 ✅ → M4 笔记管理 ✅ → M5a 工具骨架 ✅（2026-07-23 交付）→ **下一步 = M5b 上下文+路由**（context_manager 三层 + token 计量 + 模型两档路由，验收=长会话 50+ 轮不断片、压缩机械校验过关）。
+v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 `docs/AgentDesign.md` v3 封板版为准：M1 资料库 ✅ → M2 可观测 ✅ → M3 学习者模型 ✅ → M4 笔记管理 ✅ → M5a 工具骨架 ✅ → M5b 上下文+路由 ✅（2026-07-23 交付）→ **下一步 = M5c planner**（JSON action 契约 + plan-act-observe + SOP 策略化 + 模拟面试模式，验收=[导学] 跑通、口述→追问→teach_back 证据落盘）。
+
+## M5b 上下文+路由（2026-07-23 交付）
+
+- **context_manager**（`engine/context_manager.py`，AgentDesign §8.5）会话级三层：
+  - **钉住层**：学习者模型摘要确定性渲染（top-K 薄弱按 mastery 升序 + 当前单元必含，分档 薄弱<0.4/爬升<0.7/达标），经 `prompt_builder.build(learner_summary=)` 可选参数注入（旧调用零变化）；任何异常静默 `""`
+  - **窗口层**：est_tokens × 渠道校准比率（observer.ratio 公开化）按生效预算伸缩，条数硬兜底 `[context].max_messages=200`（**取代旧 chat_history_max_turns 用途**，旧键保留仅失效）
+  - **归档层**：`SessionContext.archive_summary/archive_upto`；摘要独立 system 消息注入（降级点已注释）
+- **压缩（回合边界）**：chat/command 流成功后 `maybe_compress`——结构化模板 `resources/prompts/context_compress.md` → **机械校验**（concept id 集合 ⊆ + 未决问题计数 = 旧声明 + 新增疑问数）→ 带原因重试一次 → 再不齐**原样保留降级不丢数据**（§8.4）；超 `archive_max_chars` 前部逐出（`…（更早内容已逐出）`）
+- **预算钳制（用户反馈硬规）**：`effective_budget = max(1024, min([context].budget_tokens, [model_context] 模型上限 − 当前渠道 max_tokens 输出预留))`；上限表 deepseek-chat=65536/deepseek-v4-pro=256000/default=32768（标称值可自调）；**默认预算 256000**
+- **UI 可调**：模型配置弹窗「上下文窗口」区（预算+触发比例输入、≈K 提示、模型上限与生效预算预览）；保存走 update_toml_sections 写 `[context]` 节区（**先读合并再整体重写防丢键**；节区行必须含 `[context]` 头——漏头会让键沉入顶层，已被测试当场抓住修复）+ reload 热生效
+- **两档路由**：`[llm] cheap_provider`（空=复用 strong）；Deps + `llm_cheap`（构造点 6 处全改：app.build_deps + 5 处测试夹具）；压缩走 cheap，**cheap 异常 → strong 重试一次**（fallback 链）；v1 cheap 仅用于压缩（qa_capture/end_day 保持 strong）；task_scope("compress") 自动记账
+- **清历史同步重置归档**：start_day 新开始 + /api/session/reset 两处（防 archive_upto 越界；assemble 另有防御钳 0）
+- **测试**：+24（装配等价/收缩/钳制三分支/钉住渲染/机械校验/压缩降级/逐出/50+ 轮不断片/fallback/create_llm_cheap/session reset/llm-config context 保存合并热生效）→ 268 全绿；走查 105 项（+3 上下文窗口区）全绿
 
 ## M5a 工具骨架（2026-07-23 交付，纯重构）
 

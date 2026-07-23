@@ -110,6 +110,10 @@ class Observer:
     def _calib_ratio(self, key: str) -> float:
         return self._load_calib().get(key, {}).get("ratio", 1.0)
 
+    def ratio(self, key: str) -> float:
+        """公开读取校准比率（provider/model 或 :out 后缀键），供上下文预算估算。"""
+        return self._calib_ratio(key)
+
     # ---- 写日志 ----
 
     def _write(self, record: dict) -> None:
