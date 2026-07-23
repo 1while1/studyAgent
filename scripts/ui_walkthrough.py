@@ -336,7 +336,15 @@ def main():
             page.locator("#learner-migrate button", has_text="确认应用迁移").click()
             page.wait_for_timeout(1500)
         check("掌握度抽屉打开", page.locator("#mastery-drawer").is_visible())
-        check("统计卡渲染", page.locator(".stat-card").count() == 3)
+        check("行动计数双卡", page.locator(".tac-counter").count() == 2)
+        # 算法说明弹层收纳
+        check("顶部无公式长文", page.locator("#mastery-expl").count() == 0)
+        page.locator("#algo-info-btn").click()
+        page.wait_for_timeout(300)
+        check("算法说明弹层", page.locator("#algo-pop").is_visible())
+        page.locator("#algo-info-btn").click()
+        page.wait_for_timeout(300)
+        check("弹层可关闭", page.locator("#algo-pop").is_hidden())
         check("需要行动分区", page.locator("#ms-urgent .m-sec-head").is_visible())
         check("紧急项行渲染", page.locator("#ms-urgent-body .mastery-row").count() >= 1)
         check("今日学习分区", "Day" in page.locator("#ms-today .m-sec-head").text_content())
@@ -348,18 +356,28 @@ def main():
         page.locator("#ms-urgent-body .mastery-row").first.click()
         page.wait_for_timeout(600)
         check("详情手风琴展开", page.locator(".mastery-detail-inline").is_visible() and
-              "证据构成" in page.locator(".mastery-detail-inline").text_content())
+              "查看评估明细" in page.locator(".mastery-detail-inline").text_content())
         check("详情含建议行动",
               page.locator(".mastery-detail-inline .md-advice").is_visible())
+        check("详情含行动按钮",
+              page.locator(".mastery-detail-inline .md-act-btn").count() >= 1)
+        check("明细默认折叠",
+              page.locator(".mastery-detail-inline .md-ev .ev-table").is_hidden())
         page.locator("#ms-urgent-body .mastery-row").first.click()
         page.wait_for_timeout(400)
         check("手风琴收起", page.locator(".mastery-detail-inline").count() == 0)
         # 战略雷达 tab
         page.locator(".drawer-tab[data-mtab='radar']").click()
         page.wait_for_timeout(2500)
-        check("雷达分布四档", page.locator(".rb-row").count() == 4)
+        check("雷达 Donut 渲染", page.locator("#radar-donut svg").count() == 1 and
+              page.locator(".rl-row").count() == 4)
         check("雷达热力格", page.locator(".heat-cell2").count() >= 80)
-        check("雷达拓扑 SVG", page.locator("#radar-topo svg").count() >= 1)
+        check("课程时间轴渲染", page.locator(".tl-row").count() >= 1)
+        # 时间轴节点点击 → 跳回战术板展开详情
+        page.locator(".tl-row").first.click()
+        page.wait_for_timeout(1800)
+        check("时间轴跳转战术板", page.locator("#mastery-tactical").is_visible() and
+              page.locator(".mastery-detail-inline").count() >= 1)
         page.locator("#mastery-close").click()
         page.wait_for_timeout(300)
         # 侧栏复习预警 widget → 跳转抽屉展开详情
