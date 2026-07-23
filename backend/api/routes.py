@@ -348,11 +348,13 @@ def add_code_root(body: dict):
     raw_path = (body or {}).get("path", "").strip()
     if not name or not raw_path:
         return {"ok": False, "error": "name 和 path 不能为空"}
-    roots = _deps.config.code_roots
-    if any(r["name"] == name for r in roots):
+    # ⚠️ 写 settings 必须基于全量未过滤根清单（M6 审查修复 R1），
+    # 过滤后的 config.code_roots 只用于"当前工作区是否重名"判断
+    if any(r["name"] == name for r in _deps.config.code_roots):
         return {"ok": False, "error": f"项目根已存在: {name}"}
-    new_roots = roots + [{"name": name, "path": raw_path,
-                          "workspace": _deps.config.workspace.slug}]
+    all_roots = list(_deps.config.data.get("code_roots", []))
+    new_roots = all_roots + [{"name": name, "path": raw_path,
+                              "workspace": _deps.config.workspace.slug}]
     try:
         # 先验证目录存在再落盘
         cb = CodeBrowser(_deps.config)
@@ -361,7 +363,7 @@ def add_code_root(body: dict):
         p = _P(raw_path) if _P(raw_path).is_absolute() else (WEB_ROOT / raw_path).resolve()
         if not p.is_dir():
             return {"ok": False, "error": f"目录不存在: {raw_path}"}
-        update_code_roots(SETTINGS_PATH, new_roots)
+        update_code_roots(_deps.config.path, new_roots)
         _deps.config.reload()
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
@@ -371,11 +373,15 @@ def add_code_root(body: dict):
 @router.post("/api/code/roots/delete")
 def delete_code_root(body: dict):
     name = (body or {}).get("name", "").strip()
-    new_roots = [r for r in _deps.config.code_roots if r["name"] != name]
-    if len(new_roots) == len(_deps.config.code_roots):
+    # 全量未过滤基线（R1）：只删属于当前工作区的同名根，别的工作区根原样保留
+    all_roots = list(_deps.config.data.get("code_roots", []))
+    slug = _deps.config.workspace.slug
+    new_roots = [r for r in all_roots
+                 if not (r["name"] == name and r.get("workspace", slug) == slug)]
+    if len(new_roots) == len(all_roots):
         return {"ok": False, "error": f"项目根不存在: {name}"}
     try:
-        update_code_roots(SETTINGS_PATH, new_roots)
+        update_code_roots(_deps.config.path, new_roots)
         _deps.config.reload()
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
@@ -404,8 +410,8 @@ def code_file(root: str, path: str):
 @router.post("/api/code/save")
 def code_save(body: dict):
     """UI 保存（M6）：仅 demo/replica 白名单可写，atomic_write 落盘。"""
-    root = (body or {}).get("root", "")
-    path = (body or {}).get("path", "")
+    root = str((body or {}).get("root", "") or "")
+    path = str((body or {}).get("path", "") or "")
     content = (body or {}).get("content")
     if not root.strip() or not path.strip() or content is None:
         return {"ok": False, "error": "root / path / content 均不能为空"}
@@ -473,17 +479,21 @@ def process_start(body: dict):
 def process_stop(body: dict):
     pid_id = (body or {}).get("id", "")
     try:
-        return {"ok": True, **_process_mgr().stop(pid_id)}
+        return {"ok": True, **_process_mgr().stop(str(pid_id))}
     except ProcessError as e:
         return {"ok": False, "error": str(e)}
+    except Exception as e:  # Y4：与同类端点统一 ok/error 契约（不冒 500）
+        return {"ok": False, "error": f"停止失败: {e}"}
 
 
 @router.get("/api/processes/logs")
 def process_logs(id: str, tail: int = 200):
     try:
-        return {"ok": True, **_process_mgr().logs_tail(id, tail)}
+        return {"ok": True, **_process_mgr().logs_tail(str(id), tail)}
     except ProcessError as e:
         return {"ok": False, "error": str(e)}
+    except Exception as e:  # Y4
+        return {"ok": False, "error": f"日志读取失败: {e}"}
 
 
 @router.get("/api/processes/logs/stream")

@@ -221,3 +221,13 @@ workspace = "ragent"
 name = "ragent-replica"
 path = "../ragent-replica"
 workspace = "ragent"
+
+[[code_roots]]
+name = "temp_tinyrag"
+path = "../temp_tinyrag"
+workspace = "tinyrag"
+
+[[code_roots]]
+name = "onecoupon"
+path = "D:\\IntelliJ IDEA 2025.1.2\\onecoupon"
+workspace = "onecoupon"

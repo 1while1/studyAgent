@@ -155,6 +155,57 @@ class TestWorkshop(unittest.TestCase):
         self.assertFalse(self.svc.editable("demo", "../x"))       # 越界
         self.assertFalse(self.svc.editable("ghost", "x"))         # 未知根
 
+    # ---- M6 审查修复回归 ----
+
+    def test_scaffold_preserves_other_workspace_roots(self):
+        """R1：scaffold 注册代码根不得丢别的工作区的根（全量未过滤基线）。"""
+        settings = self.tmp / "settings2.toml"
+        settings.write_text(
+            'active_workspace = "t"\n'
+            f'[[code_roots]]\nname = "otherRoot"\n'
+            f'path = "{self.proj.as_posix()}"\nworkspace = "other"\n'
+            '[[workspaces]]\nslug = "t"\n'
+            f'docx_dir = "{self.docx.as_posix()}"\n'
+            f'project_dir = "{self.proj.as_posix()}"\n'
+            f'session_path = "{(self.tmp / "s2.json").as_posix()}"\n'
+            f'demo_dir = "{(self.tmp / "demo2").as_posix()}"\n'
+            'replica_name = ""\n'
+            '[[workspaces]]\nslug = "other"\n'
+            f'docx_dir = "{(self.tmp / "docx2").as_posix()}"\n'
+            f'project_dir = "{self.proj.as_posix()}"\n'
+            f'session_path = "{(self.tmp / "s3.json").as_posix()}"\n',
+            encoding="utf-8")
+        cfg = ConfigService(settings)
+        WorkshopService(cfg).scaffold_create("npm", "multi-demo")
+        names = [r["name"] for r in cfg.data.get("code_roots", [])]
+        self.assertIn("otherRoot", names)   # 别的工作区根保住
+        self.assertIn("demo", names)        # 新注册的在
+        ws = {r["name"]: r for r in cfg.data.get("code_roots", [])}
+        self.assertEqual(ws["otherRoot"]["workspace"], "other")
+        self.assertEqual(ws["demo"]["workspace"], "t")
+
+    def test_scaffold_create_retry_after_failure(self):
+        """A1：注册失败不留残骸，可直接重入。"""
+        from unittest import mock
+        from backend.services import config_writer
+        orig = config_writer.update_code_roots
+        calls = {"n": 0}
+
+        def flaky(path, roots):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise IOError("模拟写盘失败")
+            return orig(path, roots)
+
+        with mock.patch.object(config_writer, "update_code_roots", flaky):
+            with self.assertRaises(Exception):
+                self.svc.scaffold_create("npm", "retry-demo")
+        # 失败未产生非空目录（先注册后复制）→ 重试成功
+        self.assertFalse((self.demo / "retry-demo").exists())
+        r = self.svc.scaffold_create("npm", "retry-demo")
+        self.assertEqual(r["path"], "demo/retry-demo")
+        self.assertTrue((self.demo / "retry-demo" / "package.json").is_file())
+
 
 class TestWorkshopRoutes(unittest.TestCase):
     """路由级（routes.py 直接调用）：写路径 API 的 ok/error 契约。"""
@@ -238,6 +289,55 @@ class TestWorkshopRoutes(unittest.TestCase):
         self.assertFalse(r["editable"])
         r = routes.code_file("demo", "e-demo/nope.js")
         self.assertFalse(r["ok"])  # 不存在仍走原错误契约
+
+    def test_code_save_bad_types_no_500(self):
+        """Y4：非字符串参数也走 ok=False 契约，不冒 AttributeError 500。"""
+        routes = self._init_routes()
+        r = routes.code_save({"root": 123, "path": "x", "content": "y"})
+        self.assertFalse(r["ok"])
+        r = routes.code_save({"root": None, "path": "x", "content": "y"})
+        self.assertFalse(r["ok"])
+
+    def test_code_roots_add_delete_preserve_other_workspaces(self):
+        """R1：路由增删代码根基于全量未过滤清单，别的工作区根不受影响。"""
+        settings = self.tmp / "settings3.toml"
+        settings.write_text(
+            'active_workspace = "t"\n'
+            'status_enum = ["not_started", "in_progress", "completed"]\n'
+            '[evidence_delta]\nquiz_right = 0.10\n'
+            '[[stages]]\nname = "teaching"\nnext = ""\n'
+            'sop_step = "步骤一"\ninstruction = "讲"\n'
+            f'[[code_roots]]\nname = "otherRoot"\n'
+            f'path = "{self.proj.as_posix()}"\nworkspace = "other"\n'
+            '[[workspaces]]\nslug = "t"\n'
+            f'docx_dir = "{self.docx.as_posix()}"\n'
+            f'project_dir = "{self.proj.as_posix()}"\n'
+            f'session_path = "{(self.tmp / "s4.json").as_posix()}"\n'
+            f'demo_dir = "{self.demo.as_posix()}"\n'
+            'replica_name = ""\n'
+            '[[workspaces]]\nslug = "other"\n'
+            f'docx_dir = "{(self.tmp / "docx2").as_posix()}"\n'
+            f'project_dir = "{self.proj.as_posix()}"\n'
+            f'session_path = "{(self.tmp / "s5.json").as_posix()}"\n',
+            encoding="utf-8")
+        from backend.api import routes as rt
+        from backend.engine.orchestrator import ChatOrchestrator
+        from tests.test_flows import make_deps
+        cfg = ConfigService(settings)
+        deps = make_deps(cfg, self.tmp / "s6.json")
+        orch = ChatOrchestrator(cfg, deps.stages, deps.quiz,
+                                deps.state_store, deps.memory, deps.templates)
+        rt.init(deps, orch)
+        r = rt.add_code_root({"name": "newRoot", "path": str(self.proj)})
+        self.assertTrue(r["ok"], r.get("error"))
+        names = [x["name"] for x in cfg.data.get("code_roots", [])]
+        self.assertIn("otherRoot", names)
+        self.assertIn("newRoot", names)
+        r = rt.delete_code_root({"name": "newRoot"})
+        self.assertTrue(r["ok"], r.get("error"))
+        names = [x["name"] for x in cfg.data.get("code_roots", [])]
+        self.assertIn("otherRoot", names)       # 别的工作区根保住
+        self.assertNotIn("newRoot", names)
 
 
 if __name__ == "__main__":

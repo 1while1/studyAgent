@@ -273,6 +273,13 @@ def main():
             page.wait_for_timeout(800)
             back = api("/api/code/file?root=demo&path=wt-demo/src/app.js")
             check("保存回读一致", back.get("content") == "// walkthrough edit\n")
+            # Y3 回归：每文件独立 model，undo 不跨文件污染
+            page.evaluate("openCodeFile('demo','wt-demo/README.md')")
+            page.wait_for_timeout(800)
+            page.evaluate("window.__codeEditor.trigger('wt','undo','')")
+            page.wait_for_timeout(200)
+            check("undo 不跨文件污染", "walkthrough" not in
+                  page.evaluate("window.__codeEditor.getValue()"))
             # 原项目只读（写白名单不含原项目）
             page.evaluate("openCodeFile('ragent原项目','frontend/index.html')")
             page.wait_for_timeout(1200)

@@ -186,6 +186,55 @@ class TestProcessMgr(unittest.TestCase):
         lines = [e.get("line", "") for e in events if e["type"] == "log"]
         self.assertTrue(any("l2" in line for line in lines))
 
+    # ---- M6 审查修复回归 ----
+
+    def test_concurrent_start_registers_all(self):
+        """B1：并发 start 不互踩丢条目（注册表读改写持锁）。"""
+        import threading
+        import backend.services.process_mgr as pm_mod
+        old_probe = pm_mod._PORT_PROBE_TIMEOUT
+        pm_mod._PORT_PROBE_TIMEOUT = 0.2  # 测试提速：无端口进程不等满窗口
+        results = []
+        try:
+            def worker(tag):
+                results.append(self.mgr.start(
+                    str(self.demo),
+                    [PY, "-c", "import time;time.sleep(30)"], name=tag))
+            threads = [threading.Thread(target=worker, args=(f"c{i}",))
+                       for i in range(4)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+        finally:
+            pm_mod._PORT_PROBE_TIMEOUT = old_probe
+        self.assertEqual(len(results), 4)
+        ids = {r["id"] for r in results}
+        self.assertEqual(len(ids), 4)
+        registered = {p["id"] for p in self.mgr.list()}
+        self.assertTrue(ids <= registered)  # 无互踩丢条目 → 无孤儿进程
+        for r in results:
+            self.mgr.stop(r["id"])
+
+    def test_logs_tail_big_file(self):
+        """B2：大日志只读尾部窗口，tail 仍正确。"""
+        r = self.mgr.start(
+            str(self.demo),
+            [PY, "-c", "import sys\nfor _ in range(5000): sys.stdout.write('x'*100+'\\n')\n"
+                       "sys.stdout.flush()\nimport time\ntime.sleep(30)"],
+            name="biglog")
+        try:
+            tail = self.mgr.logs_tail(r["id"], 50)
+            self.assertEqual(len(tail["lines"]), 50)
+            self.assertTrue(all(line == "x" * 100 for line in tail["lines"][-5:]))
+        finally:
+            self.mgr.stop(r["id"])
+
+    def test_process_stop_bad_id_type(self):
+        """Y4：服务层对非法 id 形态明确 ProcessError（路由层 ok=False 见路由测试）。"""
+        with self.assertRaises(ProcessError):
+            self.mgr.stop(str(["x"]))
+
 
 class TestProcessRoutes(unittest.TestCase):
     """路由级：进程 API 的 ok/error 契约与 SSE 日志流。"""
@@ -258,6 +307,11 @@ class TestProcessRoutes(unittest.TestCase):
         r = self.routes.process_stop({"id": "ghost99"})
         self.assertFalse(r["ok"])                    # 不存在
         r = self.routes.process_logs("ghost99")
+        self.assertFalse(r["ok"])
+        # Y4：非法类型也走 ok=False 契约，不冒 500
+        r = self.routes.process_stop({"id": ["x"]})
+        self.assertFalse(r["ok"])
+        r = self.routes.process_stop(None)
         self.assertFalse(r["ok"])
 
     def test_api_log_stream_sse(self):

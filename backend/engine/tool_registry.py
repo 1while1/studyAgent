@@ -713,7 +713,7 @@ def build_default_registry() -> ToolRegistry:
         handler=_edit_file))
     reg.register(ToolSpec(
         name="process_start", permission=SANDBOX,
-        description="在白名单工作目录启动进程（返回 id/pid/监听端口；日志自动落盘）",
+        description="在白名单工作目录启动进程（命令以当前用户权限执行，cwd 白名单非沙箱；返回 id/pid/监听端口）",
         params={"type": "object",
                 "properties": {
                     "cwd": {"type": "string",
