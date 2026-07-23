@@ -187,5 +187,99 @@ class TestProcessMgr(unittest.TestCase):
         self.assertTrue(any("l2" in line for line in lines))
 
 
+class TestProcessRoutes(unittest.TestCase):
+    """路由级：进程 API 的 ok/error 契约与 SSE 日志流。"""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="proc_rt_"))
+        self.docx = self.tmp / "docx"
+        self.docx.mkdir()
+        self.demo = self.tmp / "demo"
+        self.demo.mkdir()
+        self.proj = self.tmp / "projA"
+        self.proj.mkdir()
+        settings = self.tmp / "settings.toml"
+        settings.write_text(
+            'active_workspace = "t"\n'
+            'status_enum = ["not_started", "in_progress", "completed"]\n'
+            '[evidence_delta]\nquiz_right = 0.10\n'
+            '[[stages]]\nname = "teaching"\nnext = ""\n'
+            'sop_step = "步骤一"\ninstruction = "讲"\n'
+            '[[workspaces]]\nslug = "t"\n'
+            f'docx_dir = "{self.docx.as_posix()}"\n'
+            f'project_dir = "{self.proj.as_posix()}"\n'
+            f'session_path = "{(self.tmp / "session.json").as_posix()}"\n'
+            f'demo_dir = "{self.demo.as_posix()}"\n'
+            'replica_name = ""\n',
+            encoding="utf-8")
+        self.config = ConfigService(settings)
+        from backend.api import routes
+        from backend.engine.orchestrator import ChatOrchestrator
+        from tests.test_flows import make_deps
+        deps = make_deps(self.config, self.tmp / "session.json")
+        orch = ChatOrchestrator(self.config, deps.stages, deps.quiz,
+                                deps.state_store, deps.memory, deps.templates)
+        routes.init(deps, orch)
+        self.routes = routes
+        self.mgr = ProcessManager(self.config)
+
+    def tearDown(self):
+        self.mgr.stop_all()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_api_lifecycle(self):
+        port = _free_port()
+        r = self.routes.process_start({
+            "cwd": str(self.demo),
+            "cmd": f'"{PY}" -m http.server {port} --bind 127.0.0.1',
+            "name": "api-web"})
+        self.assertTrue(r["ok"], r.get("error"))
+        self.assertIn(port, r["ports"])
+        lst = self.routes.process_list()
+        self.assertTrue(lst["ok"])
+        self.assertEqual(lst["processes"][0]["status"], "running")
+        self.assertIn("demo", lst["allowed_cwds"])
+        urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5).read()
+        time.sleep(0.5)
+        logs = self.routes.process_logs(r["id"], 50)
+        self.assertTrue(logs["ok"])
+        self.assertTrue(any("GET" in line for line in logs["lines"]))
+        out = self.routes.process_stop({"id": r["id"]})
+        self.assertTrue(out["ok"])
+        self.assertTrue(out["stopped"])
+
+    def test_api_rejects(self):
+        r = self.routes.process_start({"cwd": "C:/Windows", "cmd": f'"{PY}" -V'})
+        self.assertFalse(r["ok"])                    # 白名单外 cwd
+        r = self.routes.process_start({"cwd": str(self.demo), "cmd": ""})
+        self.assertFalse(r["ok"])                    # 空 cmd
+        r = self.routes.process_start({"cwd": str(self.demo), "cmd": None})
+        self.assertFalse(r["ok"])                    # 缺 cmd
+        r = self.routes.process_stop({"id": "ghost99"})
+        self.assertFalse(r["ok"])                    # 不存在
+        r = self.routes.process_logs("ghost99")
+        self.assertFalse(r["ok"])
+
+    def test_api_log_stream_sse(self):
+        r = self.routes.process_start({
+            "cwd": str(self.demo),
+            "cmd": [PY, "-c", "import time;print('s1',flush=True);"
+                              "time.sleep(4);print('s2',flush=True)"],
+            "name": "sse"})
+        self.assertTrue(r["ok"], r.get("error"))
+        resp = self.routes.process_logs_stream(r["id"])
+
+        async def drive():
+            chunks = []
+            async for chunk in resp.body_iterator:
+                chunks.append(chunk)
+            return "".join(chunks)
+        import asyncio
+        text = asyncio.run(asyncio.wait_for(drive(), timeout=30))
+        self.assertIn('"log"', text)
+        self.assertIn("s2", text)
+        self.assertIn('"end"', text)
+
+
 if __name__ == "__main__":
     unittest.main()

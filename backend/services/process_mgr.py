@@ -336,6 +336,15 @@ class ProcessManager:
 
 
 def split_cmd(cmd: str) -> list[str]:
-    """UI 传入的单行命令字符串 → argv（POSIX shlex，Windows 路径含空格需引号）。"""
+    """UI 传入的单行命令字符串 → argv。
+
+    Windows 下 shlex(posix=False) 会把引号保留为 token 的一部分
+    （`"C:\\path\\python.exe" -m x` 的 argv[0] 带引号 → 可执行文件找不到），
+    需再剥一层成对引号。
+    """
     import shlex
-    return shlex.split(cmd, posix=(os.name != "nt"))
+    parts = shlex.split((cmd or "").strip(), posix=(os.name != "nt"))
+    if os.name == "nt":
+        parts = [p[1:-1] if len(p) >= 2 and p[0] == p[-1] == '"' else p
+                 for p in parts]
+    return [p for p in parts if p]

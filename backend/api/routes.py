@@ -17,6 +17,7 @@ from ..services.doc_initializer import InitError
 from ..services.repo_scanner import scan as repo_scan
 from ..services.workspace_service import WorkspaceError, WorkspaceService
 from ..services.workshop_service import WorkshopError, WorkshopService
+from ..services.process_mgr import ProcessError, ProcessManager, split_cmd
 
 router = APIRouter()
 
@@ -428,6 +429,72 @@ def demo_scaffold(body: dict):
         return {"ok": False, "error": str(e)}
     except Exception as e:
         return {"ok": False, "error": f"创建 demo 失败: {e}"}
+
+
+# ---------- 进程管理（M6 实战工坊） ----------
+
+def _process_mgr() -> ProcessManager:
+    return ProcessManager(_deps.config)
+
+
+@router.get("/api/processes")
+def process_list():
+    return {"ok": True, "processes": _process_mgr().list(),
+            "allowed_cwds": {k: str(v)
+                             for k, v in _process_mgr().allowed_cwds().items()}}
+
+
+@router.post("/api/processes/start")
+def process_start(body: dict):
+    cwd = (body or {}).get("cwd", "")
+    raw_cmd = (body or {}).get("cmd")
+    name = (body or {}).get("name", "")
+    if isinstance(raw_cmd, str):
+        cmd = split_cmd(raw_cmd)
+    elif isinstance(raw_cmd, list):
+        cmd = [str(c) for c in raw_cmd]
+    else:
+        cmd = []
+    if not cmd:
+        return {"ok": False, "error": "cmd 不能为空（字符串或字符串数组）"}
+    try:
+        return {"ok": True, **_process_mgr().start(cwd, cmd, name)}
+    except ProcessError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"启动失败: {e}"}
+
+
+@router.post("/api/processes/stop")
+def process_stop(body: dict):
+    pid_id = (body or {}).get("id", "")
+    try:
+        return {"ok": True, **_process_mgr().stop(pid_id)}
+    except ProcessError as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.get("/api/processes/logs")
+def process_logs(id: str, tail: int = 200):
+    try:
+        return {"ok": True, **_process_mgr().logs_tail(id, tail)}
+    except ProcessError as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.get("/api/processes/logs/stream")
+def process_logs_stream(id: str):
+    """SSE 日志 tail：只转增量；进程退出且读尽后服务端发 end 并关流。"""
+    mgr = _process_mgr()
+
+    def gen():
+        try:
+            for ev in mgr.logs_stream(id):
+                yield sse(ev)
+        except ProcessError as e:
+            yield sse({"type": "error", "content": str(e)})
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 @router.get("/api/code/resolve")
