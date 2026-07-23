@@ -28,6 +28,8 @@ _SETTINGS = (
     'status_enum = ["not_started", "in_progress", "completed"]\n'
     '{context}'
     '[evidence_delta]\nquiz_right = 0.10\nteach_back_pass = 0.25\n'
+    '[[stages]]\nname = "teaching"\nnext = ""\n'
+    'sop_step = "步骤一"\ninstruction = "讲"\n'
     '[[code_roots]]\nname = "projA"\npath = "{proj}"\n'
     '[[workspaces]]\nslug = "t"\n'
     'docx_dir = "{docx}"\n'
@@ -70,9 +72,10 @@ class TestPlannerActions(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def _run(self, llm: ScriptableLLM):
+    def _run(self, llm: ScriptableLLM, allow_actions: bool = True):
         loop = ToolUseLoop(self.config, llm, self.ctx.browser,
-                           registry=self.registry, tool_context=self.ctx)
+                           registry=self.registry, tool_context=self.ctx,
+                           allow_actions=allow_actions)
         messages = [{"role": "system", "content": "sys"},
                     {"role": "user", "content": "问"}]
         events = list(loop.run(messages))
@@ -145,7 +148,7 @@ class TestPlannerActions(unittest.TestCase):
         self.assertFalse(acts[0]["ok"])
         self.assertIn("未知工具", llm.calls[1][-1]["content"])
 
-    def test_action_malformed_passthrough_as_text(self):
+    def test_malformed_passthrough_as_text(self):
         """JSON 无法解析（与非法 READ 标记同策略）→ 按普通文本下发。"""
         llm = ScriptableLLM([
             {"match": "^问$", "respond": "哦[ACTION:{坏 json}]呀"},
@@ -153,6 +156,74 @@ class TestPlannerActions(unittest.TestCase):
         _, _, events = self._run(llm)
         self.assertIn("[ACTION:{坏 json}]", self._deltas(events))
         self.assertEqual(self._actions(events), [])
+
+    def test_malformed_trailing_text_preserved(self):
+        """R4 修复：无法解析的 ACTION 不吞后续文本（final _rest 续排）。"""
+        llm = ScriptableLLM([
+            {"match": "^问$", "respond": "前[ACTION:[1,2]]之后文字"},
+        ])
+        _, _, events = self._run(llm)
+        text = self._deltas(events)
+        self.assertIn("[ACTION:[1,2]]", text)
+        self.assertIn("之后文字", text)  # 修复前会被吞掉
+
+    def test_tutor_mode_action_not_executed(self):
+        """R2 修复：allow_actions=False（导学模式）→ ACTION 静默丢弃不执行。"""
+        self._write_notes()
+        llm = ScriptableLLM([
+            {"match": "^问$", "respond":
+                '[ACTION:{"action":"search_notes","args":{},"reason":"越权"}]'},
+        ])
+        _, _, events = self._run(llm, allow_actions=False)
+        self.assertEqual(self._actions(events), [])
+        self.assertNotIn("search_notes", self._deltas(events))
+        # 未执行：无 plan 记账
+        from backend.services.config_service import runtime_dir
+        log_path = runtime_dir(self.config) / "agent.log"
+        logged = log_path.read_text(encoding="utf-8") \
+            if log_path.exists() else ""
+        self.assertNotIn('"kind": "plan"', logged)
+
+    def test_action_read_code_uses_tool_injection(self):
+        """R1 修复：ACTION 调 read_code → 注入工具构造的真实代码内容。"""
+        llm = ScriptableLLM([
+            {"match": "^问$", "respond":
+                '[ACTION:{"action":"read_code",'
+                '"args":{"path":"projA/a.txt"},"reason":"读文件"}]'},
+            {"match": "系统注入", "respond": "看到了真实内容"},
+        ])
+        _, _, events = self._run(llm)
+        acts = self._actions(events)
+        self.assertEqual(len(acts), 1)
+        self.assertTrue(acts[0]["ok"])
+        injected = llm.calls[1][-1]["content"]
+        self.assertIn("l1\nl2\nl3", injected)  # 修复前注入为空
+
+    def test_action_large_payload_within_cap(self):
+        """R3 修复：>2000 字符的合法 ACTION 也能截获（ACTION 独立 16K cap）。"""
+        long_text = "长" * 2500
+        llm = ScriptableLLM([
+            {"match": "^问$", "respond":
+                '[ACTION:{"action":"write_note","args":{"kind":"insight",'
+                f'"text":"{long_text}"'.replace("\n", "") + '},"reason":"长文"}]'},
+            {"match": "系统注入", "respond": "已写"},
+        ])
+        _, _, events = self._run(llm)
+        acts = self._actions(events)
+        self.assertEqual(len(acts), 1)
+        self.assertTrue(acts[0]["ok"])
+        notes = json.loads(
+            (self.docx / "notes.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(notes["notes"][0]["text"]), 2500)
+
+    def test_routes_ctx_has_llm(self):
+        """R1/R2 修复回归：生产 ToolContext 构造点必须含 llm。"""
+        from backend.api import routes
+        from tests.test_flows import make_deps
+        deps = make_deps(self.config, self.tmp / "session.json")
+        ctx = routes._build_tool_context(deps)
+        self.assertIs(ctx.llm, deps.llm)
+        self.assertIsNotNone(ctx.llm)
 
     def test_action_json_with_nested_brackets(self):
         """args 内含 ]（数组）也能完整提取（逐 ] 尝试解析）。"""
@@ -203,7 +274,8 @@ class TestPlannerActions(unittest.TestCase):
             {"match": "系统注入", "respond": "你 Day2-A 掌握度 0.10，属薄弱"},
         ])
         loop = ToolUseLoop(self.config, llm, self.ctx.browser,
-                           registry=self.registry, tool_context=self.ctx)
+                           registry=self.registry, tool_context=self.ctx,
+                           allow_actions=True)
         events = list(loop.run([
             {"role": "system", "content": "sys"},
             {"role": "user", "content": "我 Day2-A 掌握得怎么样？"}]))

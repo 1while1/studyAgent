@@ -75,7 +75,7 @@ class ChatOrchestrator(TurnEngine):
                     extra.append("（系统提示：AI 未输出【评分：X.X】标记，"
                                  "请追问「你的评分是多少」）")
                 else:
-                    session.pending_score = score
+                    session.interview_score = score  # 独立于 quiz pending_score（R4）
                     session.interview_round = 1
             elif session.interview_round == 1:
                 session.interview_round = 2
@@ -178,26 +178,39 @@ class ChatOrchestrator(TurnEngine):
 
         写入失败不阻断面试流程（铁律 15）；随后 phase 还原 STUDYING。
         """
+        from datetime import date
         cid = session.interview_cid
         passed = self._quiz.is_pass(score)
         etype = "teach_back_pass" if passed else "teach_back_fail"
+        ref = f"interview:{cid}:{date.today().isoformat()}"
         written = False
+        idempotent = False
         try:
-            from datetime import date
             from ..services.learner_service import LearnerService
             day = int(self._state_store.load().get("current_day", 1))
             written = LearnerService(self._config).add_evidence(
-                cid, etype,
-                f"interview:{cid}:{date.today().isoformat()}", day)
+                cid, etype, ref, day)
+            if not written:
+                # 区分幂等命中（同日已记录，正常）与真实失败（R5 文案）
+                model = LearnerService(self._config).get_model(day)
+                idempotent = any(
+                    ev.get("source_ref") == ref
+                    for c in model["concepts"] if c["id"] == cid
+                    for ev in c.get("evidence", []))
         except Exception:
             pass
+        if written:
+            note = "teach_back 证据已落盘"
+        elif idempotent:
+            note = "今日已记录过本场面试证据（幂等跳过）"
+        else:
+            note = "证据落盘失败（不影响流程）"
         extra.append(
-            f"🎤 模拟面试结束：终评 {score} 分（{'通过' if passed else '未通过'}），"
-            f"teach_back 证据{'已落盘' if written else '落盘失败（不影响流程）'}。")
+            f"🎤 模拟面试结束：终评 {score} 分（{'通过' if passed else '未通过'}），{note}。")
         session.day_phase = DayPhase.STUDYING.value
         session.interview_cid = ""
         session.interview_round = 0
-        session.pending_score = None
+        session.interview_score = None
 
     def _next_unit_title(self, session: SessionContext) -> str | None:
         state = self._state_store.load()

@@ -11,7 +11,7 @@
 ```bash
 cd study-web
 python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765   # 启动
-python -m unittest discover -s tests                                  # 全部测试（306 个，stdlib unittest）
+python -m unittest discover -s tests                                  # 全部测试（320 个，stdlib unittest）
 python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name]  # 改学习数据后必跑
 python scripts/ui_walkthrough.py                                      # UI 走查 102 项（需服务运行中；会清测试工作区聊天历史）
 ```

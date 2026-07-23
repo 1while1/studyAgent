@@ -1,7 +1,7 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-23（**M5c planner 交付**——ACTION 契约 + plan-act-observe（planner 真身）+ resources/pedagogy 策略库 + 模拟面试（口述→追问→teach_back 落盘）；306 单测/108 走查全绿）
+> 最近更新：2026-07-23（**M5c planner 交付 + 审查修复批**——ACTION 契约 + plan-act-observe + pedagogy 策略库 + 模拟面试；修复批：ACTION 按引擎武装/生产 ctx 补 llm/read 类 ACTION 注入/面试状态机矩阵/interview_score 独立字段；320 单测/108 走查全绿）
 
 ## 当前运行状态
 
@@ -11,7 +11,7 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 306 个全绿；UI 走查 108 项全绿
+- 测试：`python -m unittest discover -s tests` → 320 个全绿；UI 走查 108 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步
@@ -27,6 +27,25 @@ v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 
 - **新 LLM 档工具**：quiz_generate（concept+证据摘要 → 渲染追问卡出题）/ retell_assess（rubric 卡评口述）；ToolContext + llm 字段（缺失 ok=False）
 - **ScriptableLLM**（`tests/scriptable_llm.py`，§10 谓词脚本：match 正则 → respond 文本，记录 calls）
 - **测试**：+31（test_planner 15：ACTION 截获执行注入/契约不符/未知工具/非法透传/嵌套 ]/plan 记账/[导学] 跑通/上限/LLM 工具×4；test_interview 16：选题×5/fail_fast/全流程 pass+fail/幂等/中断恢复/无评分不推进）→ 306 全绿；走查 108 项全绿（+模拟面试全流程——teach_back 写真实库，走查**先备份 session+learner_model 事后还原**防污染；胶囊 11→12）
+
+## M5c 审查修复批（2026-07-23，双子 agent 审查驱动，fix/m5c-review）
+
+| 发现 | 修复 |
+|------|------|
+| 🔴 生产 ToolContext 缺 llm 接线 → quiz_generate/retell_assess 线上恒失败 | routes 抽 `_build_tool_context(deps)`（含 llm=deps.llm）+ 回归测试 |
+| 🔴 tutor 模式 ACTION 同样武装 → 写/沙箱工具攻击面前移（违反"同一 session 不混跑"） | ToolUseLoop `allow_actions` 开关（**默认 False 安全缺省**），routes 仅 planner 引擎会话开启；command 路径恒 False |
+| 🔴 ACTION 调 read_code/read_doc 注入空结果（内容在 result.injection 而非 data） | `_do_action` 优先复用 result.injection |
+| R3 ACTION 载荷 2000 cap 太小（write_note 长文/transcript 合法超限，且截获与否随 SSE 分块漂移） | ACTION 独立 `_ACTION_BUF_CAP=16384` |
+| R4 final 排水丢 `_rest`：无法解析的 ACTION 吞掉后续文本 | final 循环 `_rest` 续排（断言"之后文字"不丢） |
+| R3' 面试行为矩阵：ENDED/NOT_STARTED 可开面试（完成后 phase 被"复活"STUDYING）；day_review/end_day 不拦 INTERVIEW（不对称）；start_day/resume 覆盖 phase 不清面试字段 | interview.fail_fast 仅 STUDYING 放行（各态中文提示）；day_review/end_day fail_fast 拦 INTERVIEW；start_day/resume 清 interview 三字段 |
+| R4' pending_score 复用冲突（quiz scored 待确认时被面试分覆盖/清空） | 独立字段 `session.interview_score`（quiz pending_score 零接触，测试锁 4.0 不被 2.5 覆盖） |
+| R5 "落盘失败"文案混淆幂等命中与真失败 | 区分"今日已记录过（幂等跳过）"与"落盘失败" |
+| R6 walkthrough 备份缺存在性（面试新建文件还原时残留）+ 无 try/finally | 存在性感知还原（新建则删）+ finally 保还原（含渠道还原） |
+| R7 缺策略卡 fail-open 开空头面试（永远卡 round 0） | interview.run 缺卡 fail-closed（不改 phase，明示资源缺失） |
+| R8 面试期 system 双指令矛盾（"最高优先级带读" + 面试 rubric） | prompt_builder 在 INTERVIEW 期跳过阶段指令块 |
+| R6' data 截断无标注 / ACTION 只记 plan 不记 tool / JSON 失败分支死代码 | 截断加"…（已截断）"；补 log_tool（单流分析）；死分支注释"防御性" |
+
+🔵 留档（不阻塞）：标记后尾随文本丢弃（与 READ 一致）、hold-back 致纯文本单 delta 的存量体验问题（另行立项）、PlannerEngine._deps 占位未用、log_plan/log_tool 双流已对齐。测试 +14 → **320 全绿**。
 
 ## M5b 上下文+路由（2026-07-23 交付）
 

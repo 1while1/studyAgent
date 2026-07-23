@@ -137,8 +137,66 @@ class TestInterview(unittest.TestCase):
         session2 = SessionContext(day_phase=DayPhase.INTERVIEW.value)
         self.assertIn("进行中", self.handler.fail_fast(
             self.deps, session2, ""))
+        # R3 矩阵：仅 STUDYING 可发起
         self.assertIsNone(self.handler.fail_fast(
-            self.deps, SessionContext(), ""))
+            self.deps,
+            SessionContext(day_phase=DayPhase.STUDYING.value), ""))
+        ended = SessionContext(day_phase=DayPhase.ENDED.value)
+        self.assertIn("已结束", self.handler.fail_fast(
+            self.deps, ended, ""))
+        not_started = SessionContext(day_phase=DayPhase.NOT_STARTED.value)
+        self.assertIn("尚未开始", self.handler.fail_fast(
+            self.deps, not_started, ""))
+
+    def test_day_review_end_day_block_interview(self):
+        """R3 矩阵：复盘/结束指令在 INTERVIEW 中拦截（不对称修复）。"""
+        from backend.engine.commands.day_review import DayReviewHandler
+        from backend.engine.commands.end_day import EndDayHandler
+        session = SessionContext(day_phase=DayPhase.INTERVIEW.value)
+        self.assertIn("面试", DayReviewHandler().fail_fast(
+            self.deps, session, ""))
+        self.assertIn("面试", EndDayHandler().fail_fast(
+            self.deps, session, ""))
+
+    def test_pending_score_untouched(self):
+        """R4：面试口述分不污染 quiz pending_score。"""
+        session, _ = self._start(args="Day2-A")
+        session.pending_score = 4.0  # 模拟 quiz scored 待确认
+        self._turn(session, "口述", "点评……【评分：2.5】")
+        self.assertEqual(session.pending_score, 4.0)   # quiz 分未被覆盖
+        self.assertEqual(session.interview_score, 2.5)
+
+    def test_missing_card_fail_closed(self):
+        """R7：策略卡缺失 → 不开空头面试（phase 不变）。"""
+        import backend.services.config_service as cs
+        from backend.engine import tool_registry
+        empty = self.tmp / "empty_pedagogy"
+        empty.mkdir()
+        old = cs.PEDAGOGY_DIR
+        cs.PEDAGOGY_DIR = empty
+        try:
+            session = self.deps.session_store.load()
+            session.day_phase = DayPhase.STUDYING.value
+            result = self.handler.run(self.deps, session, "Day2-A")
+        finally:
+            cs.PEDAGOGY_DIR = old
+        self.assertIsNone(result.llm_instruction)
+        self.assertIn("策略卡缺失", result.messages[0])
+        self.assertNotEqual(session.day_phase, DayPhase.INTERVIEW.value)
+        self.assertEqual(session.interview_cid, "")
+
+    def test_idempotent_message(self):
+        """R5：同日第二场面试文案区分「幂等跳过」而非「落盘失败」。"""
+        session, _ = self._start(args="Day2-A")
+        self._turn(session, "口述", "点评【评分：4.2】")
+        self._turn(session, "答一", "点评+追问")
+        self._turn(session, "答二", "总评【评分：4.3】")
+        session2, _ = self._start(args="Day2-A")
+        self._turn(session2, "口述", "点评【评分：4.5】")
+        self._turn(session2, "答一", "点评+追问")
+        _, extras = self._turn(session2, "答二", "总评【评分：4.6】")
+        self.assertTrue(any("幂等跳过" in e for e in extras))
+        self.assertFalse(any("落盘失败" in e for e in extras))
 
     # ---- 全流程：口述 → 追问 → teach_back 落盘 ----
 
@@ -155,7 +213,7 @@ class TestInterview(unittest.TestCase):
                                     "四档点评……【评分：4.2】\n追问一")
         self.assertIn("四档", instruction)
         self.assertEqual(session.interview_round, 1)
-        self.assertEqual(session.pending_score, 4.2)
+        self.assertEqual(session.interview_score, 4.2)
         # round 1：追问策略指令 → round 2
         instruction, _ = self._turn(session, "背压回答一", "点评+追问二")
         self.assertIn("追问", instruction)
@@ -166,7 +224,7 @@ class TestInterview(unittest.TestCase):
         self.assertIn("最后一轮", instruction)
         self.assertEqual(session.day_phase, DayPhase.STUDYING.value)
         self.assertEqual(session.interview_cid, "")
-        self.assertIsNone(session.pending_score)
+        self.assertIsNone(session.interview_score)
         self.assertTrue(any("模拟面试结束" in e for e in extras))
         evs = self._model()["concepts"]["Day2-A"]["evidence"]
         tb = [e for e in evs if e["type"] == "teach_back_pass"]

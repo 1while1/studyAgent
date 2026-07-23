@@ -42,6 +42,19 @@ class TextIn(BaseModel):
     text: str
 
 
+def _build_tool_context(deps: Deps) -> "ToolContext":
+    """chat 路径的完整工具上下文（含 LLM 档工具依赖；M5c 审查修复 R1）。"""
+    from ..engine.tool_registry import ToolContext
+    from ..services.code_browser import CodeBrowser
+    from ..services.materials_service import MaterialsService
+    return ToolContext(config=deps.config,
+                       browser=CodeBrowser(deps.config),
+                       materials=MaterialsService(deps.config),
+                       state_store=deps.state_store,
+                       validator=deps.validator(),
+                       llm=deps.llm)
+
+
 class LLMStreamer:
     """流式调用 LLM 并累积完整文本。"""
 
@@ -96,7 +109,8 @@ class LLMStreamer:
         except Exception:
             return None, None  # 预取是增强不是闸门：任何异常静默降级
 
-    def stream(self, session, instruction: str, sop_card: str = ""):
+    def stream(self, session, instruction: str, sop_card: str = "",
+               allow_actions: bool = False):
         card_text = (CommandHandler.read_sop_card(self._deps, sop_card)
                      if sop_card else "")
         # M5b：钉住层（system + 学习者模型摘要）+ 窗口层（预算伸缩）装配
@@ -114,18 +128,14 @@ class LLMStreamer:
             else:
                 messages.append({"role": "user", "content": prefetch})
         from ..engine.tool_use import ToolUseLoop
-        from ..engine.tool_registry import ToolContext, build_default_registry
-        from ..services.code_browser import CodeBrowser
-        from ..services.materials_service import MaterialsService
+        from ..engine.tool_registry import build_default_registry
         from ..services.observer import task_scope
-        ctx = ToolContext(config=self._deps.config,
-                          browser=CodeBrowser(self._deps.config),
-                          materials=MaterialsService(self._deps.config),
-                          state_store=self._deps.state_store,
-                          validator=self._deps.validator())
+        ctx = _build_tool_context(self._deps)
+        # M5c 审查修复 R2：ACTION 扫描只在 planner 引擎会话开启（导学模式
+        # 模型从未学过契约，绝不允许触达写/沙箱工具）
         loop = ToolUseLoop(self._deps.config, self._deps.llm, ctx.browser,
                            ctx.materials, registry=build_default_registry(),
-                           tool_context=ctx)
+                           tool_context=ctx, allow_actions=allow_actions)
         if event:
             yield sse(event)
         with task_scope("chat"):
@@ -149,7 +159,9 @@ def chat(body: TextIn):
         deps.session_store.save(session)
         streamer = LLMStreamer(deps)
         try:
-            yield from streamer.stream(session, instruction)
+            yield from streamer.stream(
+                session, instruction,
+                allow_actions=isinstance(engine, PlannerEngine))
         except Exception as e:
             # 失败也把用户消息落盘（前后端历史不分叉），post_process 未执行无状态分裂
             deps.session_store.save(session)

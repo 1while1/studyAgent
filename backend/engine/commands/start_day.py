@@ -217,6 +217,10 @@ class StartDayHandler(CommandHandler):
         session.archive_summary = ""  # M5b：归档层同步重置（防 archive_upto 越界）
         session.archive_upto = 0
         session.compress_cooldown = 0
+        # R3：新开始同步清面试残留字段
+        session.interview_cid = ""
+        session.interview_round = 0
+        session.interview_score = None
         deps.session_store.save(session)
 
         messages.append(self._render_unit_open(deps, first, plan))

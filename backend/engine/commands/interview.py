@@ -20,10 +20,16 @@ class InterviewHandler(CommandHandler):
                   args: str, mode: str = "") -> str | None:
         if not deps.state_store.exists():
             return "还没初始化学习数据，请先 [开始今日学习]。"
-        if session.day_phase == DayPhase.REVIEWING.value:
-            return "今日复盘进行中，请先完成复盘再开始模拟面试。"
         if session.day_phase == DayPhase.INTERVIEW.value:
             return "模拟面试已在进行中，请先完成本场面试。"
+        if session.day_phase != DayPhase.STUDYING.value:
+            # R3 矩阵修复：仅导学中可发起（已结束/未开始/复盘/计划态拦截）
+            labels = {DayPhase.REVIEWING.value: "今日复盘进行中，请先完成复盘",
+                      DayPhase.ENDED.value: "今日学习已结束，请明天再来",
+                      DayPhase.NOT_STARTED.value: "今日尚未开始，请先 [开始今日学习]",
+                      DayPhase.PLANNING.value: "今日计划生成中，请稍后"}
+            return (labels.get(session.day_phase, "当前状态不能开始模拟面试")
+                    + "。")
         return None
 
     def run(self, deps: Deps, session: SessionContext,
@@ -57,13 +63,18 @@ class InterviewHandler(CommandHandler):
             picked = min(evidenced, key=lambda c: c.get("mastery", 0))
         cid = picked["id"]
         title = picked.get("title", cid)
+        from ...engine.tool_registry import render_pedagogy
+        instruction = render_pedagogy("retell_guide.md", 知识点=title,
+                                      薄弱点=self._weak(picked))
+        if not instruction:
+            # R7：缺策略卡 fail-closed（不改变 phase，不开空头面试）
+            return CommandResult(messages=[
+                "教学策略卡缺失（resources/pedagogy/retell_guide.md），"
+                "无法开始模拟面试，请检查资源文件后重试。"])
         session.day_phase = DayPhase.INTERVIEW.value
         session.interview_cid = cid
         session.interview_round = 0
         deps.session_store.save(session)
-        from ...engine.tool_registry import render_pedagogy
-        instruction = render_pedagogy("retell_guide.md", 知识点=title,
-                                      薄弱点=self._weak(picked))
         return CommandResult(
             messages=[f"🎤 模拟面试开始：本场知识点 **{title}**（{cid}）。"],
             llm_instruction=instruction, sop_card="")
