@@ -1369,13 +1369,16 @@ function masteryBand(c) {
   return "high";
 }
 
-async function openLearner() {
+let _masteryModel = null;
+
+async function openLearner(expandCid) {
   masteryPage.classList.remove("hidden");
-  const list = document.getElementById("mastery-list");
-  list.innerHTML = "";
+  for (const id of ["ms-urgent-body", "ms-today-body", "ms-rest-body"])
+    document.getElementById(id).innerHTML = "";
   const mbar = document.getElementById("learner-migrate");
   mbar.classList.add("hidden");
   const model = await (await fetch("/api/learner/model")).json();
+  _masteryModel = model;
 
   // 迁移引导条：模型未建且有旧评分数据（幂等，逻辑与 v1 一致）
   if (!model.exists && model.has_ratings_source) {
@@ -1411,11 +1414,30 @@ async function openLearner() {
     concepts.filter(c => c.due).length;
 
   if (!concepts.length) {
-    list.textContent = "（暂无知识点——完成迁移或开始学习后自动生成）";
+    document.getElementById("ms-urgent-body").innerHTML =
+      '<div class="mastery-empty-hint">（暂无知识点——完成迁移或开始学习后自动生成）</div>';
     return;
   }
+
+  // 状态驱动分桶（战术板：状态 → 知识点，而非 Day → 知识点）
+  const curDay = model.current_day;
+  const isToday = (c) => c.id.startsWith(`Day${curDay}-`);
+  const isUrgent = (c) => c.evidence.length && (c.due || c.mastery < 0.4);
+  const urgent = concepts.filter(isUrgent).sort(
+    (a, b) => (b.due - a.due) || (a.mastery - b.mastery) || a.id.localeCompare(b.id));
+  const today = concepts.filter(c => isToday(c) && !isUrgent(c));
+  const rest = concepts.filter(c => !isToday(c) && !isUrgent(c));
+
+  document.getElementById("ms-today-day").textContent = curDay;
+  renderMasterySection("ms-urgent", urgent,
+    "🎉 没有紧急项——没有到期复习，也没有薄弱知识点，保持节奏！");
+  renderMasterySection("ms-today", today,
+    "（今日单元的知识点将在考核/同步后自动出现）");
+  // 其余知识点：按 Day 分组，默认折叠
+  document.getElementById("ms-rest-count").textContent = rest.length;
+  const restBody = document.getElementById("ms-rest-body");
   const byDay = new Map();
-  for (const c of concepts) {
+  for (const c of rest) {
     const day = (c.id.match(/^Day(\d+)-/) || [0, "?"])[1];
     if (!byDay.has(day)) byDay.set(day, []);
     byDay.get(day).push(c);
@@ -1424,9 +1446,37 @@ async function openLearner() {
     const head = document.createElement("div");
     head.className = "mastery-day";
     head.textContent = `Day ${day}`;
-    list.appendChild(head);
-    for (const c of items) list.appendChild(masteryRow(c));
+    restBody.appendChild(head);
+    for (const c of items) restBody.appendChild(masteryRow(c));
   }
+  if (!rest.length)
+    restBody.innerHTML = '<div class="mastery-empty-hint">（无）</div>';
+
+  // 侧栏预警点入：定位并展开指定知识点
+  if (expandCid) {
+    const row = document.querySelector(
+      `.mastery-row[data-cid="${CSS.escape(expandCid)}"]`);
+    if (row) {
+      // 可能在「其余知识点」折叠区里，先展开
+      if (row.closest("#ms-rest-body")) {
+        document.getElementById("ms-rest-body").classList.remove("hidden");
+        document.getElementById("ms-rest-toggle").classList.add("open");
+      }
+      row.scrollIntoView({ block: "center" });
+      row.click();
+    }
+  }
+}
+
+function renderMasterySection(secId, items, emptyText) {
+  const sec = document.getElementById(secId);
+  const body = sec.querySelector(".m-sec-body");
+  sec.querySelector(".m-sec-count").textContent = items.length;
+  if (!items.length) {
+    body.innerHTML = `<div class="mastery-empty-hint">${emptyText}</div>`;
+    return;
+  }
+  for (const c of items) body.appendChild(masteryRow(c));
 }
 
 function masteryRow(c) {
@@ -1434,8 +1484,13 @@ function masteryRow(c) {
   const row = document.createElement("button");
   row.className = "mastery-row";
   row.dataset.band = band;
+  row.dataset.cid = c.id;
   const top = document.createElement("div");
   top.className = "mr-top";
+  const dayTag = document.createElement("span");
+  dayTag.className = "mr-day";
+  dayTag.textContent = "Day" + ((c.id.match(/^Day(\d+)-/) || [0, "?"])[1]);
+  top.appendChild(dayTag);
   const title = document.createElement("span");
   title.className = "mr-title";
   title.textContent = c.title || c.id;
@@ -1572,6 +1627,165 @@ function showConceptDetail(c, detail) {
   decay.textContent = "证据随时间衰减：半衰期 14 天（14 天前的证据权重减半）。保持复习与实战，掌握度才不会回落。";
   detail.appendChild(decay);
 }
+
+// ---- 抽屉 tab 与「其余知识点」折叠 ----
+
+document.querySelectorAll(".drawer-tab").forEach(t => {
+  t.onclick = () => {
+    document.querySelectorAll(".drawer-tab").forEach(x =>
+      x.classList.toggle("active", x === t));
+    const tab = t.dataset.mtab;
+    document.getElementById("mastery-tactical").classList.toggle("hidden", tab !== "tactical");
+    document.getElementById("mastery-radar").classList.toggle("hidden", tab !== "radar");
+    if (tab === "radar") renderRadar();
+  };
+});
+document.getElementById("ms-rest-toggle").onclick = () => {
+  const body = document.getElementById("ms-rest-body");
+  body.classList.toggle("hidden");
+  document.getElementById("ms-rest-toggle").classList.toggle(
+    "open", !body.classList.contains("hidden"));
+};
+
+// ---- 战略雷达：掌握度分布 / 活动热力 / 先修拓扑（全部前端渲染现有数据） ----
+
+async function renderRadar() {
+  const model = _masteryModel || await (await fetch("/api/learner/model")).json();
+  _masteryModel = model;
+  const concepts = model.concepts || [];
+  renderRadarBands(concepts);
+  renderRadarHeat(concepts);
+  renderRadarTopo(concepts);
+}
+
+function renderRadarBands(concepts) {
+  const box = document.getElementById("radar-bands");
+  box.innerHTML = "";
+  const bands = [
+    ["low", "薄弱（<0.4）", c => c.evidence.length && c.mastery < 0.4],
+    ["mid", "爬升（0.4~0.7）", c => c.evidence.length && c.mastery >= 0.4 && c.mastery < 0.7],
+    ["high", "达标（≥0.7）", c => c.evidence.length && c.mastery >= 0.7],
+    ["none", "无证据", c => !c.evidence.length],
+  ];
+  const total = Math.max(concepts.length, 1);
+  for (const [cls, label, pred] of bands) {
+    const n = concepts.filter(pred).length;
+    const row = document.createElement("div");
+    row.className = "rb-row";
+    const lb = document.createElement("span");
+    lb.className = "rb-label";
+    lb.textContent = label;
+    const bar = document.createElement("span");
+    bar.className = "rb-bar";
+    const fill = document.createElement("span");
+    fill.className = "rb-fill " + cls;
+    fill.style.width = Math.round(n / total * 100) + "%";
+    bar.appendChild(fill);
+    const num = document.createElement("span");
+    num.className = "rb-num";
+    num.textContent = n;
+    row.append(lb, bar, num);
+    box.appendChild(row);
+  }
+}
+
+function _localIso(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function renderRadarHeat(concepts) {
+  const box = document.getElementById("radar-heat");
+  box.innerHTML = "";
+  const counts = {};
+  for (const c of concepts)
+    for (const ev of c.evidence) counts[ev.ts] = (counts[ev.ts] || 0) + 1;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const start = new Date(today);
+  start.setDate(start.getDate() - (12 * 7 - 1));
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));  // 对齐周一
+  const grid = document.createElement("div");
+  grid.className = "heat-grid";
+  for (const d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
+    const iso = _localIso(d);
+    const n = counts[iso] || 0;
+    const cell = document.createElement("span");
+    const lvl = n === 0 ? 0 : n === 1 ? 1 : n === 2 ? 2 : n === 3 ? 3 : 4;
+    cell.className = "heat-cell2 lv" + lvl;
+    cell.title = `${iso}：${n} 条证据`;
+    grid.appendChild(cell);
+  }
+  box.appendChild(grid);
+}
+
+function renderRadarTopo(concepts) {
+  const box = document.getElementById("radar-topo");
+  box.innerHTML = "";
+  if (!concepts.length) {
+    box.textContent = "（暂无知识点）";
+    return;
+  }
+  const nid = (cid) => "c_" + cid.replace(/[^A-Za-z0-9]/g, "_");
+  const short = (t) => (t || "").replace(/"/g, "'").slice(0, 8);
+  const bandOf = (c) => !c.evidence.length ? "none"
+    : c.mastery < 0.4 ? "low" : c.mastery < 0.7 ? "mid" : "high";
+  const lines = [
+    "flowchart LR",
+    "  classDef low fill:#e5534b,color:#fff,stroke:none;",
+    "  classDef mid fill:#e3b341,color:#3d2e00,stroke:none;",
+    "  classDef high fill:#57ab5a,color:#fff,stroke:none;",
+    "  classDef none fill:#8b949e,color:#fff,stroke:none;",
+  ];
+  for (const c of concepts)
+    lines.push(`  ${nid(c.id)}["${c.id} ${short(c.title)}"]:::${bandOf(c)}`);
+  for (const c of concepts)
+    for (const p of c.prerequisites || [])
+      lines.push(`  ${nid(p)} --> ${nid(c.id)}`);
+  renderMarkdownInto(box, "```mermaid\n" + lines.join("\n") + "\n```", true);
+}
+
+// ---- 侧栏复习预警 widget（伴随式暴露跨周期紧急项） ----
+
+async function refreshUrgentWidget() {
+  const w = document.getElementById("urgent-widget");
+  try {
+    const model = await (await fetch("/api/learner/model")).json();
+    const urgent = (model.concepts || [])
+      .filter(c => c.evidence.length && (c.due || c.mastery < 0.4))
+      .sort((a, b) => (b.due - a.due) || (a.mastery - b.mastery));
+    if (!urgent.length) {
+      w.classList.add("hidden");
+      return;
+    }
+    w.classList.remove("hidden");
+    document.getElementById("urgent-count").textContent = urgent.length;
+    const box = document.getElementById("urgent-items");
+    box.innerHTML = "";
+    for (const c of urgent.slice(0, 3)) {
+      const it = document.createElement("button");
+      it.className = "uw-item";
+      const t = document.createElement("span");
+      t.className = "uw-title";
+      t.textContent = c.title || c.id;
+      t.title = c.id;
+      const m = document.createElement("span");
+      m.className = "uw-mastery " + masteryBand(c);
+      m.textContent = (c.mastery * 100).toFixed(0) + "%";
+      it.append(t, m);
+      it.onclick = () => openLearner(c.id);
+      box.appendChild(it);
+    }
+    if (urgent.length > 3) {
+      const more = document.createElement("button");
+      more.className = "uw-more";
+      more.textContent = `还有 ${urgent.length - 3} 项，打开战术板…`;
+      more.onclick = () => openLearner();
+      box.appendChild(more);
+    }
+  } catch (e) { /* 预警是增益，失败静默 */ }
+}
+refreshUrgentWidget();
+setInterval(refreshUrgentWidget, 30000);
 
 // ---------- 面试话术库（M4 话术层：卡片视图 + 编辑/删除 + 原文切换） ----------
 

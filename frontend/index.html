@@ -27,6 +27,10 @@
       <h2>今日单元</h2>
       <ul id="units"></ul>
     </section>
+    <section id="urgent-widget" class="hidden">
+      <h2><svg class="ic" viewBox="0 0 24 24"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17.5v.5"/></svg>复习预警 <span id="urgent-count"></span></h2>
+      <div id="urgent-items"></div>
+    </section>
     <section>
       <h2>同步速览</h2>
       <div id="sync-counts">-</div>
@@ -285,22 +289,61 @@
 <div id="mastery-page" class="drawer-overlay hidden">
   <aside id="mastery-drawer">
     <div class="drawer-head">
-      <span class="drawer-title"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 13l3.5-3.5"/><path d="M9 2.5 10 5M15 2.5 14 5"/></svg>掌握度面板</span>
+      <span class="drawer-title"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 13l3.5-3.5"/><path d="M9 2.5 10 5M15 2.5 14 5"/></svg>掌握度</span>
+      <div class="drawer-tabs">
+        <button class="drawer-tab active" data-mtab="tactical">战术板</button>
+        <button class="drawer-tab" data-mtab="radar">战略雷达</button>
+      </div>
       <button id="mastery-close" title="关闭"><svg class="ic" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
     <div class="drawer-body">
-      <div id="learner-migrate" class="hidden"></div>
-      <div id="mastery-expl">
-        掌握度 = 证据按时间衰减的加权和（半衰期 14 天），范围 0~1；
-        <span class="lg low"></span>&lt;0.4 薄弱 <span class="lg mid"></span>&lt;0.7 爬升 <span class="lg high"></span>≥0.7 达标；
-        △=缺构建验证封顶 0.6　⏰=已到复习窗口
+      <div id="mastery-tactical">
+        <div id="learner-migrate" class="hidden"></div>
+        <div id="mastery-expl">
+          掌握度 = 证据按时间衰减的加权和（半衰期 14 天）；△=缺构建验证封顶 0.6；⏰=已到复习窗口
+        </div>
+        <div id="mastery-stats">
+          <div class="stat-card"><div class="stat-num" id="stat-avg">-</div><div class="stat-label">平均掌握度</div></div>
+          <div class="stat-card weak"><div class="stat-num" id="stat-weak">-</div><div class="stat-label">薄弱知识点（&lt;0.4）</div></div>
+          <div class="stat-card due"><div class="stat-num" id="stat-due">-</div><div class="stat-label">待复习（已到期）</div></div>
+        </div>
+        <section class="m-section" id="ms-urgent">
+          <div class="m-sec-head">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17.5v.5"/></svg>
+            需要行动<span class="m-sec-count" id="ms-urgent-count"></span>
+          </div>
+          <div class="m-sec-body" id="ms-urgent-body"></div>
+        </section>
+        <section class="m-section" id="ms-today">
+          <div class="m-sec-head">
+            <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>
+            今日学习 Day <span id="ms-today-day"></span><span class="m-sec-count" id="ms-today-count"></span>
+          </div>
+          <div class="m-sec-body" id="ms-today-body"></div>
+        </section>
+        <section class="m-section" id="ms-rest">
+          <button class="m-sec-head collapsible" id="ms-rest-toggle">
+            <svg class="ic chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
+            其余知识点<span class="m-sec-count" id="ms-rest-count"></span>
+          </button>
+          <div class="m-sec-body hidden" id="ms-rest-body"></div>
+        </section>
       </div>
-      <div id="mastery-stats">
-        <div class="stat-card"><div class="stat-num" id="stat-avg">-</div><div class="stat-label">平均掌握度</div></div>
-        <div class="stat-card weak"><div class="stat-num" id="stat-weak">-</div><div class="stat-label">薄弱知识点（&lt;0.4）</div></div>
-        <div class="stat-card due"><div class="stat-num" id="stat-due">-</div><div class="stat-label">待复习（已到期）</div></div>
+      <div id="mastery-radar" class="hidden">
+        <div class="radar-block">
+          <div class="radar-head">掌握度分布</div>
+          <div id="radar-bands"></div>
+        </div>
+        <div class="radar-block">
+          <div class="radar-head">学习活动（证据产出）</div>
+          <div id="radar-heat"></div>
+          <div class="radar-foot">颜色越深 = 当天产出证据越多（近 12 周）</div>
+        </div>
+        <div class="radar-block">
+          <div class="radar-head">知识点拓扑（先修链）</div>
+          <div id="radar-topo" class="markdown-body"></div>
+        </div>
       </div>
-      <div id="mastery-list"></div>
     </div>
   </aside>
 </div>
