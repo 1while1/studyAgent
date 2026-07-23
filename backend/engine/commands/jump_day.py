@@ -16,6 +16,10 @@ class JumpDayHandler(CommandHandler):
                   args: str, mode: str = "") -> str | None:
         if not deps.state_store.exists():
             return "StudyState.json 不存在。"
+        if getattr(session, "day_phase", None) == DayPhase.INTERVIEW.value:
+            return "模拟面试进行中，请先完成本场面试。"
+        if getattr(session, "day_phase", None) == DayPhase.PREREQ.value:
+            return "先修诊断进行中，请先完成本场诊断。"
         if args.strip() in ("[是]", "是"):
             return None  # 用户已确认重置
         m = re.search(r"(\d+)", args)

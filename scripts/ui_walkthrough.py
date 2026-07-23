@@ -573,11 +573,14 @@ def main():
         check("课程时间轴渲染", page.locator(".tl-row").count() >= 1)
         # M7 图谱增强：上游未达标徽标 + hover 上游链高亮
         check("上游未达标徽标", page.locator(".tl-badge").count() >= 1)
+        badge_title = page.locator(".tl-badge").first.get_attribute("title") or ""
+        check("徽标语义提示", "上游未达标" in badge_title)
         page.locator(".tl-row").nth(1).hover()
         page.wait_for_timeout(300)
         check("hover 上游链高亮", page.locator(".tl-row.tl-upstream").count() >= 1)
         page.locator(".tl-row").nth(0).hover()  # 移开（触发 mouseleave 清除）
         page.wait_for_timeout(200)
+        check("移开后高亮清除", page.locator(".tl-row.tl-upstream").count() == 0)
         # 时间轴节点点击 → 跳回战术板展开详情
         page.locator(".tl-row").first.click()
         page.wait_for_timeout(1800)

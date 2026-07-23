@@ -42,7 +42,9 @@ class QuizEngine:
         out: dict[str, float | None] = {}
         for cid in cids:
             m = re.search(
-                rf"{re.escape(cid)}[^\n【]{{0,6}}?"
+                # cid 后不得紧跟单元字符（F2 修复：防 "Day5-A" 窃取
+                # "Day5-AA" 的评分行——单元 id 字符集 [A-Za-z0-9_]）
+                rf"{re.escape(cid)}(?![A-Za-z0-9_])[^\n【]{{0,6}}?"
                 r"【\s*评分\s*[:：]\s*(\d+(?:\.\d+)?)\s*分?\s*】",
                 text)
             if not m:

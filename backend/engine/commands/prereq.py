@@ -45,15 +45,16 @@ class PrereqHandler(CommandHandler):
 
     @staticmethod
     def _targets(deps: Deps, session: SessionContext, day: int) -> list[dict]:
-        from ...services.learner_service import LearnerService
         unit_id = session.current_unit_id
         if not unit_id:
             state = deps.state_store.load()
             units = state["days"].get(str(day), {}).get("units", [])
             unit_id = units[0]["id"] if units else "A"
         cid = concept_id(day, unit_id)
-        return LearnerService(deps.config).unmastered_upstream(
-            [cid], day)[:_MAX_TARGETS]
+        # F1 修复：读图前先 ensure（跨天先修边写在后一天节点上——新日
+        # 当日单元未注册时闭包为空 → 诊断假阴性，sync/next_content 同款入口）
+        svc = CommandHandler.learner_with_concepts(deps)
+        return svc.unmastered_upstream([cid], day)[:_MAX_TARGETS]
 
     # ---- 出题（一次 LLM + 机械校验，缺一带原因重试一次） ----
 

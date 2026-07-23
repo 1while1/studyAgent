@@ -31,6 +31,27 @@ def _make_tmp_docx(prefix: str):
                       'active_workspace = "ragent"', settings)
     sp = tmp / "settings.toml"
     sp.write_text(settings, encoding="utf-8")
+    # 🟡-1 钉住真实数据漂移（三处假红路径免疫）：
+    # a) 用户推进学习 → 强制 current_day=2、Day2 单元未开始、无跨日完成标记
+    import json as _json
+    state_p = tmp / "docx" / "StudyState.json"
+    state = _json.loads(state_p.read_text(encoding="utf-8"))
+    state["current_day"] = 2
+    state["days"] = {k: v for k, v in state["days"].items() if k in ("1", "2")}
+    state["days"]["1"].pop("active_day_completed", None)
+    state["days"]["2"].pop("active_day_completed", None)
+    state["days"]["2"]["units"] = [
+        {"id": u["id"], "title": u["title"], "status": "not_started",
+         "rating": 0} for u in state["days"]["2"].get("units", [])]
+    for u in state["days"]["1"].get("units", []):
+        u["rating"] = 4.0  # 消除日历回滚项（pin 无日历通道）
+    state_p.write_text(_json.dumps(state, ensure_ascii=False, indent=2),
+                       encoding="utf-8")
+    # b) mastery 演进 → 删模型（零证据上游仍感召达标线以下）
+    (tmp / "docx" / "learner_model.json").unlink(missing_ok=True)
+    # c) 日历通道 → 删 Day_01（memory 无来源）；Day_02 也清（走全新开始分支）
+    (tmp / "docx" / "StudyMemory" / "Day_01.md").unlink(missing_ok=True)
+    (tmp / "docx" / "StudyMemory" / "Day_02.md").unlink(missing_ok=True)
     return tmp, ConfigService(sp)
 
 
@@ -64,9 +85,24 @@ class TestRelevanceReview(unittest.TestCase):
         self.assertIn("先修链未达标", result.llm_instruction)
 
     def test_no_relevance_keeps_old_shape(self):
-        """无 concepts/模型 → 感召为空 → 输出与 M7 前形态一致（无感召字样）。"""
-        (self.tmp / "docx" / "concepts.json").unlink(missing_ok=True)
-        (self.tmp / "docx" / "learner_model.json").unlink(missing_ok=True)
+        """上游全达标（mastery≥0.7）→ 感召为空 → 输出无感召字样（旧形态）。"""
+        import json as _json
+
+        def evs(cid):
+            out = [{"type": "quiz_right", "delta": 0.10, "ts": "2026-07-23",
+                    "source_ref": f"t:{cid}:{i}"} for i in range(6)]
+            out.append({"type": "code_verify_pass", "delta": 0.20,
+                        "ts": "2026-07-23", "source_ref": f"t:{cid}:v"})
+            return out  # 0.6 + 0.2 = 0.8 ≥ 0.7 达标
+
+        concepts = _json.loads(
+            (self.tmp / "docx" / "concepts.json").read_text(encoding="utf-8"))
+        day1 = [c for c in concepts["concepts"] if c.startswith("Day1-")]
+        model = {"schema_version": 1, "concepts": {
+            cid: {"title": cid, "mastery": 0.8, "evidence": evs(cid),
+                  "last_review_day": 1, "review_due": []} for cid in day1}}
+        (self.tmp / "docx" / "learner_model.json").write_text(
+            _json.dumps(model, ensure_ascii=False), encoding="utf-8")
         result = self._run_start()
         joined = "\n".join(result.messages)
         self.assertNotIn("上游感召", joined)
@@ -105,6 +141,17 @@ class TestRelevanceReview(unittest.TestCase):
         StartDayHandler().run(self.deps, session, "重新开始今日学习")
         self.assertEqual(session.prereq_targets, [])
         self.assertEqual(session.prereq_retry, 0)
+
+    def test_f1_ensure_before_graph_read(self):
+        """F1 回归：新日窗口（当日单元未注册 concepts）感召经 ensure 仍出现。"""
+        import json as _json
+        cp = self.tmp / "docx" / "concepts.json"
+        data = _json.loads(cp.read_text(encoding="utf-8"))
+        data["concepts"] = {k: v for k, v in data["concepts"].items()
+                            if k.startswith("Day1-")}  # Day2 条目尚未注册
+        cp.write_text(_json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        result = self._run_start()
+        self.assertIn("上游感召·Day 1：Day1-A", result.messages[0])
 
 
 if __name__ == "__main__":

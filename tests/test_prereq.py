@@ -118,16 +118,20 @@ class TestPrereq(unittest.TestCase):
         self.assertEqual(self.session.prereq_retry, 0)
 
     def test_run_no_targets_no_opening(self):
-        # 上游全达标：把 Day1-A/B 证据删了换高 delta（无弱项）
+        # 上游全达标：每节点 6×quiz_right + code_verify_pass = 0.8 ≥ 0.7
+        def evs(cid):
+            out = [{"type": "quiz_right", "delta": 0.10, "ts": TODAY,
+                    "source_ref": f"t:{cid}:{i}"} for i in range(6)]
+            out.append({"type": "code_verify_pass", "delta": 0.20,
+                        "ts": TODAY, "source_ref": f"t:{cid}:v"})
+            return out
+
         (self.docx / "learner_model.json").write_text(json.dumps(
-            {"schema_version": 1, "concepts": {}}, ensure_ascii=False),
-            encoding="utf-8")
-        (self.docx / "concepts.json").write_text(json.dumps(
             {"schema_version": 1, "concepts": {
-                "Day2-A": {"id": "Day2-A", "title": "进阶一",
-                           "prerequisites": [], "materials": [],
-                           "code_refs": []}}}, ensure_ascii=False),
-            encoding="utf-8")
+                cid: {"title": cid, "mastery": 0.8, "evidence": evs(cid),
+                      "last_review_day": 1, "review_due": []}
+                for cid in ("Day1-A", "Day1-B", "Day1-C")}},
+            ensure_ascii=False), encoding="utf-8")
         result = PrereqHandler().run(self.deps, self.session, "")
         self.assertIn("无需先修诊断", result.messages[0])
         self.assertEqual(self.session.day_phase, DayPhase.STUDYING.value)
@@ -242,6 +246,24 @@ class TestPrereq(unittest.TestCase):
         stop = EndDayHandler().fail_fast(self.deps, s, "")
         self.assertIn("先修诊断", stop)
 
+    def test_f3_commands_block_during_prereq_and_interview(self):
+        """F3：next_content/sync/verify_code/code_mode/jump_day 相位拦截。"""
+        from backend.engine.commands.code_mode import CodeModeHandler
+        from backend.engine.commands.jump_day import JumpDayHandler
+        from backend.engine.commands.next_content import NextContentHandler
+        from backend.engine.commands.sync import SyncHandler
+        from backend.engine.commands.verify_code import VerifyCodeHandler
+        handlers = (NextContentHandler(), SyncHandler(), VerifyCodeHandler(),
+                    CodeModeHandler(), JumpDayHandler())
+        for phase, expect in ((DayPhase.PREREQ.value, "先修诊断"),
+                              (DayPhase.INTERVIEW.value, "模拟面试")):
+            s = SessionContext(day_phase=phase, current_unit_id="A")
+            for h in handlers:
+                args = "卡壳 x" if h.name == "sync" else ""
+                stop = h.fail_fast(self.deps, s, args)
+                self.assertIsNotNone(stop, f"{h.name}@{phase}")
+                self.assertIn(expect, stop, h.name)
+
     def test_extract_scores_by_cid(self):
         from backend.engine.quiz_engine import QuizEngine
         text = "点评：\n**Day1-A**：【评分：4.0】\nDay1-B：【评分：99】\nDay1-C 不错"
@@ -250,6 +272,14 @@ class TestPrereq(unittest.TestCase):
         self.assertEqual(out["Day1-A"], 4.0)
         self.assertIsNone(out["Day1-B"])  # 越界视为无标记（铁律 6）
         self.assertIsNone(out["Day1-C"])  # 缺失
+
+    def test_extract_scores_no_prefix_stealing(self):
+        """F2：短 cid 不得窃取长 cid 的评分行（Day5-A vs Day5-AA）。"""
+        from backend.engine.quiz_engine import QuizEngine
+        text = "Day5-AA：【评分：4.0】"
+        out = QuizEngine.extract_scores_by_cid(text, ["Day5-A", "Day5-AA"])
+        self.assertIsNone(out["Day5-A"])      # 不窃取
+        self.assertEqual(out["Day5-AA"], 4.0)
 
 
 if __name__ == "__main__":

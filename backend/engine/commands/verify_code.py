@@ -8,6 +8,7 @@ workspace.replica_name）存在则在其内找，否则退回 project_dir；根�
 
 from __future__ import annotations
 
+from ...domain.enums import DayPhase
 from ...domain.models import SessionContext
 from ...services import code_runner
 from ...services.config_service import WEB_ROOT
@@ -29,6 +30,10 @@ class VerifyCodeHandler(CommandHandler):
                   args: str, mode: str = "") -> str | None:
         if not deps.state_store.exists():
             return "还没初始化学习数据，请先 [开始今日学习]。"
+        if getattr(session, "day_phase", None) == DayPhase.INTERVIEW.value:
+            return "模拟面试进行中，请先完成本场面试。"
+        if getattr(session, "day_phase", None) == DayPhase.PREREQ.value:
+            return "先修诊断进行中，请先完成本场诊断。"
         chosen, candidates, root = self._resolve(deps, args)
         if chosen is None:
             if candidates:

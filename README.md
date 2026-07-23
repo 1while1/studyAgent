@@ -37,7 +37,7 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 ## 功能一览
 
 **学习流程**（与 SOP 体系完全一致）
-- 11 个触发指令：输入框上方胶囊条点击 / 输入 `[` 唤起补全菜单 / 直接输入
+- 13 个触发指令：输入框上方胶囊条点击 / 输入 `[` 唤起补全菜单 / 直接输入
 - 五步导学循环状态机（文档带读 → Replica 编码 → 源码对照 → 论文带读 → 掌握度考核），可按工作区选学习模式预设（阅读实验/改 bug/技术文章）
 - 掌握度 2 回合连环追问 → `【评分：X.X】` 自动提取落盘；不及格拒绝推进
 - FAIL-FAST 双选项、「重新开始」保留 [同步] 记录、天数自动递进
@@ -130,8 +130,8 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 
 ```bash
 cd study-web
-python -m unittest discover -s tests    # 379 个后端测试，stdlib，无需真实 LLM
-python scripts/ui_walkthrough.py        # UI 真实点击走查 137 项（需服务运行中）
+python -m unittest discover -s tests    # 382 个后端测试，stdlib，无需真实 LLM
+python scripts/ui_walkthrough.py        # UI 真实点击走查 139 项（需服务运行中）
 python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name]
 ```
 

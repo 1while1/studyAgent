@@ -27,16 +27,17 @@ class InterviewHandler(CommandHandler):
             labels = {DayPhase.REVIEWING.value: "今日复盘进行中，请先完成复盘",
                       DayPhase.ENDED.value: "今日学习已结束，请明天再来",
                       DayPhase.NOT_STARTED.value: "今日尚未开始，请先 [开始今日学习]",
-                      DayPhase.PLANNING.value: "今日计划生成中，请稍后"}
+                      DayPhase.PLANNING.value: "今日计划生成中，请稍后",
+                      DayPhase.PREREQ.value: "先修诊断进行中，请先完成本场诊断"}
             return (labels.get(session.day_phase, "当前状态不能开始模拟面试")
                     + "。")
         return None
 
     def run(self, deps: Deps, session: SessionContext,
             args: str, mode: str = "") -> CommandResult:
-        from ...services.learner_service import LearnerService
         day = deps.state_store.load().get("current_day", 1)
-        model = LearnerService(deps.config).get_model(day)
+        # F1 修复（M5c 存量同款缺口）：读图前先 ensure（新日/跨天链未注册窗口）
+        model = CommandHandler.learner_with_concepts(deps).get_model(day)
         concepts = model["concepts"]
         if not concepts:
             return CommandResult(messages=[

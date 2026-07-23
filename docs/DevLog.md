@@ -11,18 +11,33 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 379 个全绿；UI 走查 137 项全绿
+- 测试：`python -m unittest discover -s tests` → 382 个全绿；UI 走查 139 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步
 
 v1 Roadmap 与 v3 分期（M1 资料库 → M2 可观测 → M3 学习者模型 → M4 笔记管理 → M5a 工具骨架 → M5b 上下文+路由 → M5c planner → M6 实战工坊 → **M7 课程本体 ✅**）全部收官。后续按用户指令推进：架构审计（设计符合性 + 各模块 bug 审查）→ 子 agent 全面 UI 优化 → 全功能浏览器模拟测试。mark_wrong 工具（§9）仍留档另立。
 
+## M7 审查修复批（2026-07-23，双子 agent 审查驱动，fix/m7-review）
+
+| 发现 | 修复 |
+|------|------|
+| 🔴 F1 图谱消费方读前未 ensure_concepts——跨天先修边写在**后一天**节点上，新日窗口（当日单元未注册）感召静默为空 + [先修诊断] 假阴性「无需诊断」（interview.py 有 M5c 存量同款缺口） | prereq/start_day/interview 三处改走 `CommandHandler.learner_with_concepts` 统一入口（sync/next_content/verify_code 同款）；F1 回归测试（concepts 无当日条目感召仍出现）；test_interview.test_pick_empty_model 按 ensure 语义更新（两分支各断言） |
+| 🟡 F2 extract_scores_by_cid 无前缀边界——短 cid「Day5-A」可窃取「Day5-AA」评分行（恰好漏行场景跳过缺分重试直接污染证据） | cid 后加 `(?![A-Za-z0-9_])` 边界；前缀对回归测试 |
+| 🟡 F3 行为矩阵缺口——next_content/sync/verify_code/code_mode/jump_day 无 phase 检查（INTERVIEW 期即存在的系统性形态，PREREQ 使暴露面 +1） | 5 指令 fail_fast 补 INTERVIEW+PREREQ 双拦截（getattr 防御 None session）；矩阵测试（双相位 × 5 handler） |
+| 🟡-1 test_relevance_review 硬依赖真实数据三假红路径（用户推进天数/mastery 演进/日历项出现） | 夹具三处钉住（current_day=2 单元重置 + 删 learner_model + 清 Day_01/02）；"无感召"用例改全达标证据夹具（F1 后 ensure 必重建 concepts，空文件路径不再存在） |
+| 🟡-2/🟡-3 文档漂移：「逐字节一致（测试锁）」名不副实；README「11 个触发指令」未随 13 同步 | README/DevLog 措辞诚实化（diff 保证 + 回归测试锁无感召字样）；README 改 13 |
+| 🟡-4 走查 9f 徽标/hover 弱断言（存在性即过 + 无清除断言） | +徽标语义 title 断言 + 移开后高亮清除断言 |
+| F6 interview labels 缺 PREREQ 专属文案 | 补「先修诊断进行中，请先完成本场诊断」 |
+| 🔵-2 时间轴 querySelector 未 CSS.escape（与战术板不一致） | 改 CSS.escape |
+
+🔵 留档（不阻塞）：prereq_of「最近目标」名实偏差（现役单目标无消费者）；出题解析不耐受换行题面（fail-closed 方向安全）；jump_day 不清 prereq 字段（惰性无害，start_day 兜底）；etype 未配置误报幂等跳过（配置齐全前提）；感召/日历语义重复项不去重；前端上游闭包为近邻序（仅计数/高亮用途）；mock.py `system` 变量命名；「恰好一题」契约实为「至少一题」（重复静默取最后）；9i 幂等段依赖 mastery 基线 <0.3。测试 +3 → **382 全绿**；走查 139 项全绿。
+
 ## M7 课程本体（2026-07-23 交付）
 
 - **图谱纯函数**（`domain/learner.py`，零 IO）：`upstream_closure(cid, prereq_map)`（DFS 后序=根基在前，**环守卫**（成环跳过回边）+ 缺失节点容忍）、`topo_order(cids, prereq_map)`（闭包深度升序=上游先补，id 稳定序 tiebreak——初版按深度降序写反被单测当场抓住）
 - **LearnerService 图查询**：`upstream_chain(cid)` / `unmastered_upstream(cids, day, threshold=0.7)`（**含零证据节点**——先修诊断"已会节点置初始 mastery"核心场景；prereq_of 记录最近目标）/ `remediation_order(day, threshold)`（仅**有证据**未达标，零证据标「未学」不计入——M5b R4 先例）
-- **感召式复习**（§13 验收形态，start_day 集成）：今日首单元 concept 上游未达标闭包（拓扑序）打【上游感召】标签注入 step1「将优先安排」与 review_prefix 分组（**感召优先 + 日历补充 + 总量封顶 review_max_items**）；collect_due 日历通道保留为补充；**无感召时输出与 M7 前逐字节一致**（测试锁）；plan 解析上移至 RESUME 分支之后（保 resume 不解析大纲的原行为）
+- **感召式复习**（§13 验收形态，start_day 集成）：今日首单元 concept 上游未达标闭包（拓扑序）打【上游感召】标签注入 step1「将优先安排」与 review_prefix 分组（**感召优先 + 日历补充 + 总量封顶 review_max_items**）；collect_due 日历通道保留为补充；**无感召时输出与 M7 前形态一致**（diff 保证 + 回归测试锁无感召字样）；plan 解析上移至 RESUME 分支之后（保 resume 不解析大纲的原行为）
 - **拓扑计划 v1**：`remediation_order` 进 /api/learner/model（图谱异常静默降级 []）；战术板「需要行动」桶改拓扑补弱序（不在序列的达标到期项沉底）；**Study.md 动态重排/LLM 建议边 = 留档**
 - **先修诊断**（`[先修诊断]`，行为矩阵与面试对称）：
   - **代码强制选题**：当前单元上游未达标闭包拓扑序前 5（含零证据）；无目标→明确提示不开空头诊断
