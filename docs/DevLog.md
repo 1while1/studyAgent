@@ -11,7 +11,7 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 211 个全绿；UI 走查 88 项全绿
+- 测试：`python -m unittest discover -s tests` → 211 个全绿；UI 走查 96 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步
@@ -140,6 +140,8 @@ v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 
 | M4 测试 settings 的 `qa_capture_enabled=false` 不生效 | EXTRA_SETTINGS 拼在 `[evidence_delta]` 表之后，裸键落进节区变成 delta 表成员 | 测试基座把 EXTRA_SETTINGS 移到所有 `[节区]` 之前（TOML 裸键必须前置的铁律同样适用于测试夹具） |
 | 走查「历史回填渲染卡片」超时崩溃（LLM 慢/挂起日必现） | /api/chat 的用户消息在**流式完成后**才随 session 落盘；客户端中途断连/刷新（GeneratorExit 不走 `except Exception`）→ 消息整轮丢失，前后端历史分叉 | 用户消息**先落盘再开流**（routes.py chat gen 一行前移）；回归测试 test_chat_disconnect 用 `body_iterator.aclose()` 模拟断连，未修复时必失败 |
 | 掌握度面板 v2 排版全乱（说明条/统计卡挤成竖条） | `.page-body { display: flex }` 默认 **row** 方向，`.mastery-layout` 三个子块被横排挤压 | v11 直接改抽屉布局规避整类问题；教训：**复用父级 flex 容器时必须显式声明 flex-direction** |
+| 抽屉 tab 文字被压成 30px 竖排圆点（战术板/战略雷达不可读） | `.drawer-head button` 关闭按钮样式（30px 圆形）**命中了抽屉内所有 button**（含 tab）——与 cfg-test 委托同型的"样式选择器误伤" | 改 `.drawer-head > button` 只命中直接子代关闭钮；教训：**容器内样式一律用子选择器或专用类，禁止裸后代选择器** |
+| 雷达 tab 切换后战术板仍可见、「其余知识点」默认折叠失效 | 项目**没有全局 `.hidden` 规则**（各组件各自 scoped），新元素 `#mastery-tactical/#mastery-radar/#ms-rest-body/#urgent-widget` 的 hidden 类无效果 | 加全局 `.hidden { display: none !important; }`（与所有现有 scoped 定义同语义，无冲突） |
 
 ## 缺陷修复批（2026-07-22，双子智能体审查驱动，fix/review-batch）
 
@@ -163,6 +165,7 @@ v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 
 
 ## UI 版本
 
+- **v12（2026-07-23）**：掌握度改「战术板 + 战略雷达」——战术板**状态驱动分桶**（🚨 需要行动：全历史到期+薄弱混排置顶 / 📍 今日学习 / ✅ 其余知识点默认折叠，行带 Day 标签），告别按天流水账（Gemini 评审建议）；战略雷达 tab：掌握度四档分布条 + GitHub 式**学习活动热力图**（近 12 周证据产出）+ **知识点先修拓扑图**（mermaid，按档位着色）；主侧栏新增**复习预警 widget**（跨周期紧急项伴随式暴露，点击直达抽屉展开详情）。修复两个选择器 bug（见 bug 史）。
 - **v11（2026-07-23）**：掌握度面板抽屉化 + 全局图标/按钮打磨 —— 修 `.page-body` flex 默认 row 导致的面板挤扁 bug；掌握度从全屏页改为**右侧滑出抽屉**（聊天区保持可见，可对照学习），详情改为**行内手风琴展开**（同时只展开一条）；统计卡加阴影浮起；标题/百分比字重分层；顶栏与两页图标从 Emoji 换为**内联 SVG 线条图标**（Lucide 风格，零依赖）；指令胶囊增强按钮感（圆角/阴影/hover 浮起）。双主题下抽屉均正常（pair 深色即用户要的暗色体验）。
 - **v10（2026-07-23）**：笔记/掌握度全屏化重做 —— 两个模块从 780px modal 升级为 `.page-overlay` 全屏页。📝 笔记页 = 书架三栏（特殊架/知识点成书/类型 chips/全文搜索 + 卡片列表 + MD 编辑器：H1-H3/B/I/S/代码块/引用/列表/任务/链接/表格/分隔线/Mermaid 工具条 + 编辑/分屏/预览三态，预览复用聊天渲染管线）；🧠 掌握度面板 = 统计卡 + 按 Day 分组进度条列表 + 详情（建议行动卡 + 证据构成表·行为中文名·Δ 着色·衰减说明）。后端零改动。
 - **v9（2026-07-23）**：M4 笔记管理 —— 顶栏 📝 笔记页（筛选/新建/就地编辑/合并模式/日志蒸馏/concept 挂接下拉/销账）；学习资料弹窗「面试话术库」升级为卡片视图（30s 直显 + 2min/追问预案折叠 + 就地编辑/删除 + 原文切换）。

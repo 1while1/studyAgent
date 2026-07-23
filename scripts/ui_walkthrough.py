@@ -326,7 +326,7 @@ def main():
         page.locator("#usage-close").click()
         page.wait_for_timeout(300)
 
-        # ---- 9f. 掌握度面板（M3 数据 / v2 全屏） ----
+        # ---- 9f. 掌握度抽屉（战术板 + 战略雷达 + 侧栏预警） ----
         page.locator("#open-learner").click()
         page.wait_for_timeout(1500)
         # 模型不存在时先走迁移（幂等：已存在则迁移条不出现，直接跳过）
@@ -335,22 +335,39 @@ def main():
             page.wait_for_timeout(1000)
             page.locator("#learner-migrate button", has_text="确认应用迁移").click()
             page.wait_for_timeout(1500)
-        check("掌握度面板打开", page.locator("#mastery-page").is_visible())
+        check("掌握度抽屉打开", page.locator("#mastery-drawer").is_visible())
         check("统计卡渲染", page.locator(".stat-card").count() == 3)
-        check("知识点行渲染", page.locator(".mastery-row").count() >= 1)
-        check("有着色掌握度行", page.locator(
-            ".mastery-row[data-band='low'],.mastery-row[data-band='mid'],"
-            ".mastery-row[data-band='high']").count() >= 1)
-        page.locator(".mastery-row").first.click()
+        check("需要行动分区", page.locator("#ms-urgent .m-sec-head").is_visible())
+        check("紧急项行渲染", page.locator("#ms-urgent-body .mastery-row").count() >= 1)
+        check("今日学习分区", "Day" in page.locator("#ms-today .m-sec-head").text_content())
+        check("其余默认折叠", page.locator("#ms-rest-body").is_hidden())
+        page.locator("#ms-rest-toggle").click()
+        page.wait_for_timeout(400)
+        check("其余展开", page.locator("#ms-rest-body").is_visible())
+        # 手风琴详情
+        page.locator("#ms-urgent-body .mastery-row").first.click()
         page.wait_for_timeout(600)
         check("详情手风琴展开", page.locator(".mastery-detail-inline").is_visible() and
               "证据构成" in page.locator(".mastery-detail-inline").text_content())
         check("详情含建议行动",
               page.locator(".mastery-detail-inline .md-advice").is_visible())
-        # 再点一次收起
-        page.locator(".mastery-row").first.click()
+        page.locator("#ms-urgent-body .mastery-row").first.click()
         page.wait_for_timeout(400)
         check("手风琴收起", page.locator(".mastery-detail-inline").count() == 0)
+        # 战略雷达 tab
+        page.locator(".drawer-tab[data-mtab='radar']").click()
+        page.wait_for_timeout(2500)
+        check("雷达分布四档", page.locator(".rb-row").count() == 4)
+        check("雷达热力格", page.locator(".heat-cell2").count() >= 80)
+        check("雷达拓扑 SVG", page.locator("#radar-topo svg").count() >= 1)
+        page.locator("#mastery-close").click()
+        page.wait_for_timeout(300)
+        # 侧栏复习预警 widget → 跳转抽屉展开详情
+        check("侧栏复习预警", page.locator("#urgent-widget").is_visible() and
+              page.locator(".uw-item").count() >= 1)
+        page.locator(".uw-item").first.click()
+        page.wait_for_timeout(1800)
+        check("预警跳转展开详情", page.locator(".mastery-detail-inline").count() >= 1)
         page.locator("#mastery-close").click()
         page.wait_for_timeout(300)
 
