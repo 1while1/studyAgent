@@ -1,7 +1,7 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-23（**M5a 工具骨架交付**——turn_engine 双引擎接口+路由、tool_registry 权限四级+9 工具化包装、READ/READ_DOC 分发改经注册表；235 单测/102 走查全绿）
+> 最近更新：2026-07-23（**M5a 工具骨架交付 + 审查修复批**——turn_engine 双引擎接口+路由、tool_registry 权限四级+9 工具化包装、update_model fail-closed、审查 🟡 全修；244 单测/102 走查全绿）
 
 ## 当前运行状态
 
@@ -11,7 +11,7 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 235 个全绿；UI 走查 102 项全绿
+- 测试：`python -m unittest discover -s tests` → 244 个全绿；UI 走查 102 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步
@@ -25,6 +25,21 @@ v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 
 - **9 个现有能力工具化**：read_code/read_doc（tool_use 的 _do_read/_do_read_doc **逐字迁入**，event/injection 文本零变化）/ search_notes / read_model / run_build（镜像 verify_code 解析，不含点评与 evidence）/ write_note / resolve_note（走 M4 单一路径 note_actions）/ update_model（etype 限定 [evidence_delta] 表内，铁律 15）/ persist_state（**白名单操作集** v1 仅 set_unit_status，status 限 status_enum，规则 14 落盘——planner 未来只能经此间接写 StudyState）
 - **ToolUseLoop 改注册表分发**：构造加可选 `registry`/`tool_context`（缺省内部自建，签名向后兼容）；READ/READ_DOC 标记截获后 `registry.invoke` 取 (event,injection)；observer.log_tool 留在 Loop。chat 路径 LLMStreamer 建完整 ToolContext（含 state_store/validator）
 - **测试**：+24（test_turn_engine 7：接口实例/三路路由/stub 可调用/mode 兼容；test_tool_registry 17：9 工具权限/双传输 schema 一致/read_code 成败/update_model 拒绝+幂等/persist_state 白名单/write_note 边界/缺依赖不抛异常）→ 235 全绿；走查 102 项全绿（服务重启为新代码后跑）
+
+## M5a 审查修复批（2026-07-23，双子 agent 审查驱动，fix/m5a-review）
+
+审查结论：无 🔴；逐字对比通过；flag off 零行为变化成立。修复全部 🟡：
+
+| 发现 | 修复 |
+|------|------|
+| update_model 写路径 day 静默兜底 Day 1（证据错归因无告警） | 改 fail-closed：天数不可解析 → ok=False 拒绝写入（read_model 只读回退保留） |
+| command guard 分支零测试 | routes 级用例：flag on + mode=code 会话发指令 → 固定提示 + handler 未执行（阶段/历史不变） |
+| invoke 异常吞噬分支零测试 | handler 抛异常 → ok=False「执行异常」契约用例 |
+| _run_build 整体零测试 | 5 用例：缺 state_store/无构建文件/多候选/参数传递（mock run_build 断言 kind/timeout/offline）/target 选择 + 退出码非 0 → ok=False |
+| 路由缺第四象限 (study, flag on) | 补用例：flag 打开后旧 study 会话仍走 tutor（不混跑关键保证） |
+| SimpleNamespace 假 deps 脆弱 | test_turn_engine 全部换 make_deps 真实 deps |
+
+测试 +9 → **244 全绿**。🔵 可选项（防御分支 error 事件/write_note dedup 语义/persist_state 缺 validator fail-open/limit 下界/code·agent 命名）留待 M5c 接线时定夺。
 
 ## M4 笔记管理（2026-07-23 交付）
 

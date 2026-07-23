@@ -2,18 +2,21 @@
 
 断言动作契约：ChatOrchestrator 是 TurnEngine 第一实现；build_turn_engine 按
 session.mode × agent_mode_enabled 二选一（同一 session 不混跑）；PlannerEngine
-占位 stub 可调用；SessionContext.mode 字段向后兼容。
+占位 stub 可调用；SessionContext.mode 字段向后兼容；command 路由 agent 会话
+固定提示 guard（routes 级）。
 """
 
+import asyncio
+import json
 import shutil
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from backend.api import routes
 from backend.domain.models import SessionContext
 from backend.engine.orchestrator import ChatOrchestrator
 from backend.engine.turn_engine import (AGENT_COMMAND_HINT, PlannerEngine,
@@ -27,11 +30,32 @@ _SETTINGS = (
     '[evidence_delta]\nquiz_right = 0.10\n'
     '[[stages]]\nname = "teaching"\nnext = ""\n'
     'sop_step = "步骤一"\ninstruction = "讲"\n'
+    '{commands}'
     '[[workspaces]]\nslug = "t"\n'
     'docx_dir = "{docx}"\n'
     'project_dir = "{tmp}"\n'
     'session_path = "{session}"\n'
 )
+
+
+def _write_settings(tmp: Path, docx: Path, name: str, agent_flag: bool,
+                    commands: str = "") -> ConfigService:
+    flag = "agent_mode_enabled = true\n" if agent_flag else ""
+    path = tmp / name
+    path.write_text(_SETTINGS.format(
+        flag=flag, commands=commands, docx=docx.as_posix(),
+        tmp=tmp.as_posix(),
+        session=(tmp / "session.json").as_posix()), encoding="utf-8")
+    return ConfigService(path)
+
+
+def _make(config: ConfigService, tmp: Path):
+    """真实 deps + tutor（不用假命名空间：build_turn_engine 未来加依赖时测试不假绿）。"""
+    from tests.test_flows import make_deps
+    deps = make_deps(config, tmp / "session.json")
+    tutor = ChatOrchestrator(config, deps.stages, deps.quiz,
+                             deps.state_store, deps.memory, deps.templates)
+    return deps, tutor
 
 
 class TestTurnEngine(unittest.TestCase):
@@ -44,45 +68,40 @@ class TestTurnEngine(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _config(self, agent_flag: bool) -> ConfigService:
-        flag = ("agent_mode_enabled = true\n" if agent_flag else "")
-        path = self.tmp / ("settings_on.toml" if agent_flag
-                           else "settings_off.toml")
-        path.write_text(_SETTINGS.format(
-            flag=flag, docx=self.docx.as_posix(), tmp=self.tmp.as_posix(),
-            session=(self.tmp / "session.json").as_posix()), encoding="utf-8")
-        return ConfigService(path)
-
-    def _tutor(self, config: ConfigService) -> ChatOrchestrator:
-        from tests.test_flows import make_deps
-        deps = make_deps(config, self.tmp / "session.json")
-        return ChatOrchestrator(config, deps.stages, deps.quiz,
-                                deps.state_store, deps.memory, deps.templates)
+        return _write_settings(
+            self.tmp, self.docx,
+            "settings_on.toml" if agent_flag else "settings_off.toml",
+            agent_flag)
 
     def test_orchestrator_is_turn_engine(self):
-        tutor = self._tutor(self._config(False))
+        _, tutor = _make(self._config(False), self.tmp)
         self.assertIsInstance(tutor, TurnEngine)
 
     def test_route_study_mode_returns_tutor(self):
         config = self._config(False)
-        deps = SimpleNamespace(config=config)
-        tutor = self._tutor(config)
+        deps, tutor = _make(config, self.tmp)
         session = SessionContext()  # 默认 mode="study"
         self.assertIs(build_turn_engine(session, deps, tutor), tutor)
 
     def test_route_code_mode_flag_off_returns_tutor(self):
         config = self._config(False)  # flag 默认关闭
-        deps = SimpleNamespace(config=config)
-        tutor = self._tutor(config)
+        deps, tutor = _make(config, self.tmp)
         session = SessionContext(mode="code")
         self.assertIs(build_turn_engine(session, deps, tutor), tutor)
 
     def test_route_code_mode_flag_on_returns_planner(self):
         config = self._config(True)
-        deps = SimpleNamespace(config=config)
-        tutor = self._tutor(config)
+        deps, tutor = _make(config, self.tmp)
         session = SessionContext(mode="code")
         engine = build_turn_engine(session, deps, tutor)
         self.assertIsInstance(engine, PlannerEngine)
+
+    def test_route_study_mode_flag_on_returns_tutor(self):
+        """第四象限：flag 打开后旧 study 会话仍走导学引擎（不混跑的关键保证）。"""
+        config = self._config(True)
+        deps, tutor = _make(config, self.tmp)
+        session = SessionContext()  # study
+        self.assertIs(build_turn_engine(session, deps, tutor), tutor)
 
     def test_planner_stub_callable(self):
         engine = PlannerEngine()
@@ -103,6 +122,44 @@ class TestTurnEngine(unittest.TestCase):
         # 新数据 round-trip
         s = SessionContext(mode="code")
         self.assertEqual(SessionContext.from_dict(s.to_dict()).mode, "code")
+
+
+class TestAgentCommandGuard(unittest.TestCase):
+    """command 路由 guard（routes.py）：agent 会话收到导学指令 → 固定提示且不执行 handler。"""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="guard_"))
+        self.docx = self.tmp / "docx"
+        (self.docx / "StudyMemory").mkdir(parents=True)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_agent_session_command_gets_fixed_hint(self):
+        config = _write_settings(
+            self.tmp, self.docx, "settings.toml", agent_flag=True,
+            commands='[commands."开始今日学习"]\nhandler = "start_day"\n'
+                     'sop_card = ""\n')
+        deps, tutor = _make(config, self.tmp)
+        # agent 会话（mode=code）落盘
+        deps.session_store.save(SessionContext(mode="code"))
+        routes.init(deps, tutor)
+
+        resp = routes.command(routes.TextIn(text="[开始今日学习]"))
+
+        async def drive():
+            chunks = []
+            async for chunk in resp.body_iterator:
+                chunks.append(chunk)
+            return chunks
+        text = "".join(asyncio.run(drive()))
+        self.assertIn(AGENT_COMMAND_HINT, text)
+        self.assertIn('"done"', text)
+        # handler 未执行：阶段未推进、无对话记录（guard 在 fail_fast/run 之前返回）
+        saved = json.loads(
+            (self.tmp / "session.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved.get("day_phase"), "not_started")
+        self.assertEqual(saved.get("chat_history", []), [])
 
 
 if __name__ == "__main__":
