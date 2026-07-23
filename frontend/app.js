@@ -819,27 +819,28 @@ function openInMonaco(r) {
     host.className = "mc-editor";
     codeContentEl.appendChild(host);
     mcEditor = monaco.editor.create(host, {
-      value: r.content, language: r.lang, theme: "vs-dark",
-      readOnly: !r.editable,
+      theme: "vs-dark", readOnly: !r.editable,
       minimap: { enabled: false }, automaticLayout: true,
       fontSize: 13,
       fontFamily: "'JetBrains Mono','Cascadia Code',Consolas,monospace",
       scrollBeyondLastLine: false,
       wordWrap: codeContentEl.classList.contains("wrap-mode") ? "on" : "off",
     });
-    window.__codeEditor = mcEditor;  // 走查 evaluate 用
+    window.__codeEditor = mcEditor;  // èµ°æ¥ evaluate ç¨
     mcEditor.onDidChangeCursorSelection(onMonacoSelection);
     mcEditor.onDidChangeModelContent(() => setDirty(true));
     mcEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, saveCurrentFile);
-  } else {
-    mcEditor.setValue(r.content);
-    monaco.editor.setModelLanguage(mcEditor.getModel(), r.lang);
-    mcEditor.updateOptions({ readOnly: !r.editable });
   }
+  // æ¯æä»¶ç¬ç« modelï¼M6 å®¡æ¥ä¿®å¤ Y3ï¼åæ¨¡å setValue ä¼è®© undo æ è·¨æä»¶æ±¡æï¼
+  // Ctrl+Z æ¤éåä¸ä¸æä»¶åå®¹åä¿å­ = çå®æ°æ®æåè·¯å¾ï¼
+  const oldModel = mcEditor.getModel();
+  mcEditor.setModel(monaco.editor.createModel(r.content, r.lang));
+  mcEditor.updateOptions({ readOnly: !r.editable });
+  if (oldModel) oldModel.dispose();
+  mcDecorations = [];  // decoration å¥æéæ§ model ä½åº
   mcEditor.setScrollTop(0);
   mcEditor.setPosition({ lineNumber: 1, column: 1 });
-  mcDecorations = mcEditor.deltaDecorations(mcDecorations, []);
-  setDirty(false);  // setValue 会触发 change 事件误标脏
+  setDirty(false);  // setModel ä¼è§¦å change äºä»¶è¯¯æ è
 }
 
 // Monaco 选区 → 片段提问（沿用 lastMouse 定位浮动按钮）
@@ -858,7 +859,13 @@ function onMonacoSelection(e) {
 
 // legacy 渲染（Monaco 加载失败的降级路径，保留原 gutter+hljs 实现）
 function openLegacy(r) {
+  if (mcEditor) {  // 悬空实例兜底（create 半途抛错的窄路径，M6 审查 B1）
+    mcEditor.dispose();
+    mcEditor = null;
+    window.__codeEditor = null;
+  }
   codeContentEl.classList.remove("mc-host");
+  document.getElementById("code-save").classList.add("hidden");  // 降级不可保存（Y1：按钮可见但点了无效的反人类态）
   const lines = r.content.split("\n");
   const wrap = document.createElement("div");
   wrap.className = "code-wrap";
@@ -894,6 +901,7 @@ async function openCodeFile(root, rel) {
     await loadMonaco();
     openInMonaco(r);
   } catch (e) {
+    monacoReady = null;  // Y2 修复：加载失败不缓存 rejected Promise，下次打开可重试
     openLegacy(r);  // vendor 缺失/加载失败：静默降级旧渲染（mermaid 同款策略）
   }
 }

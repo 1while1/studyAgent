@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 import subprocess
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -31,6 +32,8 @@ from .config_service import WEB_ROOT, ConfigService, runtime_dir
 _SCHEMA = {"schema_version": 1, "processes": {}}
 _PORT_PROBE_TIMEOUT = 2.5    # 启动后端口快速探测窗口（秒）；慢服务靠 list() 实时探测兜底
 _STOP_GRACE = 3.0            # terminate 后等待再 kill 的宽限（秒）
+_REG_LOCK = threading.RLock()  # 注册表读改写互斥（M6 审查修复 B1：防并发 start 互踩丢条目/孤儿进程）
+_TAIL_READ_BYTES = 256 * 1024  # logs_tail 尾部定位读取窗口（B2 修复：防大日志全量入内存）
 
 
 class ProcessError(Exception):
@@ -52,6 +55,21 @@ class ProcessManager:
         self._reg_path = self._dir / "processes.json"
 
     # ---- 注册表 ----
+
+    # 公开入口：注册表读改写全程持锁（B1 修复）。RLock 可重入，
+    # stop_all → list/stop 嵌套安全；端口快探也在锁内（正确性优先于并发度）。
+
+    def list(self) -> list[dict]:
+        with _REG_LOCK:
+            return self._list_unlocked()
+
+    def start(self, cwd: str, cmd: list[str], name: str = "") -> dict:
+        with _REG_LOCK:
+            return self._start_unlocked(cwd, cmd, name)
+
+    def stop(self, pid_id: str) -> dict:
+        with _REG_LOCK:
+            return self._stop_unlocked(pid_id)
 
     def _load(self) -> dict:
         if not self._reg_path.is_file():
@@ -128,7 +146,7 @@ class ProcessManager:
             return "stopped"  # PID 已被复用：登记进程已死
         return "running"
 
-    def list(self) -> list[dict]:
+    def _list_unlocked(self) -> list[dict]:
         data = self._load()
         out = []
         changed = False
@@ -157,7 +175,7 @@ class ProcessManager:
 
     # ---- 起停 ----
 
-    def start(self, cwd: str, cmd: list[str], name: str = "") -> dict:
+    def _start_unlocked(self, cwd: str, cmd: list[str], name: str = "") -> dict:
         if not cmd or not all(isinstance(c, str) and c for c in cmd):
             raise ProcessError("cmd 必须是非空字符串数组")
         workdir = self._check_cwd(cwd)
@@ -213,7 +231,7 @@ class ProcessManager:
         return {"id": pid_id, "pid": proc.pid, "name": entry["name"],
                 "ports": entry["ports"], "log": log_path.name}
 
-    def stop(self, pid_id: str) -> dict:
+    def _stop_unlocked(self, pid_id: str) -> dict:
         data = self._load()
         entry = data["processes"].get(pid_id)
         if entry is None:
@@ -264,7 +282,14 @@ class ProcessManager:
         path = Path(entry["log_path"])
         if not path.is_file():
             return {"id": pid_id, "lines": []}
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        # 尾部定位读取（B2 修复：唠叨进程 1GB 日志也不再全量读入内存）
+        size = path.stat().st_size
+        with open(path, "rb") as f:
+            f.seek(max(0, size - _TAIL_READ_BYTES))
+            chunk = f.read().decode("utf-8", errors="replace")
+        if size > _TAIL_READ_BYTES:
+            chunk = chunk.split("\n", 1)[-1]  # 丢弃首行残段
+        lines = chunk.splitlines()
         return {"id": pid_id, "lines": lines[-max(1, min(n, 2000)):],
                 "status": self._live_status(entry)}
 

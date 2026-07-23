@@ -86,9 +86,14 @@ class WorkshopService:
             raise WorkshopError("目标路径越出 demo 根（拒绝）")
         if target.exists() and any(target.iterdir()):
             raise WorkshopError(f"demo 已存在且非空: {name}")
-        target.mkdir(parents=True, exist_ok=True)
-        files = _copy_scaffold(src, target, name)
+        # 先注册代码根（注册失败什么都不产生，可直接重试——M6 审查修复 A1）
         code_root = self._ensure_demo_code_root()
+        target.mkdir(parents=True, exist_ok=True)
+        try:
+            files = _copy_scaffold(src, target, name)
+        except Exception:
+            shutil.rmtree(target, ignore_errors=True)  # 复制中途失败回滚，允许重入
+            raise
         return {"name": name, "path": f"demo/{name}", "files": files,
                 "code_root": code_root,
                 "abs_path": str(target)}
@@ -173,11 +178,16 @@ class WorkshopService:
     # ---- demo 代码根注册 ----
 
     def _ensure_demo_code_root(self) -> str:
-        """为当前工作区注册 demo 代码根（幂等；已存在则直接返回根名）。"""
+        """为当前工作区注册 demo 代码根（幂等；已存在则直接返回根名）。
+
+        ⚠️ 写 settings 必须基于**全量未过滤**根清单（M6 审查修复 R1）：
+        config.code_roots 按当前工作区过滤，用它重写会丢别的工作区的根。
+        """
         slug = self._config.workspace.slug
         name = "demo"
-        for r in self._config.code_roots:  # 已按当前工作区过滤
-            if r["name"] == name:
+        all_roots = list(self._config.data.get("code_roots", []))
+        for r in all_roots:
+            if r["name"] == name and r.get("workspace", slug) == slug:
                 return name
         demo = self.demo_root()
         try:
@@ -185,9 +195,8 @@ class WorkshopService:
         except ValueError:
             raw = str(demo)
         from .config_writer import update_code_roots
-        new_roots = self._config.code_roots + [
-            {"name": name, "path": raw, "workspace": slug}]
-        update_code_roots(self._config.path, new_roots)
+        update_code_roots(self._config.path, all_roots + [
+            {"name": name, "path": raw, "workspace": slug}])
         self._config.reload()
         return name
 

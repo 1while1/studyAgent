@@ -1,7 +1,7 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-23（**M6 实战工坊交付**——脚手架 + Monaco + edit_file 白名单 + process_mgr + study/code 模式分离；348 单测/131 走查全绿）
+> 最近更新：2026-07-23（**M6 实战工坊 + 审查修复批交付**——脚手架 + Monaco + edit_file 白名单 + process_mgr + study/code 模式分离；修复批：code_roots 全量基线/settings 锁/进程注册表锁/每文件 model 等；355 单测/132 走查全绿）
 
 ## 当前运行状态
 
@@ -11,12 +11,28 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 348 个全绿；UI 走查 131 项全绿
+- 测试：`python -m unittest discover -s tests` → 355 个全绿；UI 走查 132 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步
 
 v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 `docs/AgentDesign.md` v3 封板版为准：M1 资料库 ✅ → M2 可观测 ✅ → M3 学习者模型 ✅ → M4 笔记管理 ✅ → M5a 工具骨架 ✅ → M5b 上下文+路由 ✅ → M5c planner ✅ → M6 实战工坊 ✅（2026-07-23 交付）→ **下一步 = M7 课程本体**（知识点图谱 + 感召式复习 + 拓扑计划 + 先修诊断，验收=复习按相关性而非日历）。mark_wrong 工具（§9）留档待 M7 前另立小项。
+
+## M6 审查修复批（2026-07-23，双子 agent 审查驱动，fix/m6-review）
+
+| 发现 | 修复 |
+|------|------|
+| 🔴 R1 settings.toml 静默丢 2 条 code_roots（tinyrag/onecoupon）——根因：`_ensure_demo_code_root` 与 add/delete_code_root 路由拿**按当前工作区过滤**的 `config.code_roots` 当全量清单重写 `[[code_roots]]`（walkthrough 8b 建删 demo 根时触发，真实配置损失） | 恢复 4 根（onecoupon 路径改 TOML 字面字符串防反斜杠转义）；三处写路径改基于 `config.data` **全量未过滤**清单；config_writer 四函数共用进程内 RLock（E1 并发覆盖）；路由两处误用全局 `SETTINGS_PATH` 改 `_deps.config.path`（**该 bug 让修复批测试一度覆写真实配置**，已复原）；`update_code_roots` docstring 加全量清单警示 + 回归测试×2 |
+| 🔴 B1 进程注册表并发读改写互踩（两请求同时 start → 后写覆盖先写 → 孤儿进程；atomic_write 固定 tmp 名交错 → 「启动失败」但进程已拉起） | `ProcessManager.list/start/stop` 公开入口全程持 `_REG_LOCK`（RLock 可重入，stop_all 嵌套安全）；并发 4 线程 start 回归测试（条目全保留） |
+| 🟡 A1 scaffold_create 失败不可重入（注册代码根失败时 demo 目录已非空 → 同名永久被拒） | 先注册后复制 + 复制失败 rmtree 回滚；flaky 注册回归测试 |
+| 🟡 Y3 单模型 setValue 跨文件 undo 污染（Ctrl+Z 回到上一文件内容再保存 = 数据损坏路径） | 每文件 `createModel` + `setModel` + 旧 model `dispose()`；走查 8b 补 undo 不跨文件断言 |
+| 🟡 Y1/B1 legacy 降级：保存按钮可见但点了无效；create 半途抛错留悬空 editor | openLegacy 隐藏保存钮 + dispose 悬空实例 |
+| 🟡 Y2 monacoReady 缓存 rejected Promise → 一次失败终身降级 | catch 中置 null，下次打开可重试 |
+| 🟡 Y4 process_stop/logs 缺 generic 兜底（unhashable id 冒 500）；code_save 非字符串 root/path AttributeError | 统一 ok/error 契约 + str() 归一；回归测试 |
+| 🟡 B2 logs_tail 全量读入内存（1GB 日志内存尖峰） | 尾部 seek 读最后 256KB；5000 行大日志回归测试 |
+| 🟡 C1/E1 威胁模型未明示 + settings 写并发 | process_start 描述改「命令以当前用户权限执行，cwd 白名单非沙箱」；AGENTS.md 铁律 17 补威胁模型定案与 settings 锁/全量清单规约 |
+
+🔵 留档（不阻塞，已记）：SSE 断连后生成器线程驻留（≤30min 保险丝，单用户有界）；stop 哈希校验与 terminate 间毫秒级 TOCTOU；进程自改 cmdline 误报 stopped；split_cmd 单引号路径不剥；update_code_roots 搬节丢注释（一致性）；code_save content 无大小限制；进程注册表/日志只增不减；模式初始化闪烁与竞态窗口；抽屉隐藏后轮询不止；demo 弹窗 auto-close 极端边界；走查 processes.json 停止条目累积；TOCTOU（resolve→write 窗口）；`_copy_scaffold` 全文本假设（二进制脚手架资源不支持）；`save_via_root rel="."` 错误信息含糊；scaffold_create 返回 abs_path。测试 +7 → **355 全绿**；走查 132 项全绿（+Y3 undo 断言）。
 
 ## M6 实战工坊（2026-07-23 交付）
 
