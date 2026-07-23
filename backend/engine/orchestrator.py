@@ -13,13 +13,14 @@ from ..domain.enums import DayPhase
 from ..domain.models import SessionContext
 from ..engine.quiz_engine import QuizEngine
 from ..engine.stage_machine import StageMachine
+from ..engine.turn_engine import TurnEngine
 from ..services.memory_store import MemoryStore
 from ..services.state_store import StateStore
 from ..services.template_service import TemplateService
 from ..services.config_service import ConfigService
 
 
-class ChatOrchestrator:
+class ChatOrchestrator(TurnEngine):
     def __init__(self, config: ConfigService, stages: StageMachine,
                  quiz: QuizEngine, state_store: StateStore,
                  memory: MemoryStore, templates: TemplateService):
