@@ -68,12 +68,15 @@
   <aside id="code-panel" class="hidden">
     <div class="code-panel-head">
       <span class="code-panel-title">源码学习</span>
+      <button id="code-panel-hide" title="收起代码面板（聊天占满，可用右侧悬浮钮重新打开）">»</button>
     </div>
     <div class="code-toolbar">
       <button id="code-tree-toggle" title="收起/展开目录树">«</button>
       <select id="code-root-select"></select>
       <button id="code-root-add" title="添加项目/文件夹作为代码根">+ 添加项目</button>
       <button id="code-root-del" title="删除当前代码根（仅移除配置，不删文件）">- 删除</button>
+      <button id="demo-new" title="用正规工程脚手架在 demo 目录创建新项目（可构建/启动）">+ 新建 demo</button>
+      <button id="proc-toggle" title="进程面板：启动/停止/日志（demo 启动看效果）">进程</button>
       <div id="code-root-form" class="hidden">
         <input id="code-root-name" placeholder="名称（如 my-project）">
         <input id="code-root-path" placeholder="路径（绝对路径或相对 study-web）">
@@ -87,6 +90,7 @@
       <div class="code-view">
         <div class="code-file-head">
           <span id="code-file-path">← 从左侧目录树选择文件</span>
+          <button id="code-save" class="hidden" title="保存（Ctrl+S）——仅 demo/replica 可写">保存</button>
           <button id="code-wrap-toggle" title="自动换行（长行免横向滚动）">换行: 关</button>
         </div>
         <div class="code-content" id="code-content">
@@ -98,9 +102,48 @@
         </div>
       </div>
     </div>
+    <div id="proc-drawer" class="hidden">
+      <div class="proc-head">
+        <span class="proc-title">进程</span>
+        <span id="proc-status" class="proc-status"></span>
+        <button id="proc-refresh" title="刷新进程列表">↻</button>
+        <button id="proc-close" title="收起进程面板">×</button>
+      </div>
+      <div class="proc-start-row">
+        <select id="proc-cwd"></select>
+        <input id="proc-cmd" placeholder="命令，如 npm start 或 python -m http.server 8080">
+        <button id="proc-start-btn">启动</button>
+      </div>
+      <div id="proc-list"></div>
+      <pre id="proc-log" class="hidden"></pre>
+    </div>
   </aside>
+  <button id="code-panel-show" class="hidden" title="重新打开代码面板">«</button>
 </div>
 <button id="snippet-float" class="hidden">插入提问</button>
+
+<div id="demo-modal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2>新建 demo（实战工坊）</h2>
+      <button id="demo-close">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <label>脚手架类型</label>
+        <select id="demo-type"></select>
+      </div>
+      <div class="form-row">
+        <label>demo 名称</label>
+        <input id="demo-name" placeholder="字母/数字/_/-，如 rag-demo">
+      </div>
+      <div class="modal-foot">
+        <button id="demo-create" class="primary">创建</button>
+        <span id="demo-msg"></span>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div id="llm-modal" class="modal hidden">
   <div class="modal-box">
