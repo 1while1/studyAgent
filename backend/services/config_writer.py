@@ -30,8 +30,13 @@ def update_toml_sections(path: Path, sections: dict[str, list[str]]) -> None:
             out.extend(sections[name])
             replaced.add(name)
             i += 1
+            comments = []
             while i < len(lines) and not re.match(r"^\s*\[", lines[i]):
+                if lines[i].strip().startswith("#"):
+                    comments.append(lines[i])
                 i += 1  # 跳过旧节区正文（保留节区外内容）
+            # 旧节区内的独立注释行保留到新区块末尾（防 UI 保存吞注释）
+            out.extend(comments)
             continue
         out.append(lines[i])
         i += 1

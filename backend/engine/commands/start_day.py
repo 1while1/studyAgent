@@ -216,6 +216,7 @@ class StartDayHandler(CommandHandler):
         session.chat_history = []
         session.archive_summary = ""  # M5b：归档层同步重置（防 archive_upto 越界）
         session.archive_upto = 0
+        session.compress_cooldown = 0
         deps.session_store.save(session)
 
         messages.append(self._render_unit_open(deps, first, plan))

@@ -172,10 +172,12 @@ def chat(body: TextIn):
                     yield sse({"type": "message", "content": msg})
             except Exception:
                 pass
-        # M5b：回合边界压缩（归档字段随 session 落盘；失败静默降级）
-        ContextManager(deps).maybe_compress(session, streamer.ctx_plan)
         deps.session_store.save(session)
         yield sse({"type": "done"})
+        # M5b：压缩挪到 done 之后，不阻塞前端解锁（R2）；客户端断连时本段
+        # 被跳过，压缩顺延到下一回合（archive_upto 未动，数据无损；失败静默）
+        ContextManager(deps).maybe_compress(session, streamer.ctx_plan)
+        deps.session_store.save(session)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 
@@ -232,10 +234,11 @@ def command(body: TextIn):
                 return
             session.chat_history.append(
                 {"role": "assistant", "content": streamer.text})
-            # M5b：回合边界压缩（对称于 chat 路由；失败静默降级）
-            ContextManager(deps).maybe_compress(session, streamer.ctx_plan)
             deps.session_store.save(session)
         yield sse({"type": "done"})
+        # M5b：done 之后压缩（对称于 chat 路由；失败静默降级）
+        ContextManager(deps).maybe_compress(session, streamer.ctx_plan)
+        deps.session_store.save(session)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 
@@ -846,6 +849,7 @@ def reset_session():
     session.chat_history = []
     session.archive_summary = ""  # M5b：归档层同步重置
     session.archive_upto = 0
+    session.compress_cooldown = 0
     _deps.session_store.save(session)
     return {"cleared": n}
 

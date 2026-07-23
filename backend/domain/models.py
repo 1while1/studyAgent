@@ -31,6 +31,7 @@ class SessionContext:
     mode: str = "study"               # 会话级 agent 模式（study|code，M5a 引入；引擎路由依据）
     archive_summary: str = ""         # 归档层：历史压缩摘要（有损缓存，M5b）
     archive_upto: int = 0             # 归档层：摘要覆盖到的 chat_history 下标
+    compress_cooldown: int = 0        # 压缩失败冷却回合数（R2：防失败重试风暴）
     chat_history: list[dict] = field(default_factory=list)  # [{role, content}]
 
     def to_dict(self) -> dict:

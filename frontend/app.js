@@ -1002,13 +1002,28 @@ async function saveLlmConfig(silent) {
       api_key: fs.querySelector(".cfg-key").value.trim(),
     };
   });
+  // 上下文项：非法输入不静默丢弃——跳过该项并在结果中明示（空 = 未改动）
+  const ctxBudgetRaw = document.getElementById("ctx-budget").value.trim();
+  const ctxRatioRaw = document.getElementById("ctx-ratio").value.trim();
+  let ctxInvalid = false;
+  let context_budget_tokens = null, context_trigger_ratio = null;
+  if (ctxBudgetRaw !== "") {
+    const v = parseInt(ctxBudgetRaw, 10);
+    if (Number.isFinite(v) && v > 0) context_budget_tokens = v;
+    else ctxInvalid = true;
+  }
+  if (ctxRatioRaw !== "") {
+    const v = parseFloat(ctxRatioRaw);
+    if (Number.isFinite(v) && v > 0) context_trigger_ratio = v;
+    else ctxInvalid = true;
+  }
   const body = {
     provider: document.getElementById("llm-provider").value,
     fallback_provider: document.getElementById("llm-fallback").value,
     warmup_on_start: document.getElementById("llm-warmup").checked,
     sections,
-    context_budget_tokens: parseInt(document.getElementById("ctx-budget").value, 10) || null,
-    context_trigger_ratio: parseFloat(document.getElementById("ctx-ratio").value) || null,
+    context_budget_tokens,
+    context_trigger_ratio,
   };
   const res = await fetch("/api/llm-config", {
     method: "POST",
@@ -1018,7 +1033,8 @@ async function saveLlmConfig(silent) {
   const r = await res.json();
   const status = document.getElementById("llm-status");
   if (r.ok) {
-    status.textContent = "已保存并热生效（无需重启）。";
+    status.textContent = "已保存并热生效（无需重启）。"
+      + (ctxInvalid ? " 注意：上下文项输入无效，该项未保存。" : "");
     status.className = "ok";
     if (!silent) setTimeout(() => llmModal.classList.add("hidden"), 800);
   } else {

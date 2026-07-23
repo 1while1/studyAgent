@@ -140,9 +140,8 @@ class TestAssemble(Base):
         self.assertLess(len(window), 20)
         self.assertGreaterEqual(len(window), 1)
         self.assertLessEqual(cm._est_messages(window), 1024)
-        # 保留的是最近的轮次
-        self.assertIn("第9轮", window[-2 if window[-1]["role"] == "assistant"
-                                   else -1]["content"] if window else "")
+        # 保留的是最近的轮次（低水位下窗口可能只剩最新一条）
+        self.assertIn("答9", window[-1]["content"])
         self.assertTrue(plan["needs_compression"])
         self.assertEqual(plan["compress_from"], 0)
         self.assertEqual(plan["compress_upto"], 20 - len(window))
@@ -240,6 +239,39 @@ class TestLearnerSummary(Base):
         cm = ContextManager(self._deps())
         self.assertEqual(cm.learner_summary(SessionContext()), "")
 
+    def test_topk_zero_evidence_sinks(self):
+        """R4：零证据 concept（未学单元）沉底并标「未学」，不挤占薄弱项。"""
+        self._write_state()
+        ev = lambda ref: {"type": "quiz_right", "source_ref": ref,
+                          "delta": 0.10, "ts": TODAY}
+        concepts = {"Day2-A": {"title": "单元A", "prerequisites": []},
+                    "Day2-B": {"title": "单元B", "prerequisites": []}}
+        model_concepts = {
+            "Day2-A": {"title": "单元A", "mastery": 0.1,
+                       "evidence": [ev("a")], "last_review_day": 2,
+                       "review_due": [3]},
+            "Day2-B": {"title": "单元B", "mastery": 0.2,
+                       "evidence": [ev("b1"), ev("b2")],
+                       "last_review_day": 2, "review_due": [3]}}
+        for i in range(1, 6):  # 5 个零证据未学单元
+            cid = f"Day3-{chr(64 + i)}"
+            concepts[cid] = {"title": f"未学{i}", "prerequisites": []}
+        (self.docx / "concepts.json").write_text(json.dumps(
+            {"schema_version": 1, "concepts": concepts},
+            ensure_ascii=False), encoding="utf-8")
+        (self.docx / "learner_model.json").write_text(json.dumps(
+            {"schema_version": 1, "concepts": model_concepts},
+            ensure_ascii=False), encoding="utf-8")
+        cm = ContextManager(self._deps())
+        summary = cm.learner_summary(SessionContext(current_unit_id="A"))
+        lines = summary.splitlines()
+        # 有证据的 A(0.1)、B(0.2) 排最前；零证据沉底且标「未学」
+        self.assertIn("Day2-A", lines[0])
+        self.assertIn("Day2-B", lines[1])
+        self.assertLess(summary.index("Day2-B"), summary.index("Day3-A"))
+        self.assertIn("未学", summary)
+        self.assertIn("薄弱", lines[0])
+
 
 class TestValidateCompression(unittest.TestCase):
     def test_missing_id_rejected(self):
@@ -289,6 +321,47 @@ class TestCompress(Base):
         self.assertEqual(session.archive_upto, 0)
         self.assertEqual(len(session.chat_history), 8)  # 不丢数据
         self.assertEqual(len(stub.calls), 2)            # 重试一次后放弃
+        self.assertEqual(session.compress_cooldown, 3)  # R2：失败写冷却
+
+    def test_cooldown_blocks_retry_storm(self):
+        """R2：冷却期内跳过不再烧 token，期满重试。"""
+        stub = StubLLM(outputs=["坏输出一", "坏输出二"])
+        deps = self._deps(llm=MockLLM(), llm_cheap=stub)
+        cm = ContextManager(deps)
+        session = self._session_with_turns()
+        plan = self._plan(session, 4)
+        cm.maybe_compress(session, plan)
+        self.assertEqual(session.compress_cooldown, 3)
+        self.assertEqual(len(stub.calls), 2)
+        for expected in (2, 1, 0):
+            cm.maybe_compress(session, plan)
+            self.assertEqual(session.compress_cooldown, expected)
+        self.assertEqual(len(stub.calls), 2)  # 冷却期内未再调用
+        cm.maybe_compress(session, plan)       # 期满重试（输出耗尽仍失败）
+        self.assertGreater(len(stub.calls), 2)
+        self.assertEqual(session.compress_cooldown, 3)
+
+    def test_hysteresis_after_compress(self):
+        """R2 低水位滞回：压缩成功后候选区低于触发线，下轮不再触发。"""
+        stub = StubLLM(outputs=[VALID_SUMMARY])
+        deps = self._deps(llm=MockLLM(), llm_cheap=stub)
+        cm = ContextManager(deps)
+        session = SessionContext(chat_history=_msgs(10, 300))
+        _, plan = cm.assemble(session, "SYS")
+        self.assertTrue(plan["needs_compression"])
+        cm.maybe_compress(session, plan)
+        self.assertGreater(session.archive_upto, 0)
+        _, plan2 = cm.assemble(session, "SYS")
+        self.assertFalse(plan2["needs_compression"])
+
+    def test_pinned_deduction_shrinks_window(self):
+        """R3：钉住层预扣——大 system 压低可用预算，窗口更窄。"""
+        cm = ContextManager(self._deps())
+        session = SessionContext(chat_history=_msgs(6, 60))
+        msgs_small, _ = cm.assemble(session, "短")
+        msgs_big, plan_big = cm.assemble(session, "钉" * 2000)
+        self.assertLess(len(msgs_big), len(msgs_small))
+        self.assertTrue(plan_big["needs_compression"])
 
     def test_llm_failure_silent(self):
         stub = StubLLM(fail=True)
@@ -310,23 +383,39 @@ class TestCompress(Base):
         self.assertEqual(session.archive_upto, 4)
 
     def test_question_count_carryover(self):
-        """旧摘要 1 条未决 + 新 turns 1 条疑问 → 期望 2 条，不符则拒。"""
+        """旧摘要 1 条未决 + 新 turns 1 条疑问 → 上界 2；超限拒、以内过（R1）。"""
         old = ("【概念】Day2-A\n【未决问题】（共 1 条）\n1. 旧疑问\n【要点】旧")
         session = SessionContext(
             chat_history=[{"role": "user", "content": "新疑问是什么？"},
                           {"role": "assistant", "content": "解答（Day2-A）"}],
             archive_summary=old)
-        # 只声明 1 条 → 拒；声明 2 条 → 过
-        bad = "【概念】Day2-A\n【未决问题】（共 1 条）\n1. 旧疑问\n【要点】x"
+        # 声明 3 条（> 上界 2）→ 拒；声明 2 条 → 过
+        over = ("【概念】Day2-A\n【未决问题】（共 3 条）\n1. a\n2. b\n3. c\n"
+                "【要点】x")
         good = ("【概念】Day2-A\n【未决问题】（共 2 条）\n1. 旧疑问\n"
                 "2. 新疑问\n【要点】x")
-        stub = StubLLM(outputs=[bad, good])
+        stub = StubLLM(outputs=[over, good])
         deps = self._deps(llm=MockLLM(), llm_cheap=stub)
         cm = ContextManager(deps)
         cm.maybe_compress(session, {"needs_compression": True,
                                     "compress_from": 0, "compress_upto": 2})
-        self.assertEqual(len(stub.calls), 2)  # 第一次被拒，重试通过
+        self.assertEqual(len(stub.calls), 2)  # 第一次超限被拒，重试通过
         self.assertEqual(session.archive_summary, good)
+
+    def test_under_count_passes(self):
+        """R1 防增不防减：模型判定疑问已解决（声明 < 上界）→ 通过。"""
+        session = SessionContext(
+            chat_history=[{"role": "user", "content": "这个怎么理解？"},
+                          {"role": "assistant", "content": "已讲透（Day2-A）"}])
+        resolved = ("【概念】Day2-A\n【未决问题】（共 0 条）\n"
+                    "【要点】疑问已解答。")
+        stub = StubLLM(outputs=[resolved])
+        deps = self._deps(llm=MockLLM(), llm_cheap=stub)
+        cm = ContextManager(deps)
+        cm.maybe_compress(session, {"needs_compression": True,
+                                    "compress_from": 0, "compress_upto": 2})
+        self.assertEqual(session.archive_summary, resolved)
+        self.assertEqual(session.archive_upto, 2)
 
     def test_eviction_when_over_limit(self):
         long_valid = ("【概念】Day2-A\n【未决问题】（共 0 条）\n"
@@ -405,6 +494,36 @@ class TestSessionReset(Base):
         self.assertEqual(saved["archive_upto"], 0)
 
 
+class TestChatFailureKeepsArchive(Base):
+    def test_llm_failure_keeps_archive(self):
+        """LLM 失败路径不触碰归档字段（读代码确认安全 → 测试锁定）。"""
+        deps = self._deps(llm=StubLLM(fail=True),
+                          llm_cheap=StubLLM(fail=True))
+        from backend.engine.orchestrator import ChatOrchestrator
+        orch = ChatOrchestrator(self.config, deps.stages, deps.quiz,
+                                deps.state_store, deps.memory, deps.templates)
+        routes.init(deps, orch)
+        deps.session_store.save(SessionContext(
+            chat_history=_msgs(2, 10), archive_summary="旧摘要",
+            archive_upto=3))
+        resp = routes.chat(routes.TextIn(text="你好"))
+
+        async def drive():
+            chunks = []
+            async for chunk in resp.body_iterator:
+                chunks.append(chunk)
+            return chunks
+        text = "".join(asyncio.run(drive()))
+        self.assertIn("error", text)
+        saved = json.loads(
+            (self.tmp / "session.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["archive_summary"], "旧摘要")
+        self.assertEqual(saved["archive_upto"], 3)
+        # 用户消息仍落盘（前后端历史不分叉）
+        self.assertTrue(any(m["role"] == "user" and "你好" in m["content"]
+                            for m in saved["chat_history"]))
+
+
 class TestLlmConfigContext(Base):
     # llm-config 保存会重写全部 provider 节区 → 夹具需预置这些节区
     llm_block = ('[llm]\nprovider = "mock"\n'
@@ -443,6 +562,30 @@ class TestLlmConfigContext(Base):
         self.assertEqual(view["budget_tokens"], 128000)
         # mock 渠道无模型节区 → default 上限 32768 - 4096 预留 = 28672
         self.assertEqual(view["effective_budget"], 28672)
+
+    def test_save_preserves_section_comments(self):
+        """config_writer 保留节区内独立注释行（防 UI 保存吞注释）。"""
+        deps = self._deps()
+        from backend.engine.orchestrator import ChatOrchestrator
+        orch = ChatOrchestrator(self.config, deps.stages, deps.quiz,
+                                deps.state_store, deps.memory, deps.templates)
+        routes.init(deps, orch)
+        text = (self.tmp / "settings.toml").read_text(encoding="utf-8")
+        text = text.replace("max_messages = 200",
+                            "max_messages = 200\n# 模型上限表见下节")
+        (self.tmp / "settings.toml").write_text(text, encoding="utf-8")
+        deps.config.reload()
+        old_path = routes.SETTINGS_PATH
+        routes.SETTINGS_PATH = self.tmp / "settings.toml"
+        try:
+            body = routes.LlmConfigIn(provider="mock",
+                                      context_budget_tokens=128000)
+            result = routes.save_llm_config(body)
+        finally:
+            routes.SETTINGS_PATH = old_path
+        self.assertTrue(result["ok"], result.get("error"))
+        saved = (self.tmp / "settings.toml").read_text(encoding="utf-8")
+        self.assertIn("# 模型上限表见下节", saved)  # 注释未被吞
 
 
 if __name__ == "__main__":

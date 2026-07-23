@@ -1,7 +1,7 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-23（**M5b 上下文+路由交付**——context_manager 三层（钉住/窗口/归档）+ 预算钳制（默认 256K、模型上限表、UI 可调热生效）+ 压缩机械校验 + cheap/strong 两档；268 单测/105 走查全绿）
+> 最近更新：2026-07-23（**M5b 上下文+路由交付 + 审查修复批**——context_manager 三层 + 预算钳制（默认 256K/模型上限表/UI 可调）+ 压缩机械校验（防增不防减）+ 低水位滞回与失败冷却 + cheap/strong 两档；275 单测/105 走查全绿）
 
 ## 当前运行状态
 
@@ -11,7 +11,7 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 268 个全绿；UI 走查 105 项全绿
+- 测试：`python -m unittest discover -s tests` → 275 个全绿；UI 走查 105 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步
@@ -30,6 +30,21 @@ v1 时代 Roadmap（P0-P2）已全部收官（桌面打包暂缓）。演进以 
 - **两档路由**：`[llm] cheap_provider`（空=复用 strong）；Deps + `llm_cheap`（构造点 6 处全改：app.build_deps + 5 处测试夹具）；压缩走 cheap，**cheap 异常 → strong 重试一次**（fallback 链）；v1 cheap 仅用于压缩（qa_capture/end_day 保持 strong）；task_scope("compress") 自动记账
 - **清历史同步重置归档**：start_day 新开始 + /api/session/reset 两处（防 archive_upto 越界；assemble 另有防御钳 0）
 - **测试**：+24（装配等价/收缩/钳制三分支/钉住渲染/机械校验/压缩降级/逐出/50+ 轮不断片/fallback/create_llm_cheap/session reset/llm-config context 保存合并热生效）→ 268 全绿；走查 105 项（+3 上下文窗口区）全绿
+
+## M5b 审查修复批（2026-07-23，双子 agent 审查驱动，fix/m5b-review）
+
+| 发现 | 修复 |
+|------|------|
+| 🔴 R1 expected_q 启发式 + 精确相等校验 → 常态校验失败或伪造未决问题（经旧摘要复利放大） | 校验放宽为**防增不防减**（声明 ≤ 上界即过，允许判定"已解决"，只防伪造）；prompt 契约同步改"宁少勿多" |
+| R2 饱和期每回合都压缩（无滞回）+ 失败重试风暴 + 压缩阻塞 done | 窗口收缩改**低水位**（可用预算×0.5）；失败写 `session.compress_cooldown`（默认 3 回合，清历史两处同步重置）；压缩挪到 **done 事件之后**（断连则顺延下回合，数据无损） |
+| R3 钉住层/归档层不计预算，小上下文模型可被打挂 | 装配时预扣 system+归档摘要 est（可用预算下限 512） |
+| R4 零证据 concept（未学单元）淹没钉住层 top-K | 排序键零证据沉底 + 标「未学」不标「薄弱」 |
+| R5 每条消息一次校准文件读盘（200 条≈400 次/回合） | 校准比率实例级缓存 + est 求和超上限早退 |
+| UI 保存吞节区内注释（点"测试连接"即丢） | `update_toml_sections` 保留被替换节区的独立注释行（挪到新区块末尾） |
+| 前端非法输入静默丢弃却显示成功 | 非法输入跳过该项并在状态行明示"该项未保存"；空 = 未改动 |
+| 🔵 _Q_RE 不容错换行 / _ID_RE 幻象 id（Day2-3）/ int() 非法值 500 | 正则允许空白/id 段须含字母/_safe_int 落默认 |
+
+证伪项（无需修）：LLM 失败路径 archive 污染（snapshot 在压缩前、失败分支先 return）、walkthrough 污染真实 settings（fill 后无保存动作、9c POST 不含 context 键）——已补路由级测试锁定失败纯净性。测试 +7 → **275 全绿**（冷却/滞回/预扣/零证据沉底/放宽校验/失败纯净/注释保留）。
 
 ## M5a 工具骨架（2026-07-23 交付，纯重构）
 
