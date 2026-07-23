@@ -361,6 +361,11 @@ def add_code_root(body: dict):
     raw_path = (body or {}).get("path", "").strip()
     if not name or not raw_path:
         return {"ok": False, "error": "name 和 path 不能为空"}
+    # C3：名称白名单（XSS 防线——name 会进 settings 并回显到前端 DOM）
+    import re as _re
+    if not _re.fullmatch(r"[A-Za-z0-9_-]{1,40}", name):
+        return {"ok": False,
+                "error": "项目根名称仅限字母/数字/_/-（≤40 字符）"}
     # ⚠️ 写 settings 必须基于全量未过滤根清单（M6 审查修复 R1），
     # 过滤后的 config.code_roots 只用于"当前工作区是否重名"判断
     if any(r["name"] == name for r in _deps.config.code_roots):
@@ -1056,7 +1061,7 @@ def set_session_mode(body: dict):
 # ---------- 模型配置页面 ----------
 
 from ..llm.factory import _BUILDERS, create_llm, create_llm_cheap
-from ..services.config_writer import (mask_key, update_env_file,
+from ..services.config_writer import (_esc, mask_key, update_env_file,
                                       update_toml_sections)
 from ..services.config_service import ENV_PATH, SETTINGS_PATH
 
@@ -1125,22 +1130,22 @@ class LlmConfigIn(BaseModel):
 
 def _toml_section_lines(name: str, params: dict, meta: dict) -> list[str]:
     lines = [f"[llm.{name}]"]
-    lines.append(f'model = "{params.get("model", "")}"')
+    lines.append(f'model = "{_esc(params.get("model", ""))}"')
     lines.append(f"max_tokens = {int(params.get('max_tokens', 4096))}")
     lines.append(f"temperature = {float(params.get('temperature', 0.7))}")
     if params.get("base_url"):
-        lines.append(f'base_url = "{params["base_url"]}"')
-    lines.append(f'api_key_env = "{meta["api_key_env"]}"')
+        lines.append(f'base_url = "{_esc(params["base_url"])}"')
+    lines.append(f'api_key_env = "{_esc(meta["api_key_env"])}"')
     return lines
 
 
 def _toml_value(v) -> str:
-    """TOML 标量渲染：数字裸写，字符串加引号（[context] 节区重写用）。"""
+    """TOML 标量渲染：数字裸写，字符串加引号并转义（防写坏 settings，C3）。"""
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, (int, float)):
         return str(v)
-    return f'"{v}"'
+    return f'"{_esc(v)}"'
 
 
 @router.post("/api/llm-config")
@@ -1150,16 +1155,17 @@ def save_llm_config(body: LlmConfigIn):
     if body.fallback_provider and body.fallback_provider not in _BUILDERS:
         return {"ok": False, "error": f"未知 fallback provider: {body.fallback_provider}"}
 
-    # 1. 写 settings.toml 的三个 llm 节区
-    llm_lines = ["[llm]", f'provider = "{body.provider}"']
+    # 1. 写 settings.toml 的 llm 节区（仅提交的 provider——未提交的保持
+    # 文件原文，防把 env 解析值/meta 固化进 TOML，C3；字符串统一 _esc 转义）
+    llm_lines = ["[llm]", f'provider = "{_esc(body.provider)}"']
     if body.fallback_provider:
-        llm_lines.append(f'fallback_provider = "{body.fallback_provider}"')
+        llm_lines.append(f'fallback_provider = "{_esc(body.fallback_provider)}"')
     llm_lines.append(f"warmup_on_start = {'true' if body.warmup_on_start else 'false'}")
     sections = {"llm": llm_lines}
-    for name, meta in _PROVIDER_META.items():
-        if name == "mock":
+    for name, params in body.sections.items():
+        meta = _PROVIDER_META.get(name)
+        if meta is None or name == "mock":
             continue
-        params = body.sections.get(name) or _section_view(name)
         sections[f"llm.{name}"] = _toml_section_lines(name, params, meta)
     # [context] 节区（M5b）：先读现有键合并再整体重写，防丢 pin_top_k 等键
     if (body.context_budget_tokens is not None
@@ -1177,7 +1183,7 @@ def save_llm_config(body: LlmConfigIn):
         sections["context"] = ["[context]"] + [
             f"{k} = {_toml_value(existing[k])}" for k in ordered]
     try:
-        update_toml_sections(SETTINGS_PATH, sections)
+        update_toml_sections(_deps.config.path, sections)  # C3：实例路径（可注入）
     except Exception as e:
         return {"ok": False, "error": f"写入 settings.toml 失败: {e}"}
 

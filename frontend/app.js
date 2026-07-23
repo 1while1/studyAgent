@@ -147,7 +147,8 @@ function addUserMessage(text) {
 }
 
 function escapeHtml(s) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;").replace(/'/g, "&#39;");  // 属性上下文安全（C3）
 }
 
 // AI 读文件 tool-use 指示 chip（点击跳转代码浏览器定位行）
@@ -681,8 +682,11 @@ async function loadCodeRoots(keepSelection) {
   const sel = document.getElementById("code-root-select");
   sel.innerHTML = "";
   for (const r of roots) {
-    sel.insertAdjacentHTML("beforeend",
-      `<option value="${r.name}" ${r.exists ? "" : "disabled"}>${r.name}${r.exists ? "" : "（目录不存在）"}</option>`);
+    const opt = document.createElement("option");  // C3：DOM 构建防注入（原 insertAdjacentHTML 拼接）
+    opt.value = r.name;
+    opt.textContent = r.name + (r.exists ? "" : "（目录不存在）");
+    if (!r.exists) opt.disabled = true;
+    sel.appendChild(opt);
   }
   if (roots.length) {
     if (keepSelection && codeState.root) sel.value = codeState.root;
@@ -707,7 +711,8 @@ document.getElementById("code-root-select").onchange = (e) => {
 async function loadTreeLevel(root, rel, container, replace) {
   const res = await fetch(`/api/code/tree?root=${encodeURIComponent(root)}&path=${encodeURIComponent(rel)}`);
   const r = await res.json();
-  if (!r.ok) { container.innerHTML = `<div class="code-hint">${r.error}</div>`; return; }
+  if (!r.ok) { container.textContent = ""; const d = document.createElement("div");
+    d.className = "code-hint"; d.textContent = r.error; container.appendChild(d); return; }
   if (replace) container.innerHTML = "";
   for (const entry of r.entries) {
     const row = document.createElement("div");

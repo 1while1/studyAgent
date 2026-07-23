@@ -65,6 +65,12 @@ class ArchFixBase(unittest.TestCase):
             f'docx_dir = "{self.docx.as_posix()}"\n'
             f'project_dir = "{self.tmp.as_posix()}"\n'
             f'session_path = "{(self.tmp / "s.json").as_posix()}"\n'
+            '[llm]\nprovider = "mock"\nfallback_provider = ""\n'
+            'warmup_on_start = false\n'
+            '[llm.openai_compat]\nmodel = "m1"\nmax_tokens = 4096\n'
+            'temperature = 0.7\nbase_url = "https://a"\napi_key_env = "K1"\n'
+            '[llm.deepseek_official]\nmodel = "m2"\nmax_tokens = 4096\n'
+            'temperature = 0.7\nbase_url = "https://b"\napi_key_env = "K2"\n'
             '[commands."跳转天数"]\nhandler = "jump_day"\nsop_card = ""\n'
             '[commands."超前学习"]\nhandler = "next_content"\n'
             'mode = "ahead"\nsop_card = ""\n',
@@ -302,6 +308,64 @@ class TestSessionLocks(ArchFixBase):
         self.assertEqual(saved.interview_cid, "")
         self.assertEqual(saved.mode, "code")
 
+
+
+class TestSecurityFixes(ArchFixBase):
+    """C3：XSS 防线（名称白名单/转义）+ TOML 写入转义 + llm-config 保存语义。"""
+
+    def _routes(self):
+        from backend.api import routes
+        from backend.engine.orchestrator import ChatOrchestrator
+        orch = ChatOrchestrator(self.config, self.deps.stages,
+                                self.deps.quiz, self.deps.state_store,
+                                self.deps.memory, self.deps.templates)
+        routes.init(self.deps, orch)
+        return routes
+
+    def test_add_code_root_name_whitelist(self):
+        routes = self._routes()
+        proj = self.tmp / "projA"
+        proj.mkdir(exist_ok=True)
+        r = routes.add_code_root({"name": '"><img src=x onerror=alert(1)>',
+                                  "path": str(proj)})
+        self.assertFalse(r["ok"])
+        self.assertIn("名称", r["error"])
+        r = routes.add_code_root({"name": "proj-a_1", "path": str(proj)})
+        self.assertTrue(r["ok"], r.get("error"))
+
+    def test_llm_config_toml_escaping_roundtrip(self):
+        import tomllib
+        routes = self._routes()
+        weird = "we\"ird" + chr(92) + "x" + chr(10) + "y"
+        body = routes.LlmConfigIn(
+            provider="mock", fallback_provider="",  # mock 重建无需 key（热生效无关本测试目标）
+            warmup_on_start=True,
+            sections={"openai_compat": {
+                "model": weird, "base_url": "https://a",
+                "max_tokens": 100, "temperature": 0.5}})
+        r = routes.save_llm_config(body)
+        self.assertTrue(r["ok"], r.get("error"))
+        with open(self.tmp / "settings.toml", "rb") as f:
+            data = tomllib.load(f)  # 写坏则此行即抛
+        self.assertEqual(
+            data["llm"]["openai_compat"]["model"], weird)  # 值往返一致
+
+    def test_llm_config_partial_save_preserves_unsubmitted(self):
+        routes = self._routes()
+        before = (self.tmp / "settings.toml").read_text(encoding="utf-8")
+        ds_before = before[before.index("[llm.deepseek_official]"):]
+        ds_before = ds_before[:ds_before.index("[commands.")]
+        body = routes.LlmConfigIn(
+            provider="mock", fallback_provider="", warmup_on_start=False,
+            sections={"openai_compat": {
+                "model": "changed", "base_url": "https://a",
+                "max_tokens": 4096, "temperature": 0.7}})
+        r = routes.save_llm_config(body)
+        self.assertTrue(r["ok"], r.get("error"))
+        after = (self.tmp / "settings.toml").read_text(encoding="utf-8")
+        ds_after = after[after.index("[llm.deepseek_official]"):]
+        ds_after = ds_after[:ds_after.index("[commands.")]
+        self.assertEqual(ds_before, ds_after)  # 未提交节区逐字节保留
 
 
 if __name__ == "__main__":
