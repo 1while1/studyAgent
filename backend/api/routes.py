@@ -633,6 +633,12 @@ def learner_model():
         u.get("rating") for d in state.get("days", {}).values()
         for u in d.get("units", []))
     model["has_draft"] = svc.draft_path.exists()
+    try:
+        # M7 拓扑计划：有证据未达标 concept 的拓扑补弱序（战术板排序键）
+        model["remediation_order"] = svc.remediation_order(
+            state.get("current_day", 1))
+    except Exception:
+        model["remediation_order"] = []  # 图谱异常静默降级（不阻断面板）
     return model
 
 

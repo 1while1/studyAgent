@@ -24,6 +24,18 @@ class MockLLM(LLMClient):
     def _canned(self, messages: list[Message]) -> str:
         system = messages[0]["content"] if messages else ""
         last_user = messages[-1]["content"] if messages else ""
+        # 先修诊断（M7）：出题（单 user 消息带出题卡）与评分（system 含诊断评分指令）
+        if "先修诊断出题卡" in system:
+            cids = re.findall(r"- (Day\d+-[^：\n]+)：", system)
+            return "\n\n".join(f"【{c}】{c} 的核心机制一句话说明？"
+                               for c in cids)
+        if "你在为「先修诊断」评分" in system:
+            cids = []
+            for c in re.findall(r"【(Day\d+-[^】]+)】", system):
+                if c not in cids:
+                    cids.append(c)
+            return "逐题点评：回答触及核心。\n" + "\n".join(
+                f"{c}：【评分：4.0】" for c in cids)
         # 模拟面试（M5c）：按策略卡标记分支
         if "口述环节" in system and "模拟面试" in system:
             return ("【Mock 口述要求】请按「结构 → 概念准确 → 源码定位」"
