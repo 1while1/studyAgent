@@ -343,9 +343,14 @@ def main():
             ".mastery-row[data-band='high']").count() >= 1)
         page.locator(".mastery-row").first.click()
         page.wait_for_timeout(600)
-        check("详情含证据构成", page.locator("#mastery-detail h3").is_visible() and
-              "证据构成" in page.locator("#mastery-detail").text_content())
-        check("详情含建议行动", page.locator(".md-advice").is_visible())
+        check("详情手风琴展开", page.locator(".mastery-detail-inline").is_visible() and
+              "证据构成" in page.locator(".mastery-detail-inline").text_content())
+        check("详情含建议行动",
+              page.locator(".mastery-detail-inline .md-advice").is_visible())
+        # 再点一次收起
+        page.locator(".mastery-row").first.click()
+        page.wait_for_timeout(400)
+        check("手风琴收起", page.locator(".mastery-detail-inline").count() == 0)
         page.locator("#mastery-close").click()
         page.wait_for_timeout(300)
 

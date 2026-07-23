@@ -1348,6 +1348,9 @@ function renderUsageAuth(a) {
 const masteryPage = document.getElementById("mastery-page");
 document.getElementById("open-learner").onclick = openLearner;
 document.getElementById("mastery-close").onclick = () => masteryPage.classList.add("hidden");
+masteryPage.addEventListener("click", (e) => {
+  if (e.target === masteryPage) masteryPage.classList.add("hidden");
+});
 
 // evidence 类型 → 人性化中文名（机器术语不进 UI）
 const EV_TYPE_NAMES = {
@@ -1369,9 +1372,7 @@ function masteryBand(c) {
 async function openLearner() {
   masteryPage.classList.remove("hidden");
   const list = document.getElementById("mastery-list");
-  const detail = document.getElementById("mastery-detail");
   list.innerHTML = "";
-  detail.innerHTML = '<div class="mastery-empty-hint">← 点击左侧知识点查看证据构成与建议行动</div>';
   const mbar = document.getElementById("learner-migrate");
   mbar.classList.add("hidden");
   const model = await (await fetch("/api/learner/model")).json();
@@ -1450,7 +1451,7 @@ function masteryRow(c) {
   if (c.due) {
     const b = document.createElement("span");
     b.className = "mr-badge due";
-    b.textContent = "⏰";
+    b.innerHTML = '<svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="13" r="7"/><path d="M12 10v3l2 2"/><path d="m5 3-2 2M19 3l2 2"/></svg>';
     b.title = "已到复习窗口";
     top.appendChild(b);
   }
@@ -1465,12 +1466,21 @@ function masteryRow(c) {
   fill.style.width = Math.round(c.mastery * 100) + "%";
   barWrap.appendChild(fill);
   row.append(top, barWrap);
-  row.onclick = () => {
-    document.querySelectorAll(".mastery-row.active").forEach(r => r.classList.remove("active"));
-    row.classList.add("active");
-    showConceptDetail(c);
-  };
+  row.onclick = () => toggleMasteryDetail(row, c);
   return row;
+}
+
+// 手风琴：行内展开详情（同时只展开一条）
+function toggleMasteryDetail(row, c) {
+  const wasOpen = row.classList.contains("open");
+  document.querySelectorAll(".mastery-detail-inline").forEach(d => d.remove());
+  document.querySelectorAll(".mastery-row.open").forEach(r => r.classList.remove("open"));
+  if (wasOpen) return;
+  row.classList.add("open");
+  const box = document.createElement("div");
+  box.className = "mastery-detail-inline";
+  showConceptDetail(c, box);
+  row.after(box);
 }
 
 function masteryAdvice(c) {
@@ -1485,8 +1495,7 @@ function masteryAdvice(c) {
   return "✅ 状态良好，按节奏推进即可。";
 }
 
-function showConceptDetail(c) {
-  const detail = document.getElementById("mastery-detail");
+function showConceptDetail(c, detail) {
   detail.innerHTML = "";
   const band = masteryBand(c);
   const h = document.createElement("h3");
