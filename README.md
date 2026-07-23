@@ -94,6 +94,13 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 - **AI 读文件 tool-use**：导师讲解中可输出 `[READ:路径:L起-止]` 主动读取真实代码（后端截获注入后续写，单回复限 3 次），前端显示 📖 chip 可点击跳转定位——讲解基于真实代码，杜绝虚构
 - **Mermaid 图**：AI 回答中的 ```mermaid 代码块渲染为架构图/时序图，主题随模式（源码学习=深色）
 
+**上下文三层控制（M5b）**
+- **钉住层**：system prompt + 学习者模型摘要（确定性渲染 top-K 薄弱 + 当前单元，永不压缩）
+- **窗口层**：按 token 预算伸缩（est × 渠道校准比率），条数硬兜底 200
+- **归档层**：超长历史在回合边界由 cheap 档 LLM 压缩成结构化摘要（概念 id/未决问题机械校验，失败重试一次再不齐原样保留不丢数据）；摘要独立 system 消息注入，上限 4000 字符前部逐出
+- **预算用户可调**：模型配置页「上下文窗口」区（默认 256K），**生效预算 = min(用户预算, 模型上限 − 输出预留)**；模型上限表 `[model_context]` 驱动不同模型差异
+- **cheap/strong 两档路由**：压缩走 cheap 档（`[llm] cheap_provider` 可配，空 = 复用 strong），cheap 失败自动 strong 重试一次
+
 **模型管理**
 - 「模型配置」页面：主/备渠道切换、模型 ID、Base URL、API Key（掩码显示）、测试连接、保存热生效
 - 主备自动 fallback：主渠道失败自动切备用（中途断流会标注重新生成）
@@ -104,8 +111,8 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 
 ```bash
 cd study-web
-python -m unittest discover -s tests    # 211 个后端测试，stdlib，无需真实 LLM
-python scripts/ui_walkthrough.py        # UI 真实点击走查 102 项（需服务运行中）
+python -m unittest discover -s tests    # 268 个后端测试，stdlib，无需真实 LLM
+python scripts/ui_walkthrough.py        # UI 真实点击走查 105 项（需服务运行中）
 python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name]
 ```
 
@@ -131,6 +138,7 @@ python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name]
 api/        FastAPI 路由 + SSE（chat/command/state/workspaces/code/llm-config 等）
 engine/     stage_machine（配置驱动）/ orchestrator（聊天阶段驱动）/ quiz_engine（评分提取）
             / turn_engine（双引擎接口 + mode/flag 路由）/ tool_registry（工具注册表+权限四级）
+            / context_manager（上下文三层 + 预算钳制 + 压缩机械校验）
             / commands（每 SOP 卡一个 handler，互不 import）/ hooks（注册式钩子链）
 services/   state_store / memory_store / study_plan / template_service（SOP 锚点解析）
             / backup_service（规则 14 落盘编排）/ config_service / config_writer

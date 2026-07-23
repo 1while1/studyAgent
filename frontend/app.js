@@ -954,6 +954,22 @@ async function openLlmConfig() {
       </fieldset>`);
   }
   document.getElementById("llm-status").textContent = "";
+  // 上下文窗口区（M5b）：预算/触发比例可调，模型上限与生效预算只读预览
+  const c = cfg.context || {};
+  const budgetInput = document.getElementById("ctx-budget");
+  const ratioInput = document.getElementById("ctx-ratio");
+  budgetInput.value = c.budget_tokens ?? 256000;
+  ratioInput.value = c.trigger_ratio ?? 0.8;
+  const updateCtxPreview = () => {
+    const b = parseInt(budgetInput.value, 10) || 0;
+    document.getElementById("ctx-budget-k").textContent = `≈${Math.round(b / 1024)}K`;
+    const naive = Math.max(1024, Math.min(b, c.model_limit ?? 32768));
+    document.getElementById("ctx-preview").textContent =
+      `当前模型 ${c.model || "?"} 上下文上限 ${c.model_limit ?? "?"} tokens；` +
+      `预计生效预算 ≈${naive}（未计输出预留，以保存后为准）；当前生效 ${c.effective_budget ?? "?"}`;
+  };
+  budgetInput.oninput = updateCtxPreview;
+  updateCtxPreview();
   llmModal.classList.remove("hidden");
 }
 
@@ -991,6 +1007,8 @@ async function saveLlmConfig(silent) {
     fallback_provider: document.getElementById("llm-fallback").value,
     warmup_on_start: document.getElementById("llm-warmup").checked,
     sections,
+    context_budget_tokens: parseInt(document.getElementById("ctx-budget").value, 10) || null,
+    context_trigger_ratio: parseFloat(document.getElementById("ctx-ratio").value) || null,
   };
   const res = await fetch("/api/llm-config", {
     method: "POST",

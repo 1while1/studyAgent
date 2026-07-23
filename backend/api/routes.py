@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..engine.commands.base import CommandHandler, Deps
+from ..engine.context_manager import ContextManager
 from ..engine.orchestrator import ChatOrchestrator
 from ..engine.turn_engine import (AGENT_COMMAND_HINT, PlannerEngine,
                                   build_turn_engine)
@@ -47,6 +48,7 @@ class LLMStreamer:
     def __init__(self, deps: Deps):
         self._deps = deps
         self.full: list[str] = []
+        self.ctx_plan: dict = {}  # M5b：assemble 产出的压缩计划（chat/command 回合边界用）
 
     @property
     def text(self) -> str:
@@ -97,11 +99,12 @@ class LLMStreamer:
     def stream(self, session, instruction: str, sop_card: str = ""):
         card_text = (CommandHandler.read_sop_card(self._deps, sop_card)
                      if sop_card else "")
+        # M5b：钉住层（system + 学习者模型摘要）+ 窗口层（预算伸缩）装配
+        cm = ContextManager(self._deps)
         system = self._deps.prompts.build(
-            session, sop_card=card_text, extra_instruction=instruction)
-        max_turns = self._deps.config.get("chat_history_max_turns", 20)
-        history = session.chat_history[-max_turns * 2:]
-        messages = [{"role": "system", "content": system}] + history
+            session, sop_card=card_text, extra_instruction=instruction,
+            learner_summary=cm.learner_summary(session))
+        messages, self.ctx_plan = cm.assemble(session, system)
         prefetch, event = self._prefetch(session)
         if prefetch:
             # 插到最后一条用户消息之前：教材上下文在前，用户问题在后
@@ -169,6 +172,8 @@ def chat(body: TextIn):
                     yield sse({"type": "message", "content": msg})
             except Exception:
                 pass
+        # M5b：回合边界压缩（归档字段随 session 落盘；失败静默降级）
+        ContextManager(deps).maybe_compress(session, streamer.ctx_plan)
         deps.session_store.save(session)
         yield sse({"type": "done"})
 
@@ -227,6 +232,8 @@ def command(body: TextIn):
                 return
             session.chat_history.append(
                 {"role": "assistant", "content": streamer.text})
+            # M5b：回合边界压缩（对称于 chat 路由；失败静默降级）
+            ContextManager(deps).maybe_compress(session, streamer.ctx_plan)
             deps.session_store.save(session)
         yield sse({"type": "done"})
 
@@ -837,13 +844,15 @@ def reset_session():
     session = _deps.session_store.load()
     n = len(session.chat_history)
     session.chat_history = []
+    session.archive_summary = ""  # M5b：归档层同步重置
+    session.archive_upto = 0
     _deps.session_store.save(session)
     return {"cleared": n}
 
 
 # ---------- 模型配置页面 ----------
 
-from ..llm.factory import _BUILDERS, create_llm
+from ..llm.factory import _BUILDERS, create_llm, create_llm_cheap
 from ..services.config_writer import (mask_key, update_env_file,
                                       update_toml_sections)
 from ..services.config_service import ENV_PATH, SETTINGS_PATH
@@ -871,6 +880,23 @@ def _section_view(section: str) -> dict:
             "has_key": bool(api_key)}
 
 
+def _context_view() -> dict:
+    """上下文窗口视图（M5b）：预算/触发比例 + 模型上限与生效预算预览。"""
+    from ..engine.context_manager import effective_budget
+    cfg = _deps.config
+    ctx = cfg.data.get("context", {})
+    llm_cfg = cfg.llm_config
+    provider = llm_cfg.get("provider", "")
+    model = llm_cfg.get(provider, {}).get("model", "")
+    limits = cfg.data.get("model_context", {})
+    return {"budget_tokens": int(ctx.get("budget_tokens", 256000)),
+            "trigger_ratio": float(ctx.get("trigger_ratio", 0.8)),
+            "model": model,
+            "model_limit": int(limits.get(model,
+                                          limits.get("default", 32768))),
+            "effective_budget": effective_budget(cfg)}
+
+
 @router.get("/api/llm-config")
 def get_llm_config():
     cfg = _deps.config
@@ -881,6 +907,7 @@ def get_llm_config():
         "providers": [{"name": n, "label": _PROVIDER_META.get(n, {}).get("label", n)}
                       for n in _BUILDERS],
         "sections": {s: _section_view(s) for s in _PROVIDER_META if s != "mock"},
+        "context": _context_view(),
     }
 
 
@@ -889,6 +916,8 @@ class LlmConfigIn(BaseModel):
     fallback_provider: str = ""
     warmup_on_start: bool = True
     sections: dict[str, dict] = {}
+    context_budget_tokens: int | None = None
+    context_trigger_ratio: float | None = None
 
 
 def _toml_section_lines(name: str, params: dict, meta: dict) -> list[str]:
@@ -900,6 +929,15 @@ def _toml_section_lines(name: str, params: dict, meta: dict) -> list[str]:
         lines.append(f'base_url = "{params["base_url"]}"')
     lines.append(f'api_key_env = "{meta["api_key_env"]}"')
     return lines
+
+
+def _toml_value(v) -> str:
+    """TOML 标量渲染：数字裸写，字符串加引号（[context] 节区重写用）。"""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return str(v)
+    return f'"{v}"'
 
 
 @router.post("/api/llm-config")
@@ -920,6 +958,21 @@ def save_llm_config(body: LlmConfigIn):
             continue
         params = body.sections.get(name) or _section_view(name)
         sections[f"llm.{name}"] = _toml_section_lines(name, params, meta)
+    # [context] 节区（M5b）：先读现有键合并再整体重写，防丢 pin_top_k 等键
+    if (body.context_budget_tokens is not None
+            or body.context_trigger_ratio is not None):
+        existing = dict(_deps.config.data.get("context", {}))
+        if body.context_budget_tokens is not None:
+            existing["budget_tokens"] = max(1024, int(body.context_budget_tokens))
+        if body.context_trigger_ratio is not None:
+            r = float(body.context_trigger_ratio)
+            existing["trigger_ratio"] = min(0.95, max(0.5, r))
+        ordered = [k for k in ("budget_tokens", "trigger_ratio", "pin_top_k",
+                               "archive_max_chars", "max_messages")
+                   if k in existing]
+        ordered += [k for k in existing if k not in ordered]
+        sections["context"] = ["[context]"] + [
+            f"{k} = {_toml_value(existing[k])}" for k in ordered]
     try:
         update_toml_sections(SETTINGS_PATH, sections)
     except Exception as e:
@@ -940,6 +993,7 @@ def save_llm_config(body: LlmConfigIn):
     # 3. 热生效：重载配置 + 重建 LLM 客户端
     _deps.config.reload()
     _deps.llm = create_llm(_deps.config)
+    _deps.llm_cheap = create_llm_cheap(_deps.config) or _deps.llm
     _deps.quiz.set_llm(_deps.llm)
     return {"ok": True, "config": get_llm_config()}
 

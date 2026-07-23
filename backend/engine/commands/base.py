@@ -35,6 +35,7 @@ class Deps:
     backup: BackupService
     stages: StageMachine
     llm: LLMClient
+    llm_cheap: LLMClient      # cheap 档（M5b：v1 仅上下文压缩用；无独立配置时 = llm）
     quiz: QuizEngine
     prompts: PromptBuilder
     hooks: HookPipeline

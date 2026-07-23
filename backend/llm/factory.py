@@ -46,3 +46,15 @@ def create_llm(config: ConfigService, **kwargs) -> LLMClient:
             return primary
         return FallbackClient(primary, fallback, fallback_name)
     return primary
+
+
+def create_llm_cheap(config: ConfigService) -> LLMClient | None:
+    """cheap 档客户端（M5b：上下文压缩用）。`[llm] cheap_provider` 空 → None
+    （调用方回退复用 strong）；构建异常静默 None。"""
+    name = config.llm_config.get("cheap_provider", "")
+    if not name:
+        return None
+    try:
+        return _build(name, config)
+    except Exception:
+        return None

@@ -122,6 +122,15 @@
         <input id="llm-warmup" type="checkbox">
       </div>
       <div id="provider-sections"></div>
+      <fieldset id="context-section">
+        <legend>上下文窗口</legend>
+        <div class="form-row"><label>上下文预算</label>
+          <input id="ctx-budget" type="number" min="1024" step="1024">
+          <span class="ctx-hint" id="ctx-budget-k"></span></div>
+        <div class="form-row"><label>压缩触发比例</label>
+          <input id="ctx-ratio" type="number" min="0.5" max="0.95" step="0.05"></div>
+        <div class="ctx-preview" id="ctx-preview"></div>
+      </fieldset>
       <div id="llm-status"></div>
     </div>
     <div class="modal-foot">

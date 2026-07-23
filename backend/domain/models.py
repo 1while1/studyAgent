@@ -29,6 +29,8 @@ class SessionContext:
     review_msg_start: int = 0         # 复盘开始的 chat_history 下标（拷打反喂转录切片）
     pending_qa_capture: bool = False  # 复盘评分落盘后待执行的拷打反喂标记
     mode: str = "study"               # 会话级 agent 模式（study|code，M5a 引入；引擎路由依据）
+    archive_summary: str = ""         # 归档层：历史压缩摘要（有损缓存，M5b）
+    archive_upto: int = 0             # 归档层：摘要覆盖到的 chat_history 下标
     chat_history: list[dict] = field(default_factory=list)  # [{role, content}]
 
     def to_dict(self) -> dict:

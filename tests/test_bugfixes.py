@@ -74,6 +74,7 @@ class TestRestartAndAlias(unittest.TestCase):
             config=cfg, state_store=state_store, memory=memory,
             study_plan=StudyPlanStore(cfg), templates=TemplateService(cfg),
             backup=BackupService(cfg), stages=stages, llm=llm,
+            llm_cheap=llm,
             quiz=QuizEngine(cfg, llm),
             prompts=PromptBuilder(cfg, state_store, memory, stages),
             hooks=HookPipeline(),

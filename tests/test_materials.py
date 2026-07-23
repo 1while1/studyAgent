@@ -329,6 +329,7 @@ class TestPrefetchOrchestration(unittest.TestCase):
             config=cfg, state_store=StateStore(cfg), memory=MemoryStore(cfg),
             study_plan=StudyPlanStore(cfg), templates=TemplateService(cfg),
             backup=BackupService(cfg), stages=StageMachine(cfg), llm=llm,
+            llm_cheap=llm,
             quiz=QuizEngine(cfg, llm),
             prompts=PromptBuilder(cfg, StateStore(cfg), MemoryStore(cfg),
                                   StageMachine(cfg)),

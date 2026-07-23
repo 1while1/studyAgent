@@ -43,7 +43,7 @@ class PromptBuilder:
         self._materials = materials  # MaterialsService | None（None 跳过资料清单）
 
     def build(self, session: SessionContext, sop_card: str = "",
-              extra_instruction: str = "") -> str:
+              extra_instruction: str = "", learner_summary: str = "") -> str:
         cfg = self._config
         roots = "、".join(r["name"] for r in cfg.code_roots) or "（未配置）"
         example_root = cfg.code_roots[0]["name"] if cfg.code_roots else "项目根"
@@ -96,6 +96,9 @@ class PromptBuilder:
             state = self._state_store.load()
             parts += ["## 当前学习状态",
                       _state_summary(state, state["current_day"], self._memory), ""]
+        if learner_summary:
+            parts += ["## 学习者模型摘要（薄弱优先，供个性化讲解参考）",
+                      learner_summary, ""]
         if session.current_stage and self._stages.exists(session.current_stage):
             parts += [
                 "## 当前阶段指令（最高优先级）",
