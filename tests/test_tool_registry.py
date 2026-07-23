@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.engine.tool_registry import (LLM_LEVEL, READONLY, SANDBOX, WRITE,
                                           ToolContext, ToolRegistry, ToolSpec,
                                           build_default_registry)
+from backend.domain.models import SessionContext
 from backend.services import code_runner
 from backend.services.code_browser import CodeBrowser
 from backend.services.config_service import ConfigService
@@ -37,6 +38,11 @@ _EXPECTED = {
     "persist_state": WRITE,
     "quiz_generate": LLM_LEVEL,
     "retell_assess": LLM_LEVEL,
+    "scaffold_create": WRITE,     # M6 实战工坊
+    "edit_file": WRITE,           # M6
+    "process_start": SANDBOX,     # M6
+    "process_stop": SANDBOX,      # M6
+    "process_logs": SANDBOX,      # M6
 }
 
 
@@ -53,11 +59,16 @@ class TestToolRegistry(unittest.TestCase):
             'active_workspace = "t"\n'
             'status_enum = ["not_started", "in_progress", "completed"]\n'
             '[evidence_delta]\nquiz_right = 0.10\nsync_mastered = 0.10\n'
+            '[[stages]]\nname = "teaching"\nnext = ""\n'
+            'sop_step = "步骤一"\ninstruction = "讲"\n'
             f'[[code_roots]]\nname = "projA"\npath = "{proj.as_posix()}"\n'
             '[[workspaces]]\nslug = "t"\n'
             f'docx_dir = "{self.docx.as_posix()}"\n'
             f'project_dir = "{self.tmp.as_posix()}"\n'
-            f'session_path = "{(self.tmp / "session.json").as_posix()}"\n',
+            f'session_path = "{(self.tmp / "session.json").as_posix()}"\n'
+            # M6：demo_dir 必须指向 tmp（默认会落到真实 study-web/workspaces/）
+            f'demo_dir = "{(self.tmp / "demo").as_posix()}"\n'
+            'replica_name = ""\n',
             encoding="utf-8")
         self.config = ConfigService(settings)
         (self.docx / "StudyState.json").write_text(json.dumps({
@@ -293,6 +304,97 @@ class TestToolRegistry(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertIn("无法确定当前天数", result.error)
         self.assertFalse((self.docx / "learner_model.json").exists())
+
+    # ---- M6 实战工坊工具 ----
+
+    def _m6_ctx(self):
+        from backend.services.process_mgr import ProcessManager
+        from backend.services.workshop_service import WorkshopService
+        return ToolContext(config=self.config,
+                           workshop=WorkshopService(self.config),
+                           process_mgr=ProcessManager(self.config))
+
+    def test_scaffold_create_tool(self):
+        result = self.registry.invoke(
+            "scaffold_create", {"type": "npm", "name": "tool-demo"},
+            self._m6_ctx())
+        self.assertTrue(result.ok, result.error)
+        self.assertEqual(result.data["path"], "demo/tool-demo")
+        self.assertTrue((self.tmp / "demo" / "tool-demo" / "package.json")
+                        .is_file())
+        result = self.registry.invoke(
+            "scaffold_create", {"type": "ghost", "name": "x"}, self._m6_ctx())
+        self.assertFalse(result.ok)
+        result = self.registry.invoke(
+            "scaffold_create", {"type": "npm", "name": "y"},
+            ToolContext(config=self.config))
+        self.assertFalse(result.ok)
+        self.assertIn("WorkshopService", result.error)
+
+    def test_edit_file_tool(self):
+        result = self.registry.invoke(
+            "edit_file", {"path": "demo/notes/a.md", "content": "# hi\n"},
+            self._m6_ctx())
+        self.assertTrue(result.ok, result.error)
+        self.assertEqual((self.tmp / "demo" / "notes" / "a.md")
+                         .read_text(encoding="utf-8"), "# hi\n")
+        result = self.registry.invoke(
+            "edit_file", {"path": "projA/a.txt", "content": "hack"},
+            self._m6_ctx())
+        self.assertFalse(result.ok)  # 非白名单别名
+        result = self.registry.invoke(
+            "edit_file", {"path": "demo/.env", "content": "K=V"},
+            self._m6_ctx())
+        self.assertFalse(result.ok)  # 敏感文件
+        result = self.registry.invoke(
+            "edit_file", {"path": "demo/x", "content": None}, self._m6_ctx())
+        self.assertFalse(result.ok)  # content 缺失
+        result = self.registry.invoke(
+            "edit_file", {"path": "demo/x", "content": "y"},
+            ToolContext(config=self.config))
+        self.assertFalse(result.ok)
+        self.assertIn("WorkshopService", result.error)
+
+    def test_process_tools(self):
+        ctx = self._m6_ctx()
+        result = self.registry.invoke(
+            "process_start",
+            {"cwd": str(self.tmp / "projA"),
+             "cmd": [sys.executable, "-c",
+                     "import time;time.sleep(30)"], "name": "t"},
+            ctx)
+        self.assertTrue(result.ok, result.error)
+        pid_id = result.data["id"]
+        try:
+            self.assertIn("已启动", result.data["hint"])
+            logs = self.registry.invoke(
+                "process_logs", {"id": pid_id}, ctx)
+            self.assertTrue(logs.ok)
+            self.assertEqual(logs.data["status"], "running")
+        finally:
+            stopped = self.registry.invoke(
+                "process_stop", {"id": pid_id}, ctx)
+        self.assertTrue(stopped.ok)
+        self.assertTrue(stopped.data["stopped"])
+        again = self.registry.invoke("process_stop", {"id": pid_id}, ctx)
+        self.assertTrue(again.ok)  # 幂等：已停止不报错、不 kill
+        for tool in ("process_start", "process_stop", "process_logs"):
+            r = self.registry.invoke(
+                tool, {"id": "x", "cwd": "d", "cmd": "c"},
+                ToolContext(config=self.config))
+            self.assertFalse(r.ok)
+            self.assertIn("ProcessManager", r.error)
+
+    def test_planner_instruction_lists_m6_tools(self):
+        """planner 工具清单自动包含 M6 新工具（schemas 遍历，无需改 planner）。"""
+        from backend.engine.planner import PlannerEngine
+        from tests.test_flows import make_deps
+        deps = make_deps(self.config, self.tmp / "session.json")
+        text = PlannerEngine(deps).instruction_for(
+            SessionContext(mode="code"), "建 demo")
+        for name in ("scaffold_create", "edit_file", "process_start",
+                     "process_stop", "process_logs"):
+            self.assertIn(name, text)
 
 
 if __name__ == "__main__":

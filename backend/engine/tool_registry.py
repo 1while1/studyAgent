@@ -8,8 +8,9 @@
   只允许 settings `[evidence_delta]` 表内类型（铁律 15）；persist_state 只接受
   白名单操作集（v1 仅 set_unit_status），防止未来 planner 自由改写 StudyState。
 - ToolContext 按需携带依赖；handler 缺依赖时返回 ok=False 明确错误，不抛异常。
-- §9 中 process_*/scaffold_create/edit_file/quiz_generate/retell_assess/mark_wrong
-  属 M5c/M6 新能力，不在本注册表 v1 范围。
+- §9 中 quiz_generate/retell_assess 属 M5c，process_*/scaffold_create/edit_file
+  属 M6 实战工坊（workshop_service / process_mgr 包装），均已纳入本注册表；
+  mark_wrong 留档待 M7 前另立。
 """
 
 from __future__ import annotations
@@ -45,6 +46,8 @@ class ToolContext:
     state_store: Any = None   # StateStore
     validator: Callable | None = None
     llm: Any = None           # LLMClient（LLM 档工具依赖，M5c）
+    workshop: Any = None      # WorkshopService（M6 实战工坊写路径）
+    process_mgr: Any = None   # ProcessManager（M6 进程管理）
 
 
 @dataclass
@@ -469,7 +472,112 @@ def _retell_assess(ctx: ToolContext, args: dict) -> ToolResult:
                                      "assessment": assessment.strip()[:3000]})
 
 
-# ---- 默认注册表（v1 工具清单，§9 已有能力子集） ----
+# ---- scaffold_create / edit_file（M6 写·demo/replica 白名单） ----
+
+def _scaffold_create(ctx: ToolContext, args: dict) -> ToolResult:
+    if ctx.workshop is None:
+        return ToolResult(ok=False, error="scaffold_create 需要 WorkshopService 上下文")
+    from ..services.workshop_service import WorkshopError
+    try:
+        r = ctx.workshop.scaffold_create(args.get("type", ""),
+                                         args.get("name", ""))
+    except WorkshopError as e:
+        return ToolResult(ok=False, error=str(e))
+    except Exception as e:
+        return ToolResult(ok=False, error=f"脚手架创建失败: {e}")
+    return ToolResult(ok=True, data={
+        "name": r["name"], "path": r["path"], "files": r["files"],
+        "code_root": r["code_root"],
+        "hint": f"demo 已创建于 {r['path']}（代码根 {r['code_root']} 可见），"
+                "可用 run_build 构建、process_start 启动。"})
+
+
+def _edit_file(ctx: ToolContext, args: dict) -> ToolResult:
+    if ctx.workshop is None:
+        return ToolResult(ok=False, error="edit_file 需要 WorkshopService 上下文")
+    path = (args.get("path") or "").strip()
+    content = args.get("content")
+    if not path or content is None:
+        return ToolResult(ok=False, error="path 与 content 均不能为空")
+    from ..services.workshop_service import WorkshopError
+    try:
+        r = ctx.workshop.write_alias(path, str(content))
+    except WorkshopError as e:
+        return ToolResult(ok=False, error=str(e))
+    except Exception as e:
+        return ToolResult(ok=False, error=f"写入失败: {e}")
+    return ToolResult(ok=True, data=r)
+
+
+# ---- process_start / process_stop / process_logs（M6 沙箱执行） ----
+
+def _proc_cmd(args: dict) -> list[str]:
+    raw = args.get("cmd")
+    if isinstance(raw, str):
+        from ..services.process_mgr import split_cmd
+        return split_cmd(raw)
+    if isinstance(raw, list):
+        return [str(c) for c in raw]
+    return []
+
+
+def _process_start(ctx: ToolContext, args: dict) -> ToolResult:
+    if ctx.process_mgr is None:
+        return ToolResult(ok=False, error="process_start 需要 ProcessManager 上下文")
+    cmd = _proc_cmd(args)
+    if not cmd:
+        return ToolResult(ok=False, error="cmd 不能为空（字符串或字符串数组）")
+    from ..services.process_mgr import ProcessError
+    try:
+        r = ctx.process_mgr.start(args.get("cwd", ""), cmd,
+                                  args.get("name", ""))
+    except ProcessError as e:
+        return ToolResult(ok=False, error=str(e))
+    except Exception as e:
+        return ToolResult(ok=False, error=f"启动失败: {e}")
+    hint = f"进程 {r['id']} 已启动（pid {r['pid']}）"
+    if r["ports"]:
+        hint += f"，监听端口 {r['ports']}（http://127.0.0.1:{r['ports'][0]} 可查看效果）"
+    else:
+        hint += "（未探测到监听端口；慢服务可稍后 process_logs 查看输出）"
+    return ToolResult(ok=True, data={**r, "hint": hint})
+
+
+def _process_stop(ctx: ToolContext, args: dict) -> ToolResult:
+    if ctx.process_mgr is None:
+        return ToolResult(ok=False, error="process_stop 需要 ProcessManager 上下文")
+    pid_id = (args.get("id") or "").strip()
+    if not pid_id:
+        return ToolResult(ok=False, error="id 不能为空")
+    from ..services.process_mgr import ProcessError
+    try:
+        r = ctx.process_mgr.stop(pid_id)
+    except ProcessError as e:
+        return ToolResult(ok=False, error=str(e))
+    except Exception as e:
+        return ToolResult(ok=False, error=f"停止失败: {e}")
+    return ToolResult(ok=True, data=r)
+
+
+def _process_logs(ctx: ToolContext, args: dict) -> ToolResult:
+    if ctx.process_mgr is None:
+        return ToolResult(ok=False, error="process_logs 需要 ProcessManager 上下文")
+    pid_id = (args.get("id") or "").strip()
+    if not pid_id:
+        return ToolResult(ok=False, error="id 不能为空")
+    from ..services.process_mgr import ProcessError
+    try:
+        r = ctx.process_mgr.logs_tail(pid_id, int(args.get("tail", 100)))
+    except ProcessError as e:
+        return ToolResult(ok=False, error=str(e))
+    except Exception as e:
+        return ToolResult(ok=False, error=f"日志读取失败: {e}")
+    return ToolResult(ok=True, data=r)
+
+
+
+
+# ---- 默认注册表（§9 v1 工具清单：M5a 已有能力 + M5c LLM 档 + M6 工坊） ----
 
 def build_default_registry() -> ToolRegistry:
     reg = ToolRegistry()
@@ -581,4 +689,54 @@ def build_default_registry() -> ToolRegistry:
                                    "description": "用户口述原文"}},
                 "required": ["concept_id", "transcript"]},
         handler=_retell_assess))
+    reg.register(ToolSpec(
+        name="scaffold_create", permission=WRITE,
+        description="在 demo 白名单目录创建正规工程脚手架（npm/maven-module/gradle），自动注册代码根",
+        params={"type": "object",
+                "properties": {
+                    "type": {"type": "string",
+                             "description": "脚手架类型（npm/maven-module/gradle）"},
+                    "name": {"type": "string",
+                             "description": "demo 名称（字母/数字/_/-）"}},
+                "required": ["type", "name"]},
+        handler=_scaffold_create))
+    reg.register(ToolSpec(
+        name="edit_file", permission=WRITE,
+        description="全量写入文件（仅 demo/ 或 replica/ 别名前缀的白名单路径，atomic_write 落盘）",
+        params={"type": "object",
+                "properties": {
+                    "path": {"type": "string",
+                             "description": "demo/... 或 replica/... 别名路径"},
+                    "content": {"type": "string",
+                                "description": "文件完整内容"}},
+                "required": ["path", "content"]},
+        handler=_edit_file))
+    reg.register(ToolSpec(
+        name="process_start", permission=SANDBOX,
+        description="在白名单工作目录启动进程（返回 id/pid/监听端口；日志自动落盘）",
+        params={"type": "object",
+                "properties": {
+                    "cwd": {"type": "string",
+                            "description": "工作目录（demo/replica/项目目录/代码根内）"},
+                    "cmd": {"description": "命令（字符串或字符串数组）"},
+                    "name": {"type": "string",
+                             "description": "进程显示名（可省）"}},
+                "required": ["cwd", "cmd"]},
+        handler=_process_start))
+    reg.register(ToolSpec(
+        name="process_stop", permission=SANDBOX,
+        description="停止登记进程并杀掉整个进程树（cmdline 哈希校验防误杀）",
+        params={"type": "object",
+                "properties": {"id": {"type": "string",
+                                      "description": "进程 id"}},
+                "required": ["id"]},
+        handler=_process_stop))
+    reg.register(ToolSpec(
+        name="process_logs", permission=SANDBOX,
+        description="读取进程日志尾部（默认 100 行）",
+        params={"type": "object",
+                "properties": {"id": {"type": "string"},
+                               "tail": {"type": "integer", "default": 100}},
+                "required": ["id"]},
+        handler=_process_logs))
     return reg

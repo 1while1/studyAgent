@@ -49,12 +49,16 @@ def _build_tool_context(deps: Deps) -> "ToolContext":
     from ..engine.tool_registry import ToolContext
     from ..services.code_browser import CodeBrowser
     from ..services.materials_service import MaterialsService
+    from ..services.process_mgr import ProcessManager
+    from ..services.workshop_service import WorkshopService
     return ToolContext(config=deps.config,
                        browser=CodeBrowser(deps.config),
                        materials=MaterialsService(deps.config),
                        state_store=deps.state_store,
                        validator=deps.validator(),
-                       llm=deps.llm)
+                       llm=deps.llm,
+                       workshop=WorkshopService(deps.config),
+                       process_mgr=ProcessManager(deps.config))
 
 
 class LLMStreamer:
