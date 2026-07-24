@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ...domain.enums import DayPhase
 from ...domain.models import SessionContext
-from .base import CommandHandler, CommandResult, Deps
+from .base import CommandHandler, CommandResult, Deps, INTERVIEW_EXIT_HINT
 
 
 class DayReviewHandler(CommandHandler):
@@ -15,7 +15,7 @@ class DayReviewHandler(CommandHandler):
         if not deps.state_store.exists():
             return "StudyState.json 不存在，请先 [开始今日学习]。"
         if session.day_phase == DayPhase.INTERVIEW.value:
-            return "模拟面试进行中，请先完成本场面试再复盘。"
+            return "模拟面试进行中，请先完成本场面试再复盘。" + INTERVIEW_EXIT_HINT
         if session.day_phase == DayPhase.PREREQ.value:
             return "先修诊断进行中，请先完成本场诊断再复盘。"
         if session.day_phase == DayPhase.REVIEWING.value:

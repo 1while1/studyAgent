@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ...domain.enums import DayPhase
 from ...domain.models import SessionContext
-from .base import CommandHandler, CommandResult, Deps
+from .base import CommandHandler, CommandResult, Deps, INTERVIEW_EXIT_HINT
 
 
 class CodeModeHandler(CommandHandler):
@@ -13,7 +13,7 @@ class CodeModeHandler(CommandHandler):
     def fail_fast(self, deps: Deps, session: SessionContext,
                   args: str, mode: str = "") -> str | None:
         if getattr(session, "day_phase", None) == DayPhase.INTERVIEW.value:
-            return "模拟面试进行中，请先完成本场面试。"
+            return "模拟面试进行中，请先完成本场面试。" + INTERVIEW_EXIT_HINT
         if getattr(session, "day_phase", None) == DayPhase.PREREQ.value:
             return "先修诊断进行中，请先完成本场诊断。"
         if getattr(session, "day_phase", None) == DayPhase.REVIEWING.value:

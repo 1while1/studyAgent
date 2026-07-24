@@ -285,5 +285,57 @@ class TestInterview(unittest.TestCase):
         self.assertTrue(any("评分" in e for e in extras))
 
 
+class TestInterviewExitHint(unittest.TestCase):
+    """面试相位拦截文案必须告知出口（[恢复学习] 可放弃面试）。
+
+    背景：相位锁是有意设计（防状态分裂），但 9 处拦截文案只说
+    「请先完成面试」不提退路——用户清空历史后上下文丢失，
+    不知 [恢复学习] 可退出，产生「卡死」感（UX 缺陷修复）。
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="interviewhint_"))
+        self.docx = self.tmp / "docx"
+        (self.docx / "StudyMemory").mkdir(parents=True)
+        (self.tmp / "settings.toml").write_text(_SETTINGS.format(
+            docx=self.docx.as_posix(), tmp=self.tmp.as_posix(),
+            session=(self.tmp / "session.json").as_posix()), encoding="utf-8")
+        self.config = ConfigService(self.tmp / "settings.toml")
+        (self.docx / "StudyState.json").write_text(json.dumps({
+            "current_day": 2, "overall_completion_percentage": 0,
+            "last_active_date": TODAY,
+            "days": {"2": {"date": TODAY, "units": [
+                {"id": "A", "title": "单元A", "status": "in_progress"}]}}},
+            ensure_ascii=False), encoding="utf-8")
+        from tests.test_flows import make_deps
+        self.deps = make_deps(self.config, self.tmp / "session.json")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_all_blocked_commands_tell_exit(self):
+        from backend.engine.commands.base import INTERVIEW_EXIT_HINT
+        from backend.engine.commands.code_mode import CodeModeHandler
+        from backend.engine.commands.day_review import DayReviewHandler
+        from backend.engine.commands.end_day import EndDayHandler
+        from backend.engine.commands.jump_day import JumpDayHandler
+        from backend.engine.commands.next_content import NextContentHandler
+        from backend.engine.commands.prereq import PrereqHandler
+        from backend.engine.commands.sync import SyncHandler
+        from backend.engine.commands.verify_code import VerifyCodeHandler
+        handlers = [InterviewHandler(), CodeModeHandler(), DayReviewHandler(),
+                    EndDayHandler(), JumpDayHandler(), NextContentHandler(),
+                    PrereqHandler(), SyncHandler(), VerifyCodeHandler()]
+        session = SessionContext(day_phase=DayPhase.INTERVIEW.value,
+                                 interview_cid="Day2-A", interview_round=0)
+        for h in handlers:
+            msg = h.fail_fast(self.deps, session, "")
+            self.assertIsNotNone(msg, f"{h.name} 未拦截面试相位")
+            self.assertIn("[恢复学习]", msg,
+                          f"{h.name} 拦截文案未告知出口: {msg}")
+            self.assertIn("不留成绩", msg, f"{h.name} 未说明退出后果: {msg}")
+        self.assertIn("[恢复学习]", INTERVIEW_EXIT_HINT)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -10,7 +10,7 @@ from __future__ import annotations
 from ...domain.enums import DayPhase
 from ...domain.learner import concept_id
 from ...domain.models import SessionContext
-from .base import CommandHandler, CommandResult, Deps
+from .base import CommandHandler, CommandResult, Deps, INTERVIEW_EXIT_HINT
 
 
 class InterviewHandler(CommandHandler):
@@ -21,7 +21,7 @@ class InterviewHandler(CommandHandler):
         if not deps.state_store.exists():
             return "还没初始化学习数据，请先 [开始今日学习]。"
         if session.day_phase == DayPhase.INTERVIEW.value:
-            return "模拟面试已在进行中，请先完成本场面试。"
+            return "模拟面试已在进行中，请先完成本场面试。" + INTERVIEW_EXIT_HINT
         if session.day_phase != DayPhase.STUDYING.value:
             # R3 矩阵修复：仅导学中可发起（已结束/未开始/复盘/计划态拦截）
             labels = {DayPhase.REVIEWING.value: "今日复盘进行中，请先完成复盘",

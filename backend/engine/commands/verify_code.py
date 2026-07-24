@@ -12,7 +12,7 @@ from ...domain.enums import DayPhase
 from ...domain.models import SessionContext
 from ...services import code_runner
 from ...services.config_service import WEB_ROOT
-from .base import CommandHandler, CommandResult, Deps
+from .base import CommandHandler, CommandResult, Deps, INTERVIEW_EXIT_HINT
 
 
 class VerifyCodeHandler(CommandHandler):
@@ -31,7 +31,7 @@ class VerifyCodeHandler(CommandHandler):
         if not deps.state_store.exists():
             return "还没初始化学习数据，请先 [开始今日学习]。"
         if getattr(session, "day_phase", None) == DayPhase.INTERVIEW.value:
-            return "模拟面试进行中，请先完成本场面试。"
+            return "模拟面试进行中，请先完成本场面试。" + INTERVIEW_EXIT_HINT
         if getattr(session, "day_phase", None) == DayPhase.PREREQ.value:
             return "先修诊断进行中，请先完成本场诊断。"
         chosen, candidates, root = self._resolve(deps, args)
