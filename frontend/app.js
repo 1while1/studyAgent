@@ -662,11 +662,12 @@ async function openMaterials() {
   box.appendChild(list);
 }
 
-async function openMaterialPreview(id, section) {
+async function openMaterialPreview(id, section, line) {
   const box = document.getElementById("doc-content");
   box.textContent = "加载中…";
   let url = `/api/materials/preview?id=${encodeURIComponent(id)}`;
   if (section) url += `&section=${encodeURIComponent(section)}`;
+  if (line) url += `&line=${line}`;
   const res = await fetch(url);
   const r = await res.json();
   box.innerHTML = "";
@@ -683,13 +684,13 @@ async function openMaterialPreview(id, section) {
   const md = r.ok ? r.content.replace(/(共 \d+ 章)：/g, "$1") : `加载失败：${r.error}`;
   renderMarkdownInto(body, md);
   if (!section && r.ok) {
-    // 章节条目加链接感：点击按标题模糊命中切片（GET /api/materials/preview?section=）
+    // 章节条目加链接感：传行号精确切片（重名章节不错切，后端 line= 优先）
     for (const li of body.querySelectorAll("li")) {
-      const m = li.textContent.match(/^(.*)（第 \d+ 行）\s*$/);
+      const m = li.textContent.match(/^(.*)（第 (\d+) 行）\s*$/);
       if (!m) continue;
       li.classList.add("mat-chapter");
       li.title = "点击阅读该章节";
-      li.onclick = () => openMaterialPreview(id, m[1].trim());
+      li.onclick = () => openMaterialPreview(id, m[1].trim(), parseInt(m[2], 10));
     }
   }
 }

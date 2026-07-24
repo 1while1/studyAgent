@@ -283,8 +283,7 @@ class ProcessManager:
             stopped = [k for k, e in data["processes"].items()
                        if self._live_status(e) != "running"]
             for k in stopped:
-                e = data["processes"].pop(k)
-                e["status"] = "stopped"
+                data["processes"].pop(k)
             if stopped:
                 self._save(data)
         return len(stopped)

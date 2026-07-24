@@ -407,8 +407,13 @@ class MaterialsService:
         return f"共 {len(headings)} 章：\n" + "\n".join(rows) + more
 
     def read_section(self, doc_id: str, section: str | None = None,
-                     max_lines: int | None = None) -> dict:
-        """READ_DOC 取内容：section 省略 → 章节目录；否则按标题模糊命中切片。"""
+                     max_lines: int | None = None,
+                     line: int | None = None) -> dict:
+        """READ_DOC 取内容：section 省略 → 章节目录；否则切片。
+
+        `line`（章节起始行号）优先精确命中（目录条目携带）——标题子串
+        模糊命中在重名章节（"总结/附录"类）会静默错切前一同名章。
+        """
         entry = self.get(doc_id)
         if not entry:
             return {"ok": False, "error": f"未注册的资料: {doc_id}",
@@ -421,18 +426,26 @@ class MaterialsService:
         if cache is None:
             return {"ok": False, "id": doc_id, "error": "解析缓存缺失"}
         lines, index = cache
-        if not section:
+        if not section and line is None:
             return {"ok": True, "kind": "outline", "id": doc_id,
                     "title": entry["title"], "outline": self.outline(entry)}
         max_lines = max_lines or int(self._config.get("ai_read_max_lines", 200))
-        q = section.strip().strip("# ").lower()
-        hit = next((c for c in index["chunks"] if q and q in c["title"].lower()),
-                   None)
-        if hit is None and q in ("全文", "开头", "篇首") and index["chunks"]:
-            hit = index["chunks"][0]
+        hit = None
+        if line is not None:
+            hit = next((c for c in index["chunks"]
+                        if c["start_line"] == line), None)
+            if hit is None:  # 行号落在章内：取包含它的章
+                hit = next((c for c in index["chunks"]
+                            if c["start_line"] <= line <= c["end_line"]), None)
+        if hit is None and section:
+            q = section.strip().strip("# ").lower()
+            hit = next((c for c in index["chunks"]
+                        if q and q in c["title"].lower()), None)
+            if hit is None and q in ("全文", "开头", "篇首") and index["chunks"]:
+                hit = index["chunks"][0]
         if hit is None:
             return {"ok": False, "id": doc_id,
-                    "error": f"未找到章节: {section}",
+                    "error": f"未找到章节: {section or f'第 {line} 行'}",
                     "outline": self.outline(entry)}
         s, e = hit["start_line"], hit["end_line"]
         truncated = ""

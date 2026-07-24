@@ -206,6 +206,23 @@ class TestReadSection(MaterialsTestBase):
         self.assertIn("第4行", res["text"])  # 5 行 = 标题行 + 4 行正文
         self.assertNotIn("第5行", res["text"])
 
+    def test_section_line_precise_hit(self):
+        """line= 精确切片：重名章节不错切（标题模糊命中会拿第一个）。"""
+        self._write("dup.md",
+                    "# 总结\n第一章的总结\n# 正文\n正文内容\n# 总结\n第二章的总结")
+        self.ms.scan()
+        fuzzy = self.ms.read_section("dup", "总结")
+        self.assertIn("第一章的总结", fuzzy["text"])  # 模糊命中必然拿第一个
+        # 目录：总结（第 1 行）/ 正文（第 3 行）/ 总结（第 5 行）
+        precise = self.ms.read_section("dup", "总结", line=5)
+        self.assertTrue(precise["ok"])
+        self.assertIn("第二章的总结", precise["text"])
+        self.assertNotIn("第一章的总结", precise["text"])
+        # 行号落章内：取包含它的章
+        inside = self.ms.read_section("dup", "", line=4)
+        self.assertTrue(inside["ok"])
+        self.assertIn("正文内容", inside["text"])
+
 
 class TestResolveAndPrefetch(MaterialsTestBase):
     def setUp(self):
