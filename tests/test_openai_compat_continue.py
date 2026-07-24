@@ -72,7 +72,8 @@ class TestLengthContinuation(unittest.TestCase):
         self.assertIn("无缝继续", msgs[-1]["content"])
         # usage 两轮累加（记账不漏）
         self.assertEqual(client.last_usage,
-                         {"prompt_tokens": 40, "completion_tokens": 60})
+                         {"prompt_tokens": 40, "completion_tokens": 60,
+                          "cache_hit_tokens": 0})
 
     def test_stop_finish_no_continuation(self):
         client, stub = _make_client([
@@ -125,14 +126,40 @@ class TestUsageCapture(unittest.TestCase):
         out = "".join(client.chat_stream([{"role": "user", "content": "hi"}]))
         self.assertEqual(out, "好")
         self.assertEqual(client.last_usage,
-                         {"prompt_tokens": 11, "completion_tokens": 22})
+                         {"prompt_tokens": 11, "completion_tokens": 22,
+                          "cache_hit_tokens": 0})
 
     def test_usage_on_empty_choices_chunk_still_captured(self):
         client, _ = _make_client([
             [_chunk("好", finish="stop"), _usage_chunk(33, 44)]])
         "".join(client.chat_stream([{"role": "user", "content": "hi"}]))
         self.assertEqual(client.last_usage,
-                         {"prompt_tokens": 33, "completion_tokens": 44})
+                         {"prompt_tokens": 33, "completion_tokens": 44,
+                          "cache_hit_tokens": 0})
+
+    def test_cache_hit_captured_deepseek_style(self):
+        """DeepSeek 顶层 prompt_cache_hit_tokens 入账（M9 成本算准）。"""
+        chunk = SimpleNamespace(
+            choices=[SimpleNamespace(delta=SimpleNamespace(content=None),
+                                     finish_reason="stop")],
+            usage=SimpleNamespace(prompt_tokens=100, completion_tokens=10,
+                                  prompt_cache_hit_tokens=80,
+                                  prompt_cache_miss_tokens=20))
+        client, _ = _make_client([[_chunk("好"), chunk]])
+        "".join(client.chat_stream([{"role": "user", "content": "hi"}]))
+        self.assertEqual(client.last_usage["cache_hit_tokens"], 80)
+
+    def test_cache_hit_captured_openai_style(self):
+        """OpenAI 风格 prompt_tokens_details.cached_tokens 入账。"""
+        chunk = SimpleNamespace(
+            choices=[],
+            usage=SimpleNamespace(
+                prompt_tokens=100, completion_tokens=10,
+                prompt_cache_hit_tokens=None,
+                prompt_tokens_details=SimpleNamespace(cached_tokens=64)))
+        client, _ = _make_client([[chunk]])
+        "".join(client.chat_stream([{"role": "user", "content": "hi"}]))
+        self.assertEqual(client.last_usage["cache_hit_tokens"], 64)
 
 
 if __name__ == "__main__":

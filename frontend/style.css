@@ -1073,3 +1073,37 @@ body[data-layout="pair"] .heat-cell2.lv4 { background: #8fd694; }
   box-shadow: inset 3px 0 0 var(--accent);
   background: var(--accent-soft);
 }
+
+/* ---------- M9 Token 用量统计页（/usage.html） ---------- */
+.usage-page { background: var(--bg); color: var(--text); min-height: 100vh; }
+.usage-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; padding: 14px 22px; border-bottom: 1px solid var(--border); }
+.usage-title { display: flex; align-items: center; gap: 12px; }
+.usage-title h1 { font-size: 18px; margin: 0; }
+.usage-back { text-decoration: none; color: var(--text-dim); font-size: 20px; padding: 2px 8px; border-radius: 6px; }
+.usage-back:hover { background: var(--inline-code-bg); color: var(--text); }
+.usage-note { font-size: 12px; color: var(--text-dim); }
+.usage-controls { display: flex; gap: 14px; font-size: 13px; color: var(--text-dim); }
+.usage-controls select { margin-left: 6px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); }
+.usage-main { max-width: 1100px; margin: 0 auto; padding: 18px 22px 40px; }
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.kpi-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.kpi-label { font-size: 12px; color: var(--text-dim); }
+.kpi-val { font-size: 22px; font-weight: 600; margin: 4px 0 2px; font-family: var(--font-mono); }
+.kpi-sub { font-size: 11px; color: var(--text-dim); }
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+.panel h2 { font-size: 14px; margin: 0 0 10px; }
+.panel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.chart { display: flex; align-items: flex-end; gap: 6px; height: 140px; position: relative; padding-bottom: 18px; }
+.chart-col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; min-width: 14px; }
+.chart-bar { flex: 1; width: 100%; max-width: 34px; display: flex; flex-direction: column; justify-content: flex-end; border-radius: 4px 4px 0 0; overflow: hidden; }
+.chart-bar .seg-in { display: block; background: var(--accent); opacity: .75; }
+.chart-bar .seg-out { display: block; background: var(--accent-soft, rgba(14,134,216,.3)); }
+.chart-day { font-size: 10px; color: var(--text-dim); margin-top: 4px; white-space: nowrap; }
+.chart-legend { position: absolute; right: 0; top: -26px; font-size: 11px; color: var(--text-dim); display: flex; gap: 10px; align-items: center; }
+.chart-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 3px; }
+.chart-legend .seg-in { background: var(--accent); opacity: .75; }
+.chart-legend .seg-out { background: var(--accent-soft, rgba(14,134,216,.3)); }
+.mini-table, .detail-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.mini-table th, .mini-table td, .detail-table th, .detail-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.mini-table th, .detail-table th { color: var(--text-dim); font-weight: 500; font-size: 12px; }
+.usage-open-page { margin-left: 8px; font-size: 13px; }

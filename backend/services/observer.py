@@ -85,6 +85,25 @@ class Observer:
         self._last_call: dict | None = None
         self._today = {"date": time.strftime("%Y-%m-%d"), "calls": 0,
                        "in_tokens": 0, "out_tokens": 0}
+        self._seed_today()
+
+    def _seed_today(self) -> None:
+        """启动时从日志尾部回填今日累计（重启不归零，顶栏速览可信）。"""
+        today = time.strftime("%Y-%m-%d")
+        try:
+            lines = self._log_path.read_text(encoding="utf-8").splitlines()
+        except Exception:
+            return
+        for line in lines[-20000:]:
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            if r.get("kind") != "llm" or not str(r.get("ts", "")).startswith(today):
+                continue
+            self._today["calls"] += 1
+            self._today["in_tokens"] += r.get("in_tokens", 0)
+            self._today["out_tokens"] += r.get("out_tokens", 0)
 
     # ---- 校准 ----
 
@@ -116,6 +135,9 @@ class Observer:
 
     # ---- 写日志 ----
 
+    # 日志滚动上限：超过即轮转为 agent.log.1（只留一档备份）
+    _ROTATE_BYTES = 10 * 1024 * 1024
+
     def _write(self, record: dict) -> None:
         if not self._enabled:
             return
@@ -124,6 +146,13 @@ class Observer:
         try:
             with self._lock:
                 self._log_path.parent.mkdir(parents=True, exist_ok=True)
+                try:  # 轮转失败（如 Windows 读占用）不丢本条记录，下回再试
+                    if (self._log_path.exists()
+                            and self._log_path.stat().st_size > self._ROTATE_BYTES):
+                        self._log_path.replace(
+                            self._log_path.parent / (self._log_path.name + ".1"))
+                except Exception:
+                    pass
                 with open(self._log_path, "a", encoding="utf-8") as f:
                     f.write(json.dumps(record, ensure_ascii=False) + "\n")
         except Exception:
@@ -131,13 +160,14 @@ class Observer:
 
     def log_llm(self, provider: str, model: str, latency_ms: int,
                 in_text: str, out_text: str, usage: dict | None,
-                ok: bool, error: str = "") -> None:
+                ok: bool, error: str = "", workspace: str = "") -> None:
         """LLM 调用记账。usage（prompt_tokens/completion_tokens）优先于估算。"""
         key = f"{provider}/{model}"
         est_flag = not usage
         if usage and usage.get("prompt_tokens") is not None:
             in_t = int(usage["prompt_tokens"])
             out_t = int(usage.get("completion_tokens") or 0)
+            cache_hit = int(usage.get("cache_hit_tokens") or 0)
             base_in, base_out = est_tokens(in_text), est_tokens(out_text)
             if base_in > 0:
                 self._update_calib(key, in_t / base_in)
@@ -146,10 +176,12 @@ class Observer:
         else:
             in_t = round(est_tokens(in_text) * self._calib_ratio(key))
             out_t = round(est_tokens(out_text) * self._calib_ratio(key + ":out"))
+            cache_hit = 0
         self._write({
             "kind": "llm", "provider": provider, "model": model,
             "task": _task_var.get(), "latency_ms": latency_ms,
             "in_tokens": in_t, "out_tokens": out_t,
+            "cache_hit": cache_hit, "ws": workspace,
             "tokens_est": est_flag, "ok": ok, "error": error[:200]})
         today = time.strftime("%Y-%m-%d")
         with self._lock:
@@ -187,15 +219,76 @@ class Observer:
                     "last_call": self._last_call,
                     "today": dict(self._today)}
 
-    def usage_summary(self, days: int = 7) -> dict:
-        """按 日×渠道×task 聚合 llm 记录；成本走 settings [pricing]（近似值）。"""
-        cutoff = time.time() - days * 86400
+    # 无 ws 字段的历史记录归属桶
+    LEGACY_WS = "（旧记录）"
+
+    def _peak_multiplier(self, ts: float) -> float:
+        """按记录时间套峰谷倍率（[pricing.peak]，未配置恒 1）。
+        时段只支持同日 [起, 止) 小时区间，不支持跨午夜。"""
+        peak = self._config.get("pricing", {}).get("peak", {}) or {}
+        mult = peak.get("multiplier", 1)
+        hours = peak.get("hours", [])
+        if not mult or mult == 1 or not hours:
+            return 1
+        hh = time.localtime(ts).tm_hour
+        for span in hours:
+            try:
+                if int(span[0]) <= hh < int(span[1]):
+                    return float(mult)
+            except Exception:
+                continue
+        return 1
+
+    def _record_cost(self, r: dict, pricing: dict) -> tuple[float, str]:
+        """单条 llm 记录成本：未命中×input + 命中×cache_hit + 输出×output，
+        再乘峰谷倍率。旧记录无 cache_hit 字段 → 全按未命中价（略高估）。"""
+        price = pricing.get(r.get("model", ""))
+        if not price or "input_per_million" not in price:
+            return 0.0, ""
+        hit = r.get("cache_hit", 0) or 0
+        in_t = r.get("in_tokens", 0)
+        cost = (max(0, in_t - hit) / 1e6 * price.get("input_per_million", 0)
+                + hit / 1e6 * price.get("cache_hit_per_million",
+                                        price.get("input_per_million", 0))
+                + r.get("out_tokens", 0) / 1e6 * price.get("output_per_million", 0))
+        try:
+            ts = time.mktime(time.strptime(r["ts"], "%Y-%m-%d %H:%M:%S"))
+            cost *= self._peak_multiplier(ts)
+        except Exception:
+            pass
+        return cost, price.get("currency", "")
+
+    def usage_summary(self, days: int = 7, ws: str = "") -> dict:
+        """按 日×项目×渠道×模型×task 聚合 llm 记录；成本走 settings [pricing]
+        （缓存命中分开计价 + 峰谷倍率，近似值）。ws 非空时只统计该项目。
+        口径：today 随 ws 过滤（过滤视图下=该项目今日；顶栏胶囊的今日来自
+        status()，是全工作区合计）；聚合窗口 ≤ 当前日志卷（轮转后的
+        agent.log.1 不参与统计）。"""
+        cutoff = time.time() - days * 86400 if days > 0 else 0
         pricing = self._config.get("pricing", {}) or {}
-        groups: dict[tuple, dict] = {}
         try:
             lines = self._log_path.read_text(encoding="utf-8").splitlines()
         except Exception:
             lines = []
+        groups: dict[tuple, dict] = {}
+        by_ws: dict[str, dict] = {}
+        by_model: dict[str, dict] = {}
+        by_task: dict[str, dict] = {}
+        daily: dict[str, dict] = {}
+        ws_seen: set[str] = set()
+        today_s = time.strftime("%Y-%m-%d")
+        today = {"calls": 0, "in_tokens": 0, "out_tokens": 0, "cost": 0.0}
+
+        def _acc(bucket: dict, key: str, r: dict, cost: float) -> None:
+            g = bucket.setdefault(key, {"calls": 0, "failures": 0,
+                                        "in_tokens": 0, "out_tokens": 0,
+                                        "cost": 0.0})
+            g["calls"] += 1
+            g["failures"] += 0 if r.get("ok") else 1
+            g["in_tokens"] += r.get("in_tokens", 0)
+            g["out_tokens"] += r.get("out_tokens", 0)
+            g["cost"] += cost
+
         for line in lines[-50000:]:
             try:
                 r = json.loads(line)
@@ -209,33 +302,79 @@ class Observer:
                 continue
             if ts < cutoff:
                 continue
+            rec_ws = r.get("ws") or self.LEGACY_WS
+            ws_seen.add(rec_ws)
+            if ws and rec_ws != ws:
+                continue
+            cost, currency = self._record_cost(r, pricing)
             day = r["ts"][:10]
-            k = (day, r.get("provider", "?"), r.get("model", "?"),
+            k = (day, rec_ws, r.get("provider", "?"), r.get("model", "?"),
                  r.get("task", "?"))
             g = groups.setdefault(k, {
-                "date": day, "provider": k[1], "model": k[2], "task": k[3],
-                "calls": 0, "failures": 0, "in_tokens": 0, "out_tokens": 0,
-                "est_calls": 0, "cost": 0.0, "currency": ""})
+                "date": day, "ws": rec_ws, "provider": k[2], "model": k[3],
+                "task": k[4], "calls": 0, "failures": 0, "in_tokens": 0,
+                "out_tokens": 0, "cache_hit": 0, "est_calls": 0,
+                "cost": 0.0, "currency": ""})
             g["calls"] += 1
             g["failures"] += 0 if r.get("ok") else 1
             g["in_tokens"] += r.get("in_tokens", 0)
             g["out_tokens"] += r.get("out_tokens", 0)
+            g["cache_hit"] += r.get("cache_hit", 0) or 0
             g["est_calls"] += 1 if r.get("tokens_est") else 0
-            price = pricing.get(k[2])
-            if price:
-                g["cost"] += (r.get("in_tokens", 0) / 1e6 * price.get("input_per_million", 0)
-                              + r.get("out_tokens", 0) / 1e6 * price.get("output_per_million", 0))
-                g["currency"] = price.get("currency", "")
-        rows = sorted(groups.values(), key=lambda g: (g["date"], g["provider"], g["task"]))
-        totals = {"calls": sum(g["calls"] for g in rows),
+            g["cost"] += cost
+            g["currency"] = g["currency"] or currency
+            _acc(by_ws, rec_ws, r, cost)
+            _acc(by_model, r.get("model", "?"), r, cost)
+            _acc(by_task, r.get("task", "?"), r, cost)
+            d = daily.setdefault(day, {"date": day, "in_tokens": 0,
+                                       "out_tokens": 0})
+            d["in_tokens"] += r.get("in_tokens", 0)
+            d["out_tokens"] += r.get("out_tokens", 0)
+            if day == today_s:
+                today["calls"] += 1
+                today["in_tokens"] += r.get("in_tokens", 0)
+                today["out_tokens"] += r.get("out_tokens", 0)
+                today["cost"] += cost
+
+        def _rows(bucket: dict, name_key: str) -> list[dict]:
+            out = []
+            for name, g in bucket.items():
+                row = {name_key: name, **g}
+                row["cost"] = round(row["cost"], 4)
+                out.append(row)
+            return sorted(out, key=lambda x: -x["cost"])
+
+        rows = sorted(groups.values(),
+                      key=lambda g: (g["date"], g["ws"], g["provider"], g["task"]))
+        total_in = sum(g["in_tokens"] for g in rows)
+        total_out = sum(g["out_tokens"] for g in rows)
+        total_hit = sum(g["cache_hit"] for g in rows)
+        total_calls = sum(g["calls"] for g in rows)
+        totals = {"calls": total_calls,
                   "failures": sum(g["failures"] for g in rows),
-                  "in_tokens": sum(g["in_tokens"] for g in rows),
-                  "out_tokens": sum(g["out_tokens"] for g in rows),
+                  "in_tokens": total_in, "out_tokens": total_out,
+                  "cache_hit": total_hit,
                   "cost": round(sum(g["cost"] for g in rows), 4)}
         for g in rows:
             g["cost"] = round(g["cost"], 4)
-        return {"rows": rows, "totals": totals, "days": days,
-                "log_path": str(self._log_path)}
+        return {
+            "rows": rows, "totals": totals, "days": days,
+            "log_path": str(self._log_path),
+            "workspaces": sorted(ws_seen),
+            "kpi": {"calls": total_calls, "in_tokens": total_in,
+                    "out_tokens": total_out, "cost": totals["cost"],
+                    "cache_hit_rate": (round(total_hit / total_in, 4)
+                                       if total_in else None),
+                    "fail_rate": (round(totals["failures"] / total_calls, 4)
+                                  if total_calls else None)},
+            "daily": [daily[d] for d in sorted(daily)],
+            "today": {"calls": today["calls"], "in_tokens": today["in_tokens"],
+                      "out_tokens": today["out_tokens"],
+                      "cost": round(today["cost"], 4)},
+            "by_workspace": _rows(by_ws, "ws"),
+            "by_model": _rows(by_model, "model"),
+            "by_task": _rows(by_task, "task"),
+        }
 
 
 _OBSERVERS: dict[str, Observer] = {}

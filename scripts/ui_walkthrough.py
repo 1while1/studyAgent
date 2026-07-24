@@ -503,8 +503,10 @@ def main():
               len(pill.text_content() or "") > 0)
         page.locator("#open-usage").click()
         page.wait_for_timeout(1200)
-        check("用量弹窗表格渲染", page.locator("#usage-table").is_visible() and
-              page.locator("#usage-rows tr").count() >= 1)
+        # M9：弹窗瘦身为速览（今日摘要 + 完整页链接），明细表移至 /usage.html
+        check("用量弹窗今日摘要", len(page.locator(
+            "#usage-today").text_content() or "") > 3)
+        check("完整统计页链接", page.locator(".usage-open-page").is_visible())
         # auth 全流程：设密码 → 退出 → 401 → 错误密码 → 正确登录 → 删除还原
         page.fill("#setup-password", "walk123")
         page.locator("#usage-auth-area button", has_text="设置密码").click()
@@ -536,6 +538,28 @@ def main():
         check("密码已还原为开放模式", gate is False)
         page.locator("#usage-close").click()
         page.wait_for_timeout(300)
+
+        # ---- 9e2. Token 用量统计页（M9，/usage.html） ----
+        ctx2 = page.context.browser.new_context()
+        try:
+            upage = ctx2.new_page()
+            upage.goto(BASE + "/usage.html", wait_until="networkidle")
+            upage.wait_for_timeout(1500)
+            check("统计页 KPI 卡渲染",
+                  upage.locator(".kpi-card").count() == 6)
+            check("统计页明细行渲染",
+                  upage.locator("#u-detail-rows tr").count() >= 1)
+            check("统计页趋势图渲染",
+                  upage.locator(".chart-col").count() >= 1)
+            refetched = [False]
+            upage.on("request", lambda req: refetched.__setitem__(
+                0, refetched[0] or
+                ("observability/usage" in req.url and "days=1" in req.url)))
+            upage.select_option("#u-days", "1")
+            upage.wait_for_timeout(1500)
+            check("统计页天数筛选重取", refetched[0])
+        finally:
+            ctx2.close()
 
         mark("9f 掌握度")
         # ---- 9f. 掌握度抽屉（战术板 + 战略雷达 + 侧栏预警） ----

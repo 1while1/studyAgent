@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Token 用量统计 · studyAgent</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="usage-page">
+<header class="usage-head">
+  <div class="usage-title">
+    <a href="/" class="usage-back" title="返回学习主页">←</a>
+    <h1>Token 用量统计</h1>
+    <span class="usage-note">成本为官方刊例估算值，仅供参考</span>
+  </div>
+  <div class="usage-controls">
+    <label>项目
+      <select id="u-ws"><option value="">全部</option></select>
+    </label>
+    <label>周期
+      <select id="u-days">
+        <option value="1">今天</option>
+        <option value="7" selected>近 7 天</option>
+        <option value="30">近 30 天</option>
+        <option value="0">全部</option>
+      </select>
+    </label>
+  </div>
+</header>
+
+<main class="usage-main">
+  <p id="u-auth-tip" class="usage-auth-tip hidden"></p>
+  <section id="u-kpi" class="kpi-row"></section>
+
+  <section class="panel">
+    <h2>每日趋势</h2>
+    <div id="u-chart" class="chart"></div>
+  </section>
+
+  <div class="panel-grid">
+    <section class="panel">
+      <h2>按项目</h2>
+      <table class="mini-table" id="u-by-ws"></table>
+    </section>
+    <section class="panel">
+      <h2>按模型</h2>
+      <table class="mini-table" id="u-by-model"></table>
+    </section>
+    <section class="panel">
+      <h2>按任务类型</h2>
+      <table class="mini-table" id="u-by-task"></table>
+    </section>
+  </div>
+
+  <section class="panel">
+    <h2>明细（日 × 项目 × 渠道 × 模型 × 任务）</h2>
+    <table class="detail-table" id="u-detail">
+      <thead><tr>
+        <th>日期</th><th>项目</th><th>渠道 / 模型</th><th>任务</th>
+        <th>调用</th><th>口径</th><th>输入 tok</th><th>缓存命中</th>
+        <th>输出 tok</th><th>成本</th>
+      </tr></thead>
+      <tbody id="u-detail-rows"></tbody>
+    </table>
+  </section>
+</main>
+
+<script src="usage.js"></script>
+</body>
+</html>

@@ -1625,10 +1625,12 @@ async function refreshCtxStatus() {
     ctxBar.style.width = Math.min(100, pct) + "%";
     const L = r.layers || {};
     const tag = r.source === "measured" ? "实测" : "估算";
+    const td = r.today || {};
     ctxPill.title =
       `上下文占用 ${fmtK(r.total)} / ${fmtK(r.budget)}（${pct}%）· ${tag}\n` +
       `钉住 ${fmtK(L.pinned || 0)} · 归档摘要 ${fmtK(L.archive || 0)} · 对话窗口 ${fmtK(L.window || 0)}\n` +
-      `已归档 ${r.archived_turns} 条 / 共 ${r.turns} 条消息 · 超过 ${Math.round((r.trigger_ratio || 0.8) * 100)}% 将自动压缩历史`;
+      `已归档 ${r.archived_turns} 条 / 共 ${r.turns} 条消息 · 超过 ${Math.round((r.trigger_ratio || 0.8) * 100)}% 将自动压缩历史\n` +
+      `今日消耗 ${td.calls || 0} 次 · 输入 ${fmtK(td.in_tokens || 0)} · 输出 ${fmtK(td.out_tokens || 0)}`;
     if (r.ratio >= (r.trigger_ratio || 0.8)) ctxPill.classList.add("hot");
     else if (r.ratio >= (r.trigger_ratio || 0.8) * 0.75) ctxPill.classList.add("warn");
   } catch (e) { /* 服务未就绪时静默 */ }
@@ -1645,38 +1647,25 @@ usageModal.addEventListener("click", (e) => {
 
 async function openUsage() {
   usageModal.classList.remove("hidden");
-  const rowsEl = document.getElementById("usage-rows");
   const summaryEl = document.getElementById("usage-summary");
-  rowsEl.innerHTML = "";
+  const todayEl = document.getElementById("usage-today");
   summaryEl.textContent = "加载中…";
+  todayEl.textContent = "";
   const [u, a] = await Promise.all([
     (await fetch("/api/observability/usage?days=7")).json(),
     (await fetch("/api/auth/status")).json(),
   ]);
-  const t = u.totals;
+  const t = u.totals, td = u.today || {};
   summaryEl.textContent =
     `近 ${u.days} 天：${t.calls} 次调用（失败 ${t.failures}）· ` +
     `输入 ${t.in_tokens.toLocaleString()} tok · 输出 ${t.out_tokens.toLocaleString()} tok` +
     (t.cost ? ` · 估算成本 ¥${t.cost}` : "") +
     "（token 为实际/估算混排，仅供参考）";
-  if (!u.rows.length) {
-    rowsEl.innerHTML = `<tr><td colspan="8">暂无记录（agent.log 为空）</td></tr>`;
-  }
-  for (const g of u.rows) {
-    const tr = document.createElement("tr");
-    const cells = [g.date, `${g.provider} / ${g.model}`, g.task, g.calls,
-                   g.failures, g.in_tokens.toLocaleString(),
-                   g.out_tokens.toLocaleString(),
-                   g.cost ? `¥${g.cost}` : "—"];
-    cells.forEach((c, i) => {
-      const td = document.createElement("td");
-      td.textContent = c;
-      if (i === 4 && g.failures > 0) td.className = "usage-err";
-      if (i === 7 && g.est_calls) td.title = `其中 ${g.est_calls} 次为估算调用（token 按单价估算）`;
-      tr.appendChild(td);
-    });
-    rowsEl.appendChild(tr);
-  }
+  todayEl.textContent =
+    `今日：${td.calls || 0} 次 · 输入 ${(td.in_tokens || 0).toLocaleString()} tok · ` +
+    `输出 ${(td.out_tokens || 0).toLocaleString()} tok` +
+    (td.cost ? ` · ¥${td.cost}` : "");
+  todayEl.style.cssText = "font-size:13px;color:var(--text-dim);margin-top:6px";
   renderUsageAuth(a);
 }
 

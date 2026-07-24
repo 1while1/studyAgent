@@ -151,5 +151,100 @@ class TestObservedLLM(ObserverTestBase):
         self.assertEqual(r["out_tokens"], est_tokens("半截"))
 
 
+_PRICING_TOML = (
+    '[pricing."m"]\ninput_per_million = 10\noutput_per_million = 20\n'
+    'cache_hit_per_million = 1\ncurrency = "CNY"\n'
+    '[pricing.peak]\nmultiplier = 2\nhours = [[9, 12]]\n')
+
+
+class TestUsageM9(ObserverTestBase):
+    """M9：缓存命中成本 / 峰谷倍率 / ws 维度 / seed_today / 日志滚动 / 聚合扩展。"""
+
+    def setUp(self):
+        super().setUp()
+        (self.tmp / "settings.toml").write_text(_PRICING_TOML, encoding="utf-8")
+        self.config.reload()
+        self.obs = Observer(self.config)
+
+    def _raw(self, ts: str, **kw):
+        """手写一条 llm 记录（可控时间戳/字段）。"""
+        import json as _json
+        rec = {"kind": "llm", "provider": "p", "model": "m", "task": "chat",
+               "in_tokens": 0, "out_tokens": 0, "ok": True, "ts": ts}
+        rec.update(kw)
+        self.obs._log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.obs._log_path, "a", encoding="utf-8") as f:
+            f.write(_json.dumps(rec, ensure_ascii=False) + "\n")
+
+    def test_cache_hit_and_peak_cost(self):
+        # 谷时 20:00，未命中 1M → 10 元
+        self._raw("2026-07-20 20:00:00", in_tokens=1_000_000)
+        # 峰时 10:00，未命中 1M → ×2 = 20 元
+        self._raw("2026-07-20 10:00:00", in_tokens=1_000_000)
+        # 谷时，1M 输入其中 60 万命中：0.4M×10 + 0.6M×1 = 4.6 元
+        self._raw("2026-07-21 20:00:00", in_tokens=1_000_000,
+                  cache_hit=600_000)
+        s = self.obs.usage_summary(0)
+        self.assertAlmostEqual(s["totals"]["cost"], 10 + 20 + 4.6, places=3)
+        self.assertEqual(s["totals"]["cache_hit"], 600_000)
+        self.assertAlmostEqual(s["kpi"]["cache_hit_rate"],
+                               round(600_000 / 3_000_000, 4), places=4)
+
+    def test_no_cache_field_legacy_records_full_price(self):
+        """旧记录无 cache_hit 字段 → 全部按未命中价（略高估，设计留档）。"""
+        self._raw("2026-07-20 20:00:00", in_tokens=1_000_000)
+        s = self.obs.usage_summary(0)
+        self.assertAlmostEqual(s["totals"]["cost"], 10.0, places=3)
+
+    def test_workspace_dimension_and_filter(self):
+        self._raw("2026-07-20 20:00:00", in_tokens=100, ws="ragent")
+        self._raw("2026-07-20 20:00:01", in_tokens=200, ws="tinyrag")
+        self._raw("2026-07-20 20:00:02", in_tokens=400)  # 无 ws → 旧记录桶
+        s = self.obs.usage_summary(0)
+        self.assertEqual(set(s["workspaces"]),
+                         {"ragent", "tinyrag", Observer.LEGACY_WS})
+        by = {b["ws"]: b for b in s["by_workspace"]}
+        self.assertEqual(by["ragent"]["in_tokens"], 100)
+        self.assertEqual(by[Observer.LEGACY_WS]["in_tokens"], 400)
+        f = self.obs.usage_summary(0, ws="ragent")
+        self.assertEqual(f["totals"]["in_tokens"], 100)
+        self.assertEqual(f["totals"]["calls"], 1)
+
+    def test_seed_today_restart_safe(self):
+        import time as _time
+        today = _time.strftime("%Y-%m-%d")
+        self._raw(f"{today} 01:00:00", in_tokens=111, out_tokens=5)
+        self._raw("2020-01-01 01:00:00", in_tokens=999)  # 非今日
+        obs2 = Observer(self.config)  # 模拟重启
+        st = obs2.status()["today"]
+        self.assertEqual(st["calls"], 1)
+        self.assertEqual(st["in_tokens"], 111)
+        self.assertEqual(st["out_tokens"], 5)
+
+    def test_log_rotation(self):
+        self.obs._ROTATE_BYTES = 50  # 极小阈值触发轮转
+        self.obs.log_llm("p", "m", 1, "i" * 100, "o", None, ok=True)
+        self.obs.log_llm("p", "m", 1, "i", "o", None, ok=True)  # 触发轮转
+        backup = self.obs._log_path.parent / (self.obs._log_path.name + ".1")
+        self.assertTrue(backup.exists())
+        recs = self._records()
+        self.assertEqual(len(recs), 1)  # 新文件只含轮转后记录
+
+    def test_daily_and_by_model_task(self):
+        self._raw("2026-07-20 20:00:00", in_tokens=100, out_tokens=10,
+                  model="m", task="chat")
+        self._raw("2026-07-21 20:00:00", in_tokens=200, out_tokens=20,
+                  model="m2", task="warmup")
+        s = self.obs.usage_summary(0)
+        self.assertEqual([(d["date"], d["in_tokens"]) for d in s["daily"]],
+                         [("2026-07-20", 100), ("2026-07-21", 200)])
+        bm = {b["model"]: b for b in s["by_model"]}
+        self.assertEqual(bm["m2"]["in_tokens"], 200)
+        bt = {b["task"]: b for b in s["by_task"]}
+        self.assertEqual(bt["warmup"]["calls"], 1)
+        self.assertIn("today", s)
+        self.assertIn("kpi", s)
+
+
 if __name__ == "__main__":
     unittest.main()
