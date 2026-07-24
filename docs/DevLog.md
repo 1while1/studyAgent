@@ -1,7 +1,8 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-24（**完成度验收 G9 交付**——上下文与模型渠道 6 项 ✅ 无修复批：_accept_g9.py e2e 验证 fallback（openai_compat 401→mock 接管）与 warmup 开关（false 无预热/true 重启出现 task=warmup 行）；9.1/9.2 test_context_manager、9.3/9.4 走查 6 打勾；留档：mock 按设计不记账，fallback 双记录仅真实备用渠道成立）
+> 最近更新：2026-07-24（**完成度验收 G10 交付**——可观测与安全 6 项 ✅ 无修复批：_accept_g10.py e2e 验证双客户端并发（流程锁串行化、历史不丢不串、前端渲染一致）；10.1 agent.log 手动核查 + plan/prefetch 记账单测打勾、10.5 三道拒读单测打勾）
+> 前次：2026-07-24（**完成度验收 G9 交付**——上下文与模型渠道 6 项 ✅ 无修复批：_accept_g9.py e2e 验证 fallback（openai_compat 401→mock 接管）与 warmup 开关（false 无预热/true 重启出现 task=warmup 行）；9.1/9.2 test_context_manager、9.3/9.4 走查 6 打勾；留档：mock 按设计不记账，fallback 双记录仅真实备用渠道成立）
 
 ## 当前运行状态
 
@@ -18,7 +19,7 @@
 
 v1 Roadmap 与 v3 分期（M1 资料库 → M2 可观测 → M3 学习者模型 → M4 笔记管理 → M5a 工具骨架 → M5b 上下文+路由 → M5c planner → M6 实战工坊 → **M7 课程本体 ✅**）全部收官；架构审计修复批 ✅、UI 全面优化 ✅、全功能浏览器测试（152 项）✅。
 
-**当前阶段 = 完成度验收**：G1-G9 ✅（G2/G3/G6 含修复批）；G10-G12 待办。按 `docs/AcceptanceChecklist.md` 逐项检查（实测打勾，发现问题开修复批：分支 + 三件套全绿 + 双子审查 + 合并 push）。mark_wrong 工具（§9）与「command 失败外部落盘不回滚」修复批仍留档另立。
+**当前阶段 = 完成度验收**：G1-G10 ✅（G2/G3/G6 含修复批）；G11-G12 待办。按 `docs/AcceptanceChecklist.md` 逐项检查（实测打勾，发现问题开修复批：分支 + 三件套全绿 + 双子审查 + 合并 push）。mark_wrong 工具（§9）与「command 失败外部落盘不回滚」修复批仍留档另立。
 
 ## G3 验收修复批（2026-07-24，fix/g3-relevance-first-start，双子审查收编）
 

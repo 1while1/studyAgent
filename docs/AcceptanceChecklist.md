@@ -121,12 +121,12 @@
 
 | # | 检查项 | 方法 | 结果 |
 |---|--------|------|------|
-| 10.1 | agent.log JSONL：LLM（渠道/耗时/token/成败）+ 工具 + plan 决策 | 手动查文件 | |
-| 10.2 | 顶栏 LLM pill：渠道+耗时（失败标红悬停看原因） | 走查 9e | |
-| 10.3 | 用量页：日×渠道×task 聚合 + 成本 + 估算标注 | 走查 9e | |
-| 10.4 | 密码门全流程：设置 → 401 → 错误密码 → 登录 → 删除还原 | 走查 9e | |
-| 10.5 | 敏感文件：代码浏览器/AI READ/资料解析三道拒读 | 单测 | |
-| 10.6 | 会话并发：双标签页发消息不丢不乱（流程锁） | 手动（双开浏览器） | |
+| 10.1 | agent.log JSONL：LLM（渠道/耗时/token/成败）+ 工具 + plan 决策 | 手动查文件 | ✅ 手动查 agent.log：llm 245 条（provider/model/latency_ms/in/out_tokens/ok/error/task 字段齐全）+ tool 403 条；plan 决策记账 test_planner（:185 静默丢弃不记账 / :253 执行记账）；prefetch 记账=log_tool（observer.py:252 + test_materials TestPrefetchOrchestration） |
+| 10.2 | 顶栏 LLM pill：渠道+耗时（失败标红悬停看原因） | 走查 9e | ✅ 走查 9e（顶栏 LLM pill 渠道+耗时，失败标红悬停看原因） |
+| 10.3 | 用量页：日×渠道×task 聚合 + 成本 + 估算标注 | 走查 9e | ✅ 走查 9e（用量页日×渠道×task 聚合+成本+估算标注） |
+| 10.4 | 密码门全流程：设置 → 401 → 错误密码 → 登录 → 删除还原 | 走查 9e | ✅ 走查 9e（密码门全流程：设置→401→错误密码→登录→删除还原） |
+| 10.5 | 敏感文件：代码浏览器/AI READ/资料解析三道拒读 | 单测 | ✅ test_review_batch（代码浏览器 read_file/resolve 拒读 .env + 索引排除）+ test_materials skip_sensitive（资料解析拒读）+ test_tool_registry edit_file 拒写 .env；AI READ 复用 code_browser 同一拒读链路 |
+| 10.6 | 会话并发：双标签页发消息不丢不乱（流程锁） | 手动（双开浏览器） | ✅ _accept_g10.py e2e：双客户端并发两轮都完整回复（done 无 error）、session 历史 4 条严格 user→assistant 交替不丢不串、前端刷新渲染两条消息可见 |
 
 ## 11. UI/UX 体验
 
