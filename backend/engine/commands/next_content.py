@@ -18,6 +18,8 @@ class NextContentHandler(CommandHandler):
             return "模拟面试进行中，请先完成本场面试。"
         if getattr(session, "day_phase", None) == DayPhase.PREREQ.value:
             return "先修诊断进行中，请先完成本场诊断。"
+        if getattr(session, "day_phase", None) == DayPhase.REVIEWING.value:
+            return "今日复盘进行中，请先完成复盘（或 [结束今日学习] 跳过复盘）。"
         if getattr(session, "day_phase", None) == DayPhase.ENDED.value:
             return "今日学习已结束，请明天 [开始今日学习]，或用 [跳转天数] 调整进度。"
         state = deps.state_store.load()

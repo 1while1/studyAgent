@@ -3,6 +3,7 @@
 在 docx 的临时副本上运行，不触碰真实数据。
 """
 
+import json
 import re
 import shutil
 import subprocess
@@ -178,6 +179,137 @@ class TestFlows(unittest.TestCase):
         self.assertIn("---【单元 1 开始】---", "\n".join(result.messages))
         self.assertEqual(session.current_unit_id, "A")
         self._validate_tmp()
+
+
+class TestReviewScore(unittest.TestCase):
+    """G2c 验收修复批：复盘评分落盘（overall 同步防 validator 回滚）+ REVIEWING 矩阵拦截。
+
+    独立临时 docx 夹具：Day 1 四单元全 completed（复盘前置）。
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="review_score_"))
+        self.docx = self.tmp / "docx"
+        (self.docx / "StudyMemory").mkdir(parents=True)
+        units = [{"id": u, "title": f"单元{u}标题", "status": "completed",
+                  "rating": 4.5} for u in "ABCD"]
+        (self.docx / "StudyState.json").write_text(json.dumps({
+            "current_day": 1, "last_active_date": "2026-07-24",
+            "overall_completion_percentage": 0, "total_days": 25,
+            "days": {"1": {"date": "2026-07-24", "review_completed": False,
+                           "review_score": 0, "units": units}}},
+            ensure_ascii=False), encoding="utf-8")
+        (self.docx / "Study.md").write_text("\n".join([
+            "当前天数：Day 1", "", "整体完成度：0%", "",
+            "## Day 1 | 第1天主题", "**目标**：目标",
+            "1. [ ] 单元A：单元A标题（预计 40min）", "   - 文档：无",
+            "**编码目标**：ragent-replica 完成 x", "**推荐论文**：无",
+            '**面试话术目标**：产出"x"的 30 秒/2 分钟版回答', "",
+            "## Day 2 | 粗纲", "**目标**：粗纲", ""]), encoding="utf-8")
+        settings_src = (WEB_ROOT / "config" / "settings.toml").read_text(encoding="utf-8")
+        settings = settings_src.replace(
+            'docx_dir = "../docx"',
+            f'docx_dir = "{self.docx.as_posix()}"')
+        settings = re.sub(r'active_workspace = ".*?"',
+                          'active_workspace = "ragent"', settings)
+        self.settings_path = self.tmp / "settings.toml"
+        self.settings_path.write_text(settings, encoding="utf-8")
+        self.config = ConfigService(self.settings_path)
+        self.deps = make_deps(self.config, self.tmp / "session.json")
+        self.orch = ChatOrchestrator(
+            self.config, self.deps.stages, self.deps.quiz,
+            self.deps.state_store, self.deps.memory, self.deps.templates)
+        # StudyMemory Day_01：生产函数造骨架 → 勾选 + 评分（与 JSON 一致）
+        mem = self.deps.memory
+        content = mem.render_new("2026-07-24", [{"id": u, "title": f"单元{u}标题"}
+                                                for u in "ABCD"])
+        for u in "ABCD":
+            content = mem.set_unit_checked(content, u, True)
+            content = mem.set_unit_score(content, u, 4.5)
+        (self.docx / "StudyMemory" / "Day_01.md").write_text(content, encoding="utf-8")
+        (self.docx / "Project.md").write_text("# 架构\n## 模块结构\nx", encoding="utf-8")
+        self.session = self.deps.session_store.load()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _enter_review(self):
+        self.session.day_phase = "reviewing"
+        self.deps.session_store.save(self.session)
+
+    def _validate(self):
+        rc = subprocess.run(
+            [sys.executable, str(WEB_ROOT / "resources" / "hooks" / "validate_study.py"),
+             str(self.docx), "25", "ragent-replica"],
+            capture_output=True, text=True)
+        self.assertEqual(rc.returncode, 0,
+                         (rc.stdout + rc.stderr)[-300:])
+
+    def test_review_score_persist_and_overall_sync(self):
+        self._enter_review()
+        extras = self.orch.post_process(
+            self.session, "【Mock 拷问题】Q1: 首包探测失败后是重试还是切换？\n【评分：4.0】")
+        self.assertIn("复盘评分已落盘：4.0 分", "\n".join(extras))
+        state = self.deps.state_store.load()
+        day1 = state["days"]["1"]
+        self.assertTrue(day1["review_completed"])
+        self.assertEqual(day1["review_score"], 4.0)
+        # overall 同步（1/25 = 4%）——修复前缺此步，validator 必回滚
+        self.assertEqual(state["overall_completion_percentage"], 4)
+        smd = (self.docx / "Study.md").read_text(encoding="utf-8")
+        self.assertIn("整体完成度：4%", smd)
+        self.assertEqual(self.session.day_phase, "studying")
+        self.assertTrue(self.session.pending_qa_capture)
+        self._validate()
+
+    def test_next_content_blocked_in_reviewing(self):
+        from backend.engine.commands.next_content import NextContentHandler
+        self._enter_review()
+        stop = NextContentHandler().fail_fast(self.deps, self.session, "")
+        self.assertIsNotNone(stop)
+        self.assertIn("复盘", stop)
+
+    def test_jump_day_blocked_in_reviewing(self):
+        from backend.engine.commands.jump_day import JumpDayHandler
+        self._enter_review()
+        stop = JumpDayHandler().fail_fast(self.deps, self.session, "Day 3")
+        self.assertIsNotNone(stop)
+        self.assertIn("复盘", stop)
+
+    def test_day_review_reentry_blocked(self):
+        from backend.engine.commands.day_review import DayReviewHandler
+        self._enter_review()
+        stop = DayReviewHandler().fail_fast(self.deps, self.session, "")
+        self.assertIsNotNone(stop)
+        self.assertIn("复盘", stop)
+
+    def test_code_mode_blocked_in_reviewing(self):
+        from backend.engine.commands.code_mode import CodeModeHandler
+        self._enter_review()
+        stop = CodeModeHandler().fail_fast(self.deps, self.session, "")
+        self.assertIsNotNone(stop)
+        self.assertIn("复盘", stop)
+
+    def test_jump_day_clears_active_day_completed(self):
+        # G2 审查 🔴-1：确认重置必须清 active_day_completed（否则永远无法重学）
+        from backend.engine.commands.jump_day import JumpDayHandler
+        state = self.deps.state_store.load()
+        self.deps.state_store.day(state)["active_day_completed"] = True
+        self.deps.backup.atomic_persist(
+            {self.deps.state_store.path: self.deps.state_store.dump(state)})
+        JumpDayHandler().run(self.deps, self.session, "Day 1 是")
+        state = self.deps.state_store.load()
+        self.assertFalse(state["days"]["1"].get("active_day_completed"))
+
+    def test_review_then_end_day_percentage_idempotent(self):
+        # 复盘落盘（overall 同步）→ end_day recompute_percentage 重算同值（幂等）
+        self._enter_review()
+        self.orch.post_process(
+            self.session, "【Mock 拷问题】Q1: 测试？\n【评分：4.0】")
+        state = self.deps.state_store.load()
+        before = state["overall_completion_percentage"]
+        self.deps.state_store.recompute_percentage(state)
+        self.assertEqual(state["overall_completion_percentage"], before)
 
 
 if __name__ == "__main__":

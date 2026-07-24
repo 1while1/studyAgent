@@ -56,11 +56,12 @@ def send_and_wait(page, text, timeout=180):
             if txt == last_txt:
                 stable += 1
                 if stable >= 2:
-                    return txt
+                    break
             else:
                 stable = 0
                 last_txt = txt
-    return last_txt
+    texts = page.locator("#messages .bubble").all_text_contents()
+    return "\n".join(texts[before + 1:])  # 聚合本轮全部 AI 气泡
 
 
 def main():
@@ -79,10 +80,30 @@ def main():
         try:
             page.goto(BASE)
             page.wait_for_timeout(1500)
-            day = json.loads((DOCX / "StudyState.json").read_text(encoding="utf-8"))["current_day"]
+            # 前置：确保当日已开始且单元全完成（复盘/结束的前提）
+            st0 = json.loads((DOCX / "StudyState.json").read_text(encoding="utf-8"))
+            day = st0["current_day"]
+            day_data = st0["days"].get(str(day), {})
+            if not day_data.get("units"):
+                r = send_and_wait(page, "[开始今日学习]", 240)
+                if "FAIL-FAST" in r:
+                    send_and_wait(page, "重新开始今日学习", 240)
+                st0 = json.loads((DOCX / "StudyState.json").read_text(encoding="utf-8"))
+                day = st0["current_day"]
+            for _ in range(6):
+                st0 = json.loads((DOCX / "StudyState.json").read_text(encoding="utf-8"))
+                remaining = [u for u in st0["days"][str(day)]["units"]
+                             if u["status"] != "completed"]
+                if not remaining:
+                    break
+                send_and_wait(page, "[强制下一内容]", 240)
+            print(f"  前置完成：Day {day} 单元全 completed", flush=True)
 
             # ---------- 2.11 [开始今日复盘] ----------
             r = send_and_wait(page, "[开始今日复盘]", 240)
+            if "今日已复盘" in r:
+                print("  （已复盘过 → 确认重复复盘）", flush=True)
+                r = send_and_wait(page, "[开始今日复盘] 是", 240)
             rec("2.11 复盘开启（拷问输出）", "复盘" in r or "拷问" in r,
                 r[:80].replace("\n", " "))
             ph = api("/api/state")["session"].get("day_phase")
@@ -115,12 +136,18 @@ def main():
                 print(f"  （StudyReview 字数 {n_chars}——Mock 渠道产出短，3000 字质量属真实 LLM 阻塞项）", flush=True)
             smd = (DOCX / "Study.md").read_text(encoding="utf-8")
             rec("2.12 Study.md 当日标完成", re.search(rf"## Day {day} \|.*✅", smd) is not None, "")
-            rec("2.12 次日滚动细化（Mock）", f"## Day {day + 1} |" in smd and "单元A" in smd, "")
+            # Day N+1 小节窗口内必须有细化单元行（防粗纲标题误命中）
+            m_next = re.search(rf"## Day {day + 1} \|.*?(?=^## Day \d+ \||\Z)",
+                               smd, re.MULTILINE | re.DOTALL)
+            rec("2.12 次日滚动细化（Mock）",
+                bool(m_next) and "单元A：" in m_next.group(0), "")
             st_now = api("/api/state")["session"]
             rec("2.12 阶段复位", st_now.get("current_stage", "") == "",
                 f"stage='{st_now.get('current_stage')}'")
             mem = (DOCX / "StudyMemory" / f"Day_{day:02d}.md").read_text(encoding="utf-8")
-            rec("2.12 StudyMemory 结束记录", "结束" in mem or "复盘" in mem, "")
+            # Step 2「完善 StudyMemory」= 空字段补「无」（SOP 语义，非写结束标记）
+            rec("2.12 StudyMemory 空字段补无",
+                not re.search(r"^-\s*(已掌握|卡壳|疑问|代码完成)：\s*$", mem, re.MULTILINE), "")
             import subprocess
             vr = subprocess.run(
                 [sys.executable, "resources/hooks/validate_study.py",

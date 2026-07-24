@@ -23,6 +23,8 @@ class JumpDayHandler(CommandHandler):
             return "模拟面试进行中，请先完成本场面试。"
         if getattr(session, "day_phase", None) == DayPhase.PREREQ.value:
             return "先修诊断进行中，请先完成本场诊断。"
+        if getattr(session, "day_phase", None) == DayPhase.REVIEWING.value:
+            return "今日复盘进行中，请先完成复盘再跳转天数。"
         m = re.search(r"(\d+)", args)
         if not m:
             total = deps.config.workspace.total_days
@@ -58,6 +60,9 @@ class JumpDayHandler(CommandHandler):
                                         "questions": [], "code_completed": []}
             day_data["review_completed"] = False
             day_data["review_score"] = 0.0
+            # G2 审查 🔴-1：漏清会让 start_day 见完成标记直接递进，
+            # 跳回已结束的天永远无法重学
+            day_data["active_day_completed"] = False
         # 之前的天标记完成、之后的清除
         for key in list(state["days"].keys()):
             d = int(key)
