@@ -13,7 +13,8 @@ from pathlib import Path
 
 from ..domain.workspace import Workspace
 from .config_service import PROMPTS_DIR, TEMPLATES_DIR
-from .study_plan import StudyPlanError, check_unit_docs, parse_day_text
+from .study_plan import (StudyPlanError, check_unit_docs, parse_day_text,
+                         strip_project_doc_prefix)
 
 # 骨架模板 → 目标文件（固定内容，不经 LLM）
 SKELETON_DOCS = {
@@ -68,7 +69,8 @@ class DocInitializer:
     # ---- LLM 生成 + 验证 ----
 
     def _generate(self, prompt_file: str, ws: Workspace,
-                  scan_profile: str, validate, label: str) -> str:
+                  scan_profile: str, validate, label: str,
+                  normalize=None) -> str:
         prompt = (PROMPTS_DIR / prompt_file).read_text(encoding="utf-8")
         prompt = (prompt
                   .replace("<title>", ws.title)
@@ -84,12 +86,19 @@ class DocInitializer:
                 f"请修正后重新完整输出（仍禁止任何前言后语）。")
             from .observer import task_scope
             with task_scope("init"):
-                text = self._llm.chat([{"role": "user", "content": p}],
-                                      max_tokens=self._max_tokens)
+                try:
+                    text = self._llm.chat([{"role": "user", "content": p}],
+                                          max_tokens=self._max_tokens)
+                except Exception as e:
+                    # LLM 调用异常（余额/风控/网络/超时）统一包装为 InitError，
+                    # 路由层按契约返回 ok=False 友好错误而非裸 500
+                    raise InitError(f"{label} LLM 调用失败：{e}") from e
             # 容错：剥掉可能的 markdown 围栏包裹
             text = text.strip()
             if text.startswith("```") and text.endswith("```"):
                 text = "\n".join(text.splitlines()[1:-1]).strip()
+            if normalize is not None:
+                text = normalize(text)
             ok, errors = validate(text)
             if ok:
                 return text
@@ -143,7 +152,10 @@ class DocInitializer:
             self._validate_project_md, "Project.md")
         files[ws.docx_dir / "Study.md"] = self._generate(
             "init_study_md.md", ws, scan_profile,
-            self._make_study_md_validator(ws, self._detail_days), "Study.md")
+            self._make_study_md_validator(ws, self._detail_days), "Study.md",
+            normalize=lambda t: strip_project_doc_prefix(
+                t, ws.project_dir.name,
+                exists=lambda tok: (ws.project_dir / tok).exists()))
 
         for path, content in files.items():
             path.parent.mkdir(parents=True, exist_ok=True)

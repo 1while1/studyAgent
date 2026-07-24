@@ -88,5 +88,31 @@ class TestJsonSchemas(unittest.TestCase):
         self.assertTrue(any("parse failed" in e for e in self._run()))
 
 
+class TestDayConsistency(unittest.TestCase):
+    """check_day_consistency：全新工作区（days 为空）合法；非空但缺当天报错。"""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="vday_"))
+        self.mod = _load_module()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _run(self, state, day=1) -> list[str]:
+        self.mod.errors, self.mod.warnings = [], []
+        self.mod.check_day_consistency(state, day, str(self.tmp))
+        return self.mod.errors
+
+    def test_empty_days_fresh_workspace_ok(self):
+        # 初始化刚完成、尚未 [开始今日学习]：days={} 是合法初始状态
+        errs = self._run({"current_day": 1, "days": {}})
+        self.assertEqual(errs, [])
+
+    def test_missing_current_day_still_errs(self):
+        # days 非空但缺当天 = 数据断裂，仍必须报错
+        errs = self._run({"current_day": 1, "days": {"2": {"units": []}}})
+        self.assertTrue(any("Day 1 data not found" in e for e in errs))
+
+
 if __name__ == "__main__":
     unittest.main()
