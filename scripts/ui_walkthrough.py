@@ -561,6 +561,36 @@ def main():
         finally:
             ctx2.close()
 
+        # ---- 9e3. 内容放大查看器（M10） ----
+        page.evaluate("""() => {
+          const m = document.getElementById("messages");
+          const div = document.createElement("div");
+          div.className = "msg assistant";
+          div.innerHTML = "<div class='bubble md'></div>";
+          m.appendChild(div);
+          renderMarkdownInto(div.querySelector(".bubble"),
+            "```mermaid\\ngraph LR; A-->B;\\n```\\n\\n```python\\nx = 1\\n```");
+        }""")
+        page.wait_for_timeout(1000)
+        page.locator(".mermaid").last.click()
+        page.wait_for_timeout(400)
+        check("查看器图表模式打开",
+              page.locator("#viewer-overlay").is_visible() and
+              page.locator("#viewer-overlay .viewer-content svg").count() == 1)
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(300)
+        check("查看器 Esc 关闭",
+              page.locator("#viewer-overlay").is_hidden())
+        page.locator(".zoom-btn").last.click()
+        page.wait_for_timeout(400)
+        check("查看器代码模式打开+换行按钮",
+              page.locator("#viewer-overlay.viewer-code").is_visible() and
+              page.locator("[data-act=wrap]").is_visible())
+        page.locator("[data-act=close]").click()
+        page.wait_for_timeout(300)
+        check("查看器按钮关闭",
+              page.locator("#viewer-overlay").is_hidden())
+
         mark("9f 掌握度")
         # ---- 9f. 掌握度抽屉（战术板 + 战略雷达 + 侧栏预警） ----
         page.locator("#open-learner").click()

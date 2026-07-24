@@ -1108,3 +1108,54 @@ body[data-layout="pair"] .heat-cell2.lv4 { background: #8fd694; }
 .mini-table th, .mini-table td, .detail-table th, .detail-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); }
 .mini-table th, .detail-table th { color: var(--text-dim); font-weight: 500; font-size: 12px; }
 .usage-open-page { margin-left: 8px; font-size: 13px; }
+
+/* ---------- M10 内容放大查看器 ---------- */
+.mermaid { cursor: zoom-in; }
+.md img { cursor: zoom-in; }
+.zoom-btn {
+  position: absolute; top: 8px; right: 62px;
+  background: rgba(255,255,255,.1); color: #d1d5db; border: 1px solid rgba(255,255,255,.14);
+  border-radius: 6px; padding: 3px 10px; font-size: 11px; cursor: pointer;
+  opacity: 0; transition: opacity .15s, background .15s;
+}
+.md pre:hover .zoom-btn { opacity: 1; }
+.zoom-btn:hover { background: rgba(255,255,255,.24); }
+#viewer-overlay {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(20,16,12,.82); backdrop-filter: blur(4px);
+  display: flex; flex-direction: column;
+}
+#viewer-overlay .viewer-toolbar {
+  display: flex; gap: 8px; align-items: center; justify-content: center;
+  padding: 10px; flex-shrink: 0;
+}
+#viewer-overlay .viewer-toolbar button {
+  background: rgba(255,255,255,.1); color: #eee; border: 1px solid rgba(255,255,255,.2);
+  border-radius: 6px; padding: 4px 12px; font-size: 13px; cursor: pointer;
+}
+#viewer-overlay .viewer-toolbar button:hover { background: rgba(255,255,255,.22); }
+#viewer-scale { color: #ccc; font-size: 12px; font-family: var(--font-mono); min-width: 42px; text-align: center; }
+#viewer-overlay:not(.viewer-code) .viewer-code-only { display: none; }
+#viewer-overlay .viewer-stage {
+  flex: 1; overflow: hidden; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  cursor: grab;
+}
+#viewer-overlay .viewer-stage.dragging { cursor: grabbing; }
+#viewer-overlay.viewer-code .viewer-stage { cursor: default; overflow: auto; align-items: flex-start; justify-content: flex-start; }
+#viewer-overlay .viewer-content { transform-origin: center; }
+#viewer-overlay .viewer-content svg { max-width: none !important; }
+#viewer-overlay.viewer-code .viewer-content { transform: none !important; width: 100%; }
+#viewer-overlay.viewer-code .viewer-content pre {
+  margin: 0; border-radius: 0; min-height: 100%; padding: 18px 24px;
+  font-size: 14px; overflow: visible; white-space: pre;
+}
+#viewer-overlay.viewer-code .viewer-content.wrap pre { white-space: pre-wrap; word-break: break-all; }
+
+/* M10 修复：图表画布底色随主题（浅图深罩看不清/深图浅罩看不清），代码模式隐藏缩放控件 */
+#viewer-overlay:not(.viewer-code) .viewer-content { background: var(--panel); border-radius: 10px; padding: 18px; box-shadow: 0 8px 40px rgba(0,0,0,.35); }
+#viewer-overlay.viewer-code [data-act="zoom-in"],
+#viewer-overlay.viewer-code [data-act="zoom-out"],
+#viewer-overlay.viewer-code [data-act="fit"],
+#viewer-overlay.viewer-code [data-act="actual"],
+#viewer-overlay.viewer-code #viewer-scale { display: none; }
