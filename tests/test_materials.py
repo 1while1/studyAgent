@@ -143,6 +143,35 @@ class TestScanParse(MaterialsTestBase):
         self.assertTrue(sec["ok"])
         self.assertIn("更多内容", sec["text"])
 
+    @unittest.skipUnless(HAVE_DOCX, "python-docx 未安装")
+    def test_docx_broken_package_raw_fallback(self):
+        """G6-6.4：损坏关系包 docx（python-docx 打不开）回退裸 XML 解析，
+        标题层级（styles.xml styleId 映射）与正文均可提取。"""
+        import zipfile
+        W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        doc_xml = (
+            f'<?xml version="1.0"?><w:document xmlns:w="{W}"><w:body>'
+            '<w:p><w:pPr><w:pStyle w:val="H1"/></w:pPr>'
+            '<w:r><w:t>第一章 概念</w:t></w:r></w:p>'
+            '<w:p><w:r><w:t>正文内容</w:t></w:r></w:p>'
+            f'</w:body></w:document>')
+        styles_xml = (
+            f'<?xml version="1.0"?><w:styles xmlns:w="{W}">'
+            '<w:style w:styleId="H1"><w:name w:val="heading 1"/></w:style>'
+            '</w:styles>')
+        # 只有 word/*.xml，缺 [Content_Types].xml/_rels → python-docx 必抛
+        with zipfile.ZipFile(self.docs / "broken.docx", "w") as z:
+            z.writestr("word/document.xml", doc_xml)
+            z.writestr("word/styles.xml", styles_xml)
+        stats = self.ms.scan()
+        self.assertEqual(stats["errors"], 0)
+        entry = self.ms.get("broken")
+        self.assertEqual(entry["status"], "parsed")
+        self.assertEqual([h["title"] for h in entry["headings"]], ["第一章 概念"])
+        sec = self.ms.read_section("broken", "概念")
+        self.assertTrue(sec["ok"])
+        self.assertIn("正文内容", sec["text"])
+
     @unittest.skipUnless(HAVE_PYPDF, "pypdf 未安装")
     def test_pdf_parse_pages(self):
         (self.docs / "d.pdf").write_bytes(_minimal_pdf("Hello PDF M1"))
