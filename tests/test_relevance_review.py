@@ -165,17 +165,26 @@ class TestRelevanceReview(unittest.TestCase):
         state["days"]["1"]["active_day_completed"] = True
         state_p.write_text(_json.dumps(state, ensure_ascii=False, indent=2),
                            encoding="utf-8")
+        # 剥离 concepts.json 的 Day2+ 存量条目（双子审查 🔴：真实 docx 副本自带
+        # Day2 条目，不剥则旧代码下闭包也非空，测试修复前后都绿=空心）
+        cp = self.tmp / "docx" / "concepts.json"
+        cdata = _json.loads(cp.read_text(encoding="utf-8"))
+        cdata["concepts"] = {k: v for k, v in cdata["concepts"].items()
+                             if k.startswith("Day1-")}
+        cp.write_text(_json.dumps(cdata, ensure_ascii=False), encoding="utf-8")
         session = self.deps.session_store.load()
         result = StartDayHandler().run(self.deps, session, "")
-        # 递增到 Day 2，上游 Day1 三概念全部感召（fixture 已删模型 → 未学）
+        # 递增到 Day 2，上游 Day1 概念感召（fixture 已删模型 → 未学）
         self.assertIn("当前进度：Day 2", result.messages[0])
         self.assertIn("上游感召·Day 1：Day1-A", result.messages[0])
-        self.assertIn("上游感召·Day 1：Day1-C", result.messages[0])
-        # concepts.json 已注册 Day2 条目与跨天先修边
+        # concepts.json 已注册 Day2 条目与跨天先修边（边=Day1 末单元，宽松断言
+        # 防真实数据 Day1 单元数漂移——双子审查 🟡）
         cmap = _json.loads((self.tmp / "docx" / "concepts.json")
                            .read_text(encoding="utf-8"))["concepts"]
         self.assertIn("Day2-A", cmap)
-        self.assertEqual(cmap["Day2-A"]["prerequisites"], ["Day1-E"])
+        prereqs = cmap["Day2-A"]["prerequisites"]
+        self.assertEqual(len(prereqs), 1)
+        self.assertTrue(prereqs[0].startswith("Day1-"))
 
 
 if __name__ == "__main__":

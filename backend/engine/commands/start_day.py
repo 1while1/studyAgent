@@ -196,7 +196,10 @@ class StartDayHandler(CommandHandler):
             first_cid = concept_id(day, plan["units"][0]["id"])
             # F1 修复：读图前先 ensure（新日当日单元未注册时闭包为空 →
             # 感召静默缺失；sync/next_content 同款统一入口）；
-            # start_day 特殊：传入内存态 state（含上面刚填充的当日 units）
+            # start_day 特殊：传入内存态 state（含上面刚填充的当日 units）。
+            # 注意：ensure_concepts 命中变更会立即落盘 concepts.json（派生数据、
+            # 幂等 upsert）——若下方 atomic_persist 校验失败回滚，concepts.json
+            # 会短暂「领先」StudyState，属有意为之且可自愈（下次 start 重对齐）。
             svc = LearnerService(deps.config)
             CommandHandler.ensure_concepts_for(deps, svc, state)
             for x in svc.unmastered_upstream([first_cid], day):
