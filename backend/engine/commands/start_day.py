@@ -173,15 +173,35 @@ class StartDayHandler(CommandHandler):
         if not plan["units"]:
             raise StudyPlanError(f"Day {day} 大纲中未解析到导学单元")
 
+        # 当日 units 先行填充（内存态）：感召 ensure 需要当日 concept 已注册。
+        # learner_with_concepts 走磁盘 load——跨日首次开始时当日 units 尚未落盘
+        # （末尾才统一原子落盘），当日 concept 注册不上 → 闭包为空感召静默缺失
+        # （F1 同款缺口在 start_day 的残留；同一天内 restart 因磁盘已有 units 而不显）
+        today = date.today().isoformat()
+        day_data = deps.state_store.ensure_day(state, day)
+        day_data["date"] = today
+        if not day_data["units"] or restart:
+            day_data["units"] = [
+                {"id": u["id"], "title": u["title"], "status": "not_started",
+                 "rating": 0}
+                for u in plan["units"]
+            ]
+
         # 感召通道（M7 §4/§13：复习按相关性而非日历）：今日首单元的上游
         # 未达标链（先修闭包，拓扑序根基先补，含零证据节点；失败静默不阻塞）
         relevance: list[dict] = []
         try:
             from ...domain.learner import concept_id
+            from ...services.learner_service import LearnerService
             first_cid = concept_id(day, plan["units"][0]["id"])
             # F1 修复：读图前先 ensure（新日当日单元未注册时闭包为空 →
-            # 感召静默缺失；sync/next_content 同款统一入口）
-            svc = CommandHandler.learner_with_concepts(deps)
+            # 感召静默缺失；sync/next_content 同款统一入口）；
+            # start_day 特殊：传入内存态 state（含上面刚填充的当日 units）。
+            # 注意：ensure_concepts 命中变更会立即落盘 concepts.json（派生数据、
+            # 幂等 upsert）——若下方 atomic_persist 校验失败回滚，concepts.json
+            # 会短暂「领先」StudyState，属有意为之且可自愈（下次 start 重对齐）。
+            svc = LearnerService(deps.config)
+            CommandHandler.ensure_concepts_for(deps, svc, state)
             for x in svc.unmastered_upstream([first_cid], day):
                 m = re.match(r"Day(\d+)-", x["cid"])
                 relevance.append({
@@ -201,15 +221,6 @@ class StartDayHandler(CommandHandler):
             self._render_step2(deps),
         ]
 
-        today = date.today().isoformat()
-        day_data = deps.state_store.ensure_day(state, day)
-        day_data["date"] = today
-        if not day_data["units"] or restart:
-            day_data["units"] = [
-                {"id": u["id"], "title": u["title"], "status": "not_started",
-                 "rating": 0}
-                for u in plan["units"]
-            ]
         messages.append(self._render_step3(deps, plan, day, today))
         messages.append(deps.templates.get("step4_guide"))
         paper = self._render_paper(deps, plan)

@@ -153,6 +153,39 @@ class TestRelevanceReview(unittest.TestCase):
         result = self._run_start()
         self.assertIn("上游感召·Day 1：Day1-A", result.messages[0])
 
+    def test_first_crossday_start_relevance(self):
+        """跨日首次开始回归（G3 验收发现）：Day 1 刚结束（active_day_completed），
+        磁盘 days 只有 "1"——递增在内存、当日 units 末尾才落盘，感召 ensure 必须
+        见到内存态 state，否则当日 concept 注册不上、闭包为空感召静默缺失。"""
+        import json as _json
+        state_p = self.tmp / "docx" / "StudyState.json"
+        state = _json.loads(state_p.read_text(encoding="utf-8"))
+        state["current_day"] = 1
+        state["days"] = {"1": state["days"]["1"]}
+        state["days"]["1"]["active_day_completed"] = True
+        state_p.write_text(_json.dumps(state, ensure_ascii=False, indent=2),
+                           encoding="utf-8")
+        # 剥离 concepts.json 的 Day2+ 存量条目（双子审查 🔴：真实 docx 副本自带
+        # Day2 条目，不剥则旧代码下闭包也非空，测试修复前后都绿=空心）
+        cp = self.tmp / "docx" / "concepts.json"
+        cdata = _json.loads(cp.read_text(encoding="utf-8"))
+        cdata["concepts"] = {k: v for k, v in cdata["concepts"].items()
+                             if k.startswith("Day1-")}
+        cp.write_text(_json.dumps(cdata, ensure_ascii=False), encoding="utf-8")
+        session = self.deps.session_store.load()
+        result = StartDayHandler().run(self.deps, session, "")
+        # 递增到 Day 2，上游 Day1 概念感召（fixture 已删模型 → 未学）
+        self.assertIn("当前进度：Day 2", result.messages[0])
+        self.assertIn("上游感召·Day 1：Day1-A", result.messages[0])
+        # concepts.json 已注册 Day2 条目与跨天先修边（边=Day1 末单元，宽松断言
+        # 防真实数据 Day1 单元数漂移——双子审查 🟡）
+        cmap = _json.loads((self.tmp / "docx" / "concepts.json")
+                           .read_text(encoding="utf-8"))["concepts"]
+        self.assertIn("Day2-A", cmap)
+        prereqs = cmap["Day2-A"]["prerequisites"]
+        self.assertEqual(len(prereqs), 1)
+        self.assertTrue(prereqs[0].startswith("Day1-"))
+
 
 if __name__ == "__main__":
     unittest.main()

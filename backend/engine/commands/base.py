@@ -93,15 +93,25 @@ class CommandHandler(ABC):
         concepts 挂接材料需要 study_plan（doc tokens）与 materials_service
         （resolve_doc）编排——service 互不引用，故在此（engine 层）组装。
         """
-        from ...domain.learner import concept_id
         from ...services.learner_service import LearnerService
-        from ...services.materials_service import MaterialsService
-        from ...services.study_plan import extract_doc_paths
         svc = LearnerService(deps.config)
         try:
             state = deps.state_store.load()
         except Exception:
             return svc
+        CommandHandler.ensure_concepts_for(deps, svc, state)
+        return svc
+
+    @staticmethod
+    def ensure_concepts_for(deps: Deps, svc, state: dict) -> None:
+        """按给定 state（可为未落盘的内存态）同步 concepts + materials 挂接。
+
+        start_day 跨日首次开始时当日 units 尚未落盘，磁盘 load 会让当日
+        concept 注册不上、感召闭包为空；故允许调用方传入内存 state。
+        """
+        from ...domain.learner import concept_id
+        from ...services.materials_service import MaterialsService
+        from ...services.study_plan import extract_doc_paths
         ms = MaterialsService(deps.config)
         mats: dict[str, list[str]] = {}
         for day_key in state.get("days", {}):
@@ -121,7 +131,6 @@ class CommandHandler(ABC):
                 if ids:
                     mats[concept_id(int(day_key), u["id"])] = ids
         svc.ensure_concepts(state, mats)
-        return svc
 
 
 def render_mastery_check(state_store, stages, templates, session,
