@@ -71,9 +71,16 @@ class OpenAICompatClient(LLMClient):
                     # DeepSeek 把 usage 挂在带 finish_reason 的内容块上
                     usage = getattr(chunk, "usage", None)
                     if usage is not None:
+                        # 缓存命中：DeepSeek 顶层 prompt_cache_hit_tokens；
+                        # OpenAI 风格 prompt_tokens_details.cached_tokens
+                        hit = getattr(usage, "prompt_cache_hit_tokens", None)
+                        if hit is None:
+                            det = getattr(usage, "prompt_tokens_details", None)
+                            hit = getattr(det, "cached_tokens", None) if det else None
                         self.last_usage = {
                             "prompt_tokens": usage.prompt_tokens,
                             "completion_tokens": usage.completion_tokens,
+                            "cache_hit_tokens": hit or 0,
                         }
                     if not chunk.choices:
                         continue
@@ -99,16 +106,15 @@ class OpenAICompatClient(LLMClient):
         auto = max_tokens is None
         budget = max_tokens or self._max_tokens
         msgs = list(messages)
-        acc = {"prompt_tokens": 0, "completion_tokens": 0}
+        acc = {"prompt_tokens": 0, "completion_tokens": 0, "cache_hit_tokens": 0}
         for attempt in range(self._MAX_CONTINUATIONS + 1):
             parts: list[str] = []
             for delta in self._stream_once(msgs, budget):
                 parts.append(delta)
                 yield delta
             if self.last_usage:  # 多轮 usage 累加（记账不漏续写轮）
-                acc["prompt_tokens"] += self.last_usage.get("prompt_tokens") or 0
-                acc["completion_tokens"] += \
-                    self.last_usage.get("completion_tokens") or 0
+                for k in acc:
+                    acc[k] += self.last_usage.get(k) or 0
                 self.last_usage = dict(acc)
             if not auto or self._last_finish != "length":
                 return

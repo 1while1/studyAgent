@@ -17,10 +17,11 @@ from .base import LLMClient, Message
 
 class ObservedLLM(LLMClient):
     def __init__(self, inner: LLMClient, observer: Observer,
-                 provider: str):
+                 provider: str, workspace: str = ""):
         self._inner = inner
         self._observer = observer
         self._provider = provider
+        self._workspace = workspace
 
     @property
     def inner(self) -> LLMClient:
@@ -47,4 +48,5 @@ class ObservedLLM(LLMClient):
             model = getattr(self._inner, "_model", "") or type(self._inner).__name__
             self._observer.log_llm(
                 self._provider, model, latency_ms, in_text,
-                "".join(out_parts), usage, ok=not err, error=err)
+                "".join(out_parts), usage, ok=not err, error=err,
+                workspace=self._workspace)

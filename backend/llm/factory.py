@@ -31,7 +31,9 @@ def _build(provider: str, config: ConfigService, **kwargs) -> LLMClient:
         return client  # 假模型不记账
     from ..services.observer import get_observer
     from .observed import ObservedLLM
-    return ObservedLLM(client, get_observer(config), provider)
+    # workspace slug 随构建钉入：工作区切换走 _rebind 全量重建 deps，必然新鲜
+    ws = getattr(config.workspace, "slug", "")
+    return ObservedLLM(client, get_observer(config), provider, workspace=ws)
 
 
 def create_llm(config: ConfigService, **kwargs) -> LLMClient:

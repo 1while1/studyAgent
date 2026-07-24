@@ -217,6 +217,25 @@ class TestContextStatus(_Base):
         self.assertEqual(r["turns"], 1)
         self.assertEqual(r["archived_turns"], 0)
 
+    def test_context_status_has_today(self):
+        """M9：context-status 带今日 LLM 消耗（顶栏 tooltip 数据源）。"""
+        self._init_routes(MockLLM())
+        self.deps.session_store.save(SessionContext())
+        r = routes.context_status()
+        self.assertIn("today", r)
+        self.assertIn("calls", r["today"])
+
+    def test_usage_route_ws_param_and_days_clamp(self):
+        """M9：/api/observability/usage 路由层——ws 透传与 days 钳制。"""
+        self._init_routes(MockLLM())
+        r = routes.observability_usage(days=7, ws="不存在的项目")
+        self.assertEqual(r["totals"]["calls"], 0)  # 过滤后为空
+        for key in ("kpi", "daily", "today", "by_workspace",
+                    "by_model", "by_task", "workspaces"):
+            self.assertIn(key, r)
+        r2 = routes.observability_usage(days=99999, ws="")
+        self.assertEqual(r2["days"], 365)  # 上限钳制
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -669,9 +669,10 @@ def observability_status():
 
 
 @router.get("/api/observability/usage")
-def observability_usage(days: int = 7):
-    days = max(1, min(int(days), 90))
-    return get_observer(_deps.config).usage_summary(days)
+def observability_usage(days: int = 7, ws: str = ""):
+    """M9：days=0 表示全部；ws 非空按项目过滤。"""
+    days = max(0, min(int(days), 365))
+    return get_observer(_deps.config).usage_summary(days, ws=ws)
 
 
 # ---------- 学习者模型（M3） ----------
@@ -1200,6 +1201,8 @@ def context_status():
         "turns": len(session.chat_history),
         "archived_turns": max(0, min(session.archive_upto,
                                      len(session.chat_history))),
+        # M9：今日 LLM 消耗速览（observer 内存计数，启动时已从日志回填）
+        "today": get_observer(deps.config).status()["today"],
     }
 
 
