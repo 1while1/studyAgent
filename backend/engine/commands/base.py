@@ -83,7 +83,8 @@ class CommandHandler(ABC):
         ws = deps.config.workspace
         return (path.read_text(encoding="utf-8")
                 .replace("<复现名>", ws.replica_name)
-                .replace("<项目名>", ws.project_dir.name))
+                .replace("<项目名>", ws.project_dir.name)
+                .replace("<总天数>", str(ws.total_days)))
 
     @staticmethod
     def learner_with_concepts(deps: Deps):

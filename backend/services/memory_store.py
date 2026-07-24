@@ -175,6 +175,10 @@ class MemoryStore:
     def append_sync(content: str, field: str, value: str) -> str:
         if field not in SYNC_FIELDS:
             raise ValueError(f"未知 [同步] 字段: {field}")
+        # 🟡-2 消毒：多行内容压平为单行——StudyMemory 是行式契约文件，
+        # 裸续行会截断 ### 小节状态机、伪造评分/勾选行、对计数与蒸馏不可见
+        value = " / ".join(seg.strip() for seg in value.splitlines()
+                           if seg.strip())
         out = []
         in_sync = False
         pattern = re.compile(rf"^(-\s*{re.escape(field)}[:：])\s*(.*)$")

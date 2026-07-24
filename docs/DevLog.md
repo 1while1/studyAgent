@@ -1,7 +1,7 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-23（**M7 课程本体交付**——图谱增强 + 感召式复习 + 拓扑计划 + 先修诊断；379 单测/137 走查全绿；v3 分期 M1-M7 全部收官）
+> 最近更新：2026-07-23（**架构审计修复批交付**——三路审查驱动：C1 三指令/C2 session 锁/C3 安全/19 项 🟡/Y3 决策 2 真渲染；430 单测/139 走查全绿。此前 v3 分期 M1-M7 全部收官）
 
 ## 当前运行状态
 
@@ -11,7 +11,7 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 382 个全绿；UI 走查 139 项全绿
+- 测试：`python -m unittest discover -s tests` → 430 个全绿；UI 走查 139 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步
@@ -33,6 +33,40 @@ v1 Roadmap 与 v3 分期（M1 资料库 → M2 可观测 → M3 学习者模型 
 | 🟡 Y11 UI 保存覆盖外部修改 | `workshop_service.file_mtime`（代码根内 stat，失败 None）；/api/code/file 响应加 `mtime`；/api/code/save 接受可选 `mtime`——与当前文件值容差 1e-3 比对，不一致/不可比 → `{ok:False, conflict:True}` 拒写提示刷新；未提供保持现状兼容 |
 
 测试 +23（`tests/test_arch_fixes_a.py`，ArchFixBase 同款夹具）；**428 单测全绿**（含 B 包并行 +12）；validate_study 真实 docx 通过。
+
+## 架构审计修复批（2026-07-23，三路审查驱动，fix/arch-review）
+
+审查输入：架构审计（设计符合性）+ engine/api bug 扫荡 + services/domain/llm/前端 bug 扫荡（详见文末「审计留档」）。结论：架构健康（分层/铁律/§14 不做清单全部成立，无 🔴 违规）；bug 集中在「代码路径 vs validator/确认协议」契约断裂与「done 之后/请求间并发」两个测试盲区。
+
+| 发现 | 修复 |
+|------|------|
+| 🔴 [超前学习] 100% PersistError（插入行 `单元AA（超前）：` 中缀断链 validator/memory_store 正则族；完成时 set_unit_score 无行可填再撞） | 插入行改 `- [ ] 单元AA：{title}（超前）`（id 紧跟冒号）；set_unit_score 评分区缺行时**补行**（契约级）；超前全流程回归（插入→完成→validate） |
+| 🔴 [跳转天数] 三方向全死（目标天无 StudyMemory 时序死锁/确认形态 `"2 是"` 永不命中死循环/`[否]` 未注册死端） | 确认形态改「Day X 是」endswith 判定 + 提示可操作化；目标天无 md 时**补建骨架**（render_new 空单元）；三路径回归 |
+| 🔴 /api/command 无 llm_instruction 必抛 UnboundLocalError（纯消息指令每次一条 ASGI traceback，[结束今日学习] 每天命中） | streamer=None 初始化 + 压缩传空计划；路由级回归（fail_fast 纯消息 + handler 纯消息各一） |
+| 🔴 session 写路径并发（chat 流多次 save 覆盖 mode/reset、双标签 lost-update、tmp 互踩写坏） | **两级锁**：短 RLock（load/save 原子）+ 流程 threading.Lock（chat/command 流全程 + mode/reset 端点；**非线程绑定**支持 SSE 生成器 anyio 跨线程释放）；前端流式禁切模式/清历史 |
+| 🔴 XSS 三处（escapeHtml 不转义引号用于属性 / 代码根名无校验 + insertAdjacentHTML / loadTreeLevel 错误文本 innerHTML） | escapeHtml 补引号转义；代码根名 `[A-Za-z0-9_-]{1,40}` 白名单；两处改 DOM 构建 |
+| 🔴 TOML 写入可写坏 settings（model/base_url 引号换行未转义致全站 500；未提交节区被 env 解析值/meta 固化覆写） | _esc 统一（补换行转义）；llm-config **只写提交的 provider 节区**；写路径改 `_deps.config.path`（可注入）；往返/保留双测试 |
+| 🟡 Y1 资源去项目化（step1 `/ 25`、step3 ragent-replica、study_review_doc、SOP_开始写代码×4、presets/stages instruction） | 模板改 `<总天数>/<复现名>/<项目名>` 占位，消费处（start_day/end_day/read_sop_card/prompt_builder）统一替换 |
+| 🟡 Y2 end_step1_sync `<Y>` 泄漏 + 已解决计数恒 0 | 有/无疑问两态渲染（行删除）；已解决接 notes.json 当日 resolved |
+| 🟡 待解答无移除路径 | note_actions.resolve_note 同步移除 StudyMemory「（待解答）」后缀（规则 14，静默兜底） |
+| 🟡 end_day 后 stage 空转 | end_day 复位 stage；orchestrator ENDED/NOT_STARTED 短路；next_content ENDED 拦截 + 全完成护栏 |
+| 🟡 配置非法值绕过（trigger_ratio/interval 解包） | _safe_float/解包回退三处 |
+| 🟡 两个 500 端点（/api/doc memory、notes_distill int） | ok/error 契约统一 |
+| 🟡 sync 拒绝多行 | 子类型正则 `[\s\S]+` |
+| 🟡 persist_state 与 validator 互斥（completed 必失败） | 白名单去掉 completed（注明须走 [下一内容] 正轨） |
+| 🟡 run_build 超时只杀直接子进程（java 孙进程存活） | Popen + 超时内联杀树（process_mgr 同款，services 不互引） |
+| 🟡 GBK 回退整体乱码 | utf-8 严格 → GBK 严格 → utf-8 replace 三分支 |
+| 🟡 Study.md 文档错位认领 | 解析窗口限定到下一单元/标题前 |
+| 🟡 InterviewQA 坏块连坐降级 | 坏块仅自身进 tail |
+| 🟡 openCodeFile 慢响应覆盖新选择 | 递增序号三处过期校验 |
+| 🟡 resolve_doc 后缀无边界 | endswith 改 `t == il`（词干兜底保留 ≥4 字符） |
+| 🟡 Monaco model 泄漏（hint/legacy 路径） | mcModel 句柄 + disposeMonaco 统一销毁 |
+| 🟡 笔记合并 keep 与文案不符 | 点击序记录替代 DOM 序 |
+| 🟡 UI 保存无冲突检测（AI/外部改动被静默覆盖） | /api/code/file 返回 mtime；save 带 mtime 比对（不一致 conflict 拒写 + 保留脏标记）；save 响应回新 mtime |
+| 🟡 mode 切换相位护栏 | INTERVIEW/PREREQ/REVIEWING 中切模式 → 清相位字段 + note 明示 |
+| 🟡 Y3 InteractionModel §3 决策 2 名存实亡（5-6 轮只提示不渲染） | render_mastery_check 下沉 commands/base.py 两触发源共用；orchestrator 自动触发**真渲染**（选项原样） |
+
+🔵 留档见文末「审计留档」节。测试 +48 → **430 全绿**；走查 139 项全绿。
 
 ## M7 审查修复批（2026-07-23，双子 agent 审查驱动，fix/m7-review）
 
@@ -349,3 +383,9 @@ v1 Roadmap 与 v3 分期（M1 资料库 → M2 可观测 → M3 学习者模型 
 3. 服务若在跑（8765）：`python scripts/ui_walkthrough.py` 全量 UI 走查
 4. 前端改动后必须 Playwright 点击走查再交付；提交走分支 + 三件套全绿
 
+
+## 审计留档（2026-07-23 架构审计 🔵 归集，不阻塞）
+
+- **设计侧**：§10 ReplayLLM 未建（ScriptableLLM/MockLLM 已覆盖现状）；§8.6 quirk 层仅两类（空 choices/stream_options，reasoning 字段/温度降级遇厂商怪癖再补）；服务互引例外未全登记（config_service/config_writer/memory_store/study_plan 方向均向下无环）；index.html 静态标题运行时覆盖；B5 llm-config 已修（见上表）；阶段字面量散落 engine（InteractionModel 已钉为契约）；DayPhase.PLANNING 死枚举；unit_open 模板头恒「单元 1」；token_calibration.json 无 schema_version；review_due 恒单元素 vs §3.1 示例形状。
+- **engine/api 侧**：quiz_engine.ask_and_score 死代码；stage_machine.advance/next_of 无消费者（source_review/paper 阶段配置可达性属预设编排缺口）；SessionContext.force_skip 只写不读；start_day 不清 pending_score/review_msg_start（惰性无害）；tool_use 多标记续写重复注入（token 浪费）；command LLM 失败 docx/session 分叉（[恢复学习] 自愈）；/api/config/reload 不重建 StageMachine/QuizEngine 快照（改这两类配置需重启）；/api/auth/logout 未豁免（过期会话无法登出，清 cookie 可绕）。
+- **services/前端侧**：mastery 半衰期 0/损坏 evidence 数值边界；StudyState 非数字 day 键；.bak 同名冲突（现调用方文件名均不同）；.tmp 残留进导出 zip；split_cmd 单引号路径；token 与密码解耦（改密不踢旧 token）；进程运行中 chdir 致哈希失配误报 stopped（fail-safe 代价）；learner/notes JSON 读改写短锁外（session 已治，余者串行场景）；fallback 半流缝合（前端 rawText 直拼，设计内有意识）；update_env_file docstring「空值跳过」与实现不符（clear_password 依赖写空）；InterviewQA 坏块重渲染后移尾部（round-trip 二次稳定已锁定）。

@@ -161,6 +161,55 @@ class TestJumpDayFix(ArchFixBase):
             (self.docx / "StudyState.json").read_text(encoding="utf-8"))
         self.assertEqual(state["current_day"], 3)
 
+    def test_jump_then_start_day_full_chain(self):
+        """🔴-1 回归：跳转（骨架带单元行）→ [开始今日学习] restart 不再死端。"""
+        self._write_state(self._state())
+        JumpDayHandler().run(self.deps, SessionContext(), "Day 2")
+        # 骨架含当日大纲单元行（否则 restart 撞 JSON/MD 不一致回滚）
+        content = self.deps.memory.read(2)
+        self.assertIn("- [ ] 单元A：进阶一", content)
+        from backend.engine.commands.start_day import StartDayHandler
+        session = self.deps.session_store.load()
+        result = StartDayHandler().run(self.deps, session,
+                                       "重新开始今日学习")
+        self.assertIn("---【Step 3：今日计划】---", "\n".join(result.messages))
+        self._validate()  # 修复前：restart 必 PersistError（MD 无单元行）
+
+    def test_confirm_excludes_negation(self):
+        """🟡-1：「Day 2 不是」不触发重置确认（否定句排除）。"""
+        state = self._state()
+        state["days"]["2"] = {"date": "2026-07-23", "units": [
+            {"id": "A", "title": "进阶一", "status": "in_progress",
+             "rating": 0}]}
+        self._write_state(state)
+        h = JumpDayHandler()
+        s = SessionContext()
+        stop = h.fail_fast(self.deps, s, "Day 2 不是")
+        self.assertIsNotNone(stop)          # 回到确认提示而非放行
+        self.assertIn("确认重置", stop)
+        self.assertIsNone(h.fail_fast(self.deps, s, "Day 2 是"))
+        # run 直接驱动也不清单元（双保险）
+        h.run(self.deps, s, "Day 2 不是")
+        state = json.loads(
+            (self.docx / "StudyState.json").read_text(encoding="utf-8"))
+        self.assertNotEqual(state["days"]["2"]["units"], [])
+
+    def test_append_sync_multiline_flattened(self):
+        """🟡-2：多行 [同步] 内容压平单行（### 与评分形态不可注入）。"""
+        from backend.services.memory_store import MemoryStore
+        content = ("## 2026-07-22\n\n### [同步] 记录\n- 卡壳：\n"
+                   "\n### 掌握度评分（1-5分）\n- 单元A：\n")
+        out = MemoryStore.append_sync(
+            content, "卡壳", "第一行\n### 伪造小节\n- 单元A：5分")
+        self.assertIn("- 卡壳：第一行 / ### 伪造小节 / - 单元A：5分", out)
+        # 无裸续行：所有行仍属于原有小节结构
+        self.assertEqual(out.count("### 伪造小节"), 1)  # 仅压平后的文本出现一次
+        self.assertNotIn("\n### 伪造小节\n", out)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
     def test_confirm_flow_no_dead_loop(self):
         state = self._state()
         state["days"]["2"] = {"date": "2026-07-23", "units": [

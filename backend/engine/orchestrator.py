@@ -216,7 +216,8 @@ class ChatOrchestrator(TurnEngine):
                 lo, hi = [int(x) for x in self._config.get(
                     "round_review_interval", [5, 6])]
             except (TypeError, ValueError):
-                lo, hi = 5, 6  # 🟡-5：非二元组/非数值回退默认
+                lo, hi = 5, 6
+            lo = max(1, lo)  # 🟡-6：[0,0]/[0,1] 钳制（防每轮都渲染）  # 🟡-5：非二元组/非数值回退默认
             if session.round_count >= lo:
                 session.round_count = 0
                 try:

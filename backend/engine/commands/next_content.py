@@ -108,7 +108,7 @@ class NextContentHandler(CommandHandler):
             if new_id in existing:
                 new_id = f"{new_id}A"  # 防 id 冲突
             day_data["units"].append({
-                "id": new_id, "title": f"（超前）{first['title']}",
+                "id": new_id, "title": f"{first['title']}（超前）",
                 "status": "in_progress", "rating": 0, "ahead": True})
             content = deps.memory.read(day)
             content = content.replace(
