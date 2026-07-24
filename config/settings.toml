@@ -63,7 +63,8 @@ planner_max_actions_per_reply = 4
 [model_context]
 default = 32768
 deepseek-chat = 65536
-deepseek-v4-pro = 256000
+deepseek-v4-pro = 1048576
+deepseek-v4-flash = 1048576
 
 [llm]
 provider = "deepseek_official"
