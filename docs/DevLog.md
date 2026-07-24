@@ -1,7 +1,8 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-24（**面试相位出口提示修复**（fix/interview-exit-hint）——用户反馈「卡在模拟面试」：相位锁是有意设计（防状态分裂），[恢复学习] 本就可放弃面试，但 9 处拦截文案从不告知出口，清空历史后产生「卡死」感。修：base.py 统一 INTERVIEW_EXIT_HINT 常量，9 处 fail_fast 拦截文案全部追加「（想放弃本场面试可 [恢复学习] 退出，不留成绩）」；回归 test_interview.TestInterviewExitHint（9 handler 逐一断言文案含出口））
+> 最近更新：2026-07-24（**LLM 输出截断修复**（fix/llm-length-continue）——用户反馈长回复「讲着讲着断了」：openai_compat 流式循环从未读 finish_reason，输出撞 max_tokens=4096 时流干净结束、半截回答被当成完整回复渲染（v4-pro 思考链也吃输出预算，更容易撞）。修：拆 _stream_once 捕获 finish_reason，length 时携带已生成内容自动续写（1+4 轮，SSE 无缝拼接）；显式小预算调用（warmup=1/压缩摘要）不续写；仍超限末尾明示可手动「继续」；多轮 usage 累加记账。回归 test_openai_compat_continue 4 测试（自动续写/不续写/显式预算豁免/超限明示）。另：DeepSeek 官方渠道模型名 deepseek-chat 已下线，配置页改为 deepseek-v4-pro 后真实渠道恢复）
+> 前次：2026-07-24（**面试相位出口提示修复**（fix/interview-exit-hint）——用户反馈「卡在模拟面试」：相位锁是有意设计（防状态分裂），[恢复学习] 本就可放弃面试，但 9 处拦截文案从不告知出口，清空历史后产生「卡死」感。修：base.py 统一 INTERVIEW_EXIT_HINT 常量，9 处 fail_fast 拦截文案全部追加「（想放弃本场面试可 [恢复学习] 退出，不留成绩）」；回归 test_interview.TestInterviewExitHint（9 handler 逐一断言文案含出口））
 > 前次：2026-07-24（**完成度验收 G12 交付——工程质量 5 项 ✅ 含修复批**：command 回滚快照补测试引出的 [超前学习] 死胡同修复（幂等续学+分裂态护栏）+ 测试变异防护/动态 Day；详见「G12 验收修复批」）
 > 前次：2026-07-24（**完成度验收 G11 交付**——UI/UX 8 项 ✅ 无修复批：_accept_g11.py 截图复核双主题无串色（tutor 暖纸/pair 深色）+ 五弹窗主按钮钉底视口内 + toast 位置 CSS 校验；11.1/11.3/11.5/11.6/11.7 走查引用打勾）
 > 前次：2026-07-24（**完成度验收 G10 交付**——可观测与安全 6 项 ✅ 无修复批：_accept_g10.py e2e 验证双客户端并发（流程锁串行化、历史不丢不串、前端渲染一致）；10.1 agent.log 手动核查 + plan/prefetch 记账单测打勾、10.5 三道拒读单测打勾）
