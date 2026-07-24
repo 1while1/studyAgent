@@ -1,7 +1,7 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-24（**完成度验收 G2 交付**——学习流程 14 项实测 ✅（2.11 题量/2.12 字数真实 LLM 环境阻塞标注）；两个修复批：fix/g2-extras-overwrite（🔴 快流 extras 覆盖 LLM 泡）+ fix/g2-review-persist（🔴 复盘评分落盘 overall 不同步/REVIEWING 矩阵拦截/jump_day 清完成标记/atomic_persist 写失败回滚）；459 单测/155 走查全绿）
+> 最近更新：2026-07-24（**完成度验收 G3 交付**——AI 导学质量 7 项实测 ✅（3.1 讲解内容质量环境阻塞标注）；修复批 fix/g3-relevance-first-start：🔴 跨日首次 start_day 感召静默为空（感召 ensure 改内存态 state）；460 单测/155 走查全绿，双子审查收编）
 
 ## 当前运行状态
 
@@ -11,14 +11,27 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 459 个全绿；UI 走查 155 项全绿
+- 测试：`python -m unittest discover -s tests` → 460 个全绿；UI 走查 155 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步
 
 v1 Roadmap 与 v3 分期（M1 资料库 → M2 可观测 → M3 学习者模型 → M4 笔记管理 → M5a 工具骨架 → M5b 上下文+路由 → M5c planner → M6 实战工坊 → **M7 课程本体 ✅**）全部收官；架构审计修复批 ✅、UI 全面优化 ✅、全功能浏览器测试（152 项）✅。
 
-**当前阶段 = 完成度验收**：G1 ✅ / G2 ✅（均含修复批合并 push）；G3-G12 待办。按 `docs/AcceptanceChecklist.md` 逐项检查（实测打勾，发现问题开修复批：分支 + 三件套全绿 + 双子审查 + 合并 push）。mark_wrong 工具（§9）与「command 失败外部落盘不回滚」修复批仍留档另立。
+**当前阶段 = 完成度验收**：G1 ✅ / G2 ✅ / G3 ✅（均含修复批合并）；G4-G12 待办。按 `docs/AcceptanceChecklist.md` 逐项检查（实测打勾，发现问题开修复批：分支 + 三件套全绿 + 双子审查 + 合并 push）。mark_wrong 工具（§9）与「command 失败外部落盘不回滚」修复批仍留档另立。
+
+## G3 验收修复批（2026-07-24，fix/g3-relevance-first-start，双子审查收编）
+
+验收 G3（AI 导学质量）实测发现：
+
+| 发现 | 修复 |
+|------|------|
+| 🔴 跨日首次 [开始今日学习]【上游感召】静默为空：感召计算在当日 units 落盘前执行，而 learner_with_concepts 从磁盘 load StudyState——跨日首次时当日 units 尚未落盘（末尾才统一原子落盘），当日 concept 注册不上 → 先修闭包为空（F1 同款缺口在 start_day 的残留；同一天内 restart 因磁盘已有 units 而不显，正好掩盖了它） | start_day 把 today/day_data/units 填充块上移到感召计算之前；base.py 拆出 `ensure_concepts_for(deps, svc, state)` 支持内存态 state，感召块改走内存态 ensure；其他调用方仍走 learner_with_concepts 磁盘路径（语义不变） |
+| 🔴（审查）新回归测试空心：真实 docx 副本自带 Day2 concepts 条目，不剥离则旧代码下闭包也非空、测试修复前后都绿 | fixture 补剥离 concepts.json 非 Day1- 条目（仿 test_f1）；修复前实测变红=真回归门 |
+| 🟡（审查）Day2-A 跨天边断言写死 Day1-E，依赖真实数据 Day1 单元数 | 放宽为 `len==1 且 startswith("Day1-")` |
+| 🟡（审查）ensure_concepts 立即落盘 concepts.json 与末尾 atomic_persist 回滚存在不一致窗口 | 注释钉住：派生数据幂等 upsert、可自愈，有意为之 |
+
+G3 手动项 e2e（scripts/_accept_g3.py，tinyrag+Mock）5/5：3.1 📚 备课 chip / 3.4 感召 / 3.5 回合复习 / 3.6 间隔复习（感召占满 6 封顶时日历项让位=设计，故 3.6 在无感召场景验证）；3.2/3.7 走查 9c/7c、3.3 test_tool_use 打勾。460 单测/155 走查全绿。
 
 ## G2 复盘修复批（2026-07-24，fix/g2-review-persist，双子审查收编）
 
