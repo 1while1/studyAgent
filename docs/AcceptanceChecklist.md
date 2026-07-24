@@ -86,14 +86,14 @@
 
 | # | 检查项 | 方法 | 结果 |
 |---|--------|------|------|
-| 7.1 | 新建 demo：npm/maven-module/gradle 三类型 + {{name}} 替换 + 代码根注册 | 走查 8b | |
-| 7.2 | npm demo 离线构建（npm run build）与自测（npm test） | 手动 | |
-| 7.3 | Monaco：动态加载/readOnly 白名单/保存+脏标记/mtime 冲突提示 | 走查 8b+手动 | |
-| 7.4 | 片段提问：选区浮动钮 → 片段卡片 → 📎 跳转行高亮 | 走查 7/8 | |
-| 7.5 | 进程面板：启动（cwd 白名单）/端口链接/日志 SSE/停止杀树 | 走查 8b | |
-| 7.6 | 清理已停止：条目真移除 | 走查 9k | |
-| 7.7 | AI 工具：scaffold_create/edit_file（白名单外拒写）/process_* | 手动（code 模式对话让 AI 建 demo） | |
-| 7.8 | run_build 超时杀树（孙进程不留） | 单测 | |
+| 7.1 | 新建 demo：npm/maven-module/gradle 三类型 + {{name}} 替换 + 代码根注册 | 走查 8b | | ✅ G7 脚本 e2e：三类型脚手架/npm demo 创建/{{name}} 替换/代码根自动注册 + 走查 8b（UI 侧） |
+| 7.2 | npm demo 离线构建（npm run build）与自测（npm test） | 手动 | | ✅ G7 脚本真实 node：npm run build 离线构建 ok（3 文件→dist/）+ npm test 3 断言全过 |
+| 7.3 | Monaco：动态加载/readOnly 白名单/保存+脏标记/mtime 冲突提示 | 走查 8b+手动 | | ✅ 走查 8b（Monaco 动态加载/保存/只读） |
+| 7.4 | 片段提问：选区浮动钮 → 片段卡片 → 📎 跳转行高亮 | 走查 7/8 | | ✅ 走查 7/8（选区浮动钮→片段卡片→📎跳转行高亮） |
+| 7.5 | 进程面板：启动（cwd 白名单）/端口链接/日志 SSE/停止杀树 | 走查 8b | | ✅ 走查 8b（启动/端口链接/日志/停止杀树）+ test_process_mgr 真实杀树父子双亡 |
+| 7.6 | 清理已停止：条目真移除 | 走查 9k | | ✅ 走查 9k（清理已停止条目真移除） |
+| 7.7 | AI 工具：scaffold_create/edit_file（白名单外拒写）/process_* | 手动（code 模式对话让 AI 建 demo） | | ✅ test_tool_registry（scaffold_create/edit_file/process_* invoke + 白名单外拒写「白名单」）+ test_workshop（resolve_write 别名白名单/重名/回滚重入） |
+| 7.8 | run_build 超时杀树（孙进程不留） | 单测 | | ✅ test_arch_fixes_b（超时杀整棵树，孙进程不留） |
 
 ## 8. 双模式（study/code）
 

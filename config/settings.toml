@@ -209,6 +209,11 @@ name = "temp_tinyrag"
 path = "../temp_tinyrag"
 workspace = "tinyrag"
 
+[[code_roots]]
+name = "demo"
+path = "workspaces/tinyrag/demo"
+workspace = "tinyrag"
+
 
 [[workspaces]]
 slug = "ragent"
