@@ -1,7 +1,7 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-23（**架构审计修复批交付**——三路审查驱动：C1 三指令/C2 session 锁/C3 安全/19 项 🟡/Y3 决策 2 真渲染；430 单测/139 走查全绿。此前 v3 分期 M1-M7 全部收官）
+> 最近更新：2026-07-23（**架构审计修复批交付**——三路审查驱动：C1 三指令/C2 session 锁/C3 安全/19 项 🟡/Y3 决策 2 真渲染；432 单测/139 走查全绿。此前 v3 分期 M1-M7 全部收官）
 
 ## 当前运行状态
 
@@ -11,7 +11,7 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 430 个全绿；UI 走查 139 项全绿
+- 测试：`python -m unittest discover -s tests` → 432 个全绿；UI 走查 139 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步
@@ -66,7 +66,7 @@ v1 Roadmap 与 v3 分期（M1 资料库 → M2 可观测 → M3 学习者模型 
 | 🟡 mode 切换相位护栏 | INTERVIEW/PREREQ/REVIEWING 中切模式 → 清相位字段 + note 明示 |
 | 🟡 Y3 InteractionModel §3 决策 2 名存实亡（5-6 轮只提示不渲染） | render_mastery_check 下沉 commands/base.py 两触发源共用；orchestrator 自动触发**真渲染**（选项原样） |
 
-🔵 留档见文末「审计留档」节。测试 +48 → **430 全绿**；走查 139 项全绿。
+🔵 留档见文末「审计留档」节。测试 +50 → **432 全绿**；走查 139 项全绿。
 
 ## M7 审查修复批（2026-07-23，双子 agent 审查驱动，fix/m7-review）
 
