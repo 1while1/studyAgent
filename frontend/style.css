@@ -1075,7 +1075,8 @@ body[data-layout="pair"] .heat-cell2.lv4 { background: #8fd694; }
 }
 
 /* ---------- M9 Token 用量统计页（/usage.html） ---------- */
-.usage-page { background: var(--bg); color: var(--text); min-height: 100vh; }
+/* 全局 body 是应用外壳（100vh+overflow:hidden），统计页是普通文档流，必须还回滚动 */
+.usage-page { height: auto; overflow: auto; background: var(--bg); color: var(--text); min-height: 100vh; }
 .usage-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; padding: 14px 22px; border-bottom: 1px solid var(--border); }
 .usage-title { display: flex; align-items: center; gap: 12px; }
 .usage-title h1 { font-size: 18px; margin: 0; }
