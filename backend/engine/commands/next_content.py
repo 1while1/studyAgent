@@ -95,6 +95,18 @@ class NextContentHandler(CommandHandler):
             remaining = [u for u in deps.state_store.day(state)["units"]
                          if u["status"] != "completed"]
             if remaining:
+                # 幂等恢复（G12 审查 🔴）：超前落盘后 LLM 失败回滚 session，
+                # 磁盘只剩上次拽入的超前单元开着——重发 [超前学习] 应续学
+                # 该单元，而非「还有 1 个未完成」死锁（唯一出口曾是 [恢复学习]）
+                if len(remaining) == 1 and remaining[0].get("ahead"):
+                    u = remaining[0]
+                    session.current_unit_id = u["id"]
+                    session.current_stage = deps.stages.first
+                    deps.session_store.save(session)
+                    return CommandResult(
+                        messages=[f"检测到已超前加载的单元「{u['title']}」，继续学习。"],
+                        llm_instruction="输出开场「第一段」（≤300字），开始步骤一：文档带读。",
+                        sop_card="SOP_下一内容.md")
                 return CommandResult(messages=[
                     f"今日还有 {len(remaining)} 个单元未完成，不能超前学习。"])
             try:
@@ -151,6 +163,18 @@ class NextContentHandler(CommandHandler):
             # （rating 保留状态回退，撞 validator 语义），直接提示后续出口
             return CommandResult(messages=[
                 "今日单元已全部完成，可 [超前学习] 或 [结束今日学习]。"])
+        ahead_open = [u for u in units
+                      if u.get("ahead") and u["status"] != "completed"]
+        if (ahead_open
+                and session.current_unit_id not in {u["id"] for u in ahead_open}
+                and all(u["status"] == "completed" or u.get("ahead")
+                        for u in units)):
+            # LLM 失败回滚分裂态（G12 审查 🔴）：磁盘只剩超前单元开着而
+            # session 定位在已完成单元——放行会把 completed 改回 in_progress
+            # 撞 validator 报「指令执行失败」，引导用户走恢复路径
+            return CommandResult(messages=[
+                "检测到进行中的超前单元（上一轮可能中断），"
+                "请 [恢复学习] 或 [超前学习] 继续。"])
         unit = deps.state_store.set_unit(state, session.current_unit_id)  # 校验存在
         deps.state_store.set_unit(state, session.current_unit_id, status="in_progress")
         deps.backup.atomic_persist(

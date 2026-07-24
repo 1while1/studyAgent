@@ -1,7 +1,8 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-24（**完成度验收 G11 交付**——UI/UX 8 项 ✅ 无修复批：_accept_g11.py 截图复核双主题无串色（tutor 暖纸/pair 深色）+ 五弹窗主按钮钉底视口内 + toast 位置 CSS 校验；11.1/11.3/11.5/11.6/11.7 走查引用打勾）
+> 最近更新：2026-07-24（**完成度验收 G12 交付——工程质量 5 项 ✅ 含修复批**：command 回滚快照补测试引出的 [超前学习] 死胡同修复（幂等续学+分裂态护栏）+ 测试变异防护/动态 Day；详见「G12 验收修复批」）
+> 前次：2026-07-24（**完成度验收 G11 交付**——UI/UX 8 项 ✅ 无修复批：_accept_g11.py 截图复核双主题无串色（tutor 暖纸/pair 深色）+ 五弹窗主按钮钉底视口内 + toast 位置 CSS 校验；11.1/11.3/11.5/11.6/11.7 走查引用打勾）
 > 前次：2026-07-24（**完成度验收 G10 交付**——可观测与安全 6 项 ✅ 无修复批：_accept_g10.py e2e 验证双客户端并发（流程锁串行化、历史不丢不串、前端渲染一致）；10.1 agent.log 手动核查 + plan/prefetch 记账单测打勾、10.5 三道拒读单测打勾）
 > 前次：2026-07-24（**完成度验收 G9 交付**——上下文与模型渠道 6 项 ✅ 无修复批：_accept_g9.py e2e 验证 fallback（openai_compat 401→mock 接管）与 warmup 开关（false 无预热/true 重启出现 task=warmup 行）；9.1/9.2 test_context_manager、9.3/9.4 走查 6 打勾；留档：mock 按设计不记账，fallback 双记录仅真实备用渠道成立）
 
@@ -20,7 +21,19 @@
 
 v1 Roadmap 与 v3 分期（M1 资料库 → M2 可观测 → M3 学习者模型 → M4 笔记管理 → M5a 工具骨架 → M5b 上下文+路由 → M5c planner → M6 实战工坊 → **M7 课程本体 ✅**）全部收官；架构审计修复批 ✅、UI 全面优化 ✅、全功能浏览器测试（152 项）✅。
 
-**当前阶段 = 完成度验收**：G1-G11 ✅（G2/G3/G6 含修复批）；G12 待办。按 `docs/AcceptanceChecklist.md` 逐项检查（实测打勾，发现问题开修复批：分支 + 三件套全绿 + 双子审查 + 合并 push）。mark_wrong 工具（§9）与「command 失败外部落盘不回滚」修复批仍留档另立。
+**当前阶段 = 完成度验收**：G1-G12 全部 ✅（G2/G3/G6/G12 含修复批）。收尾：清理 scripts/_accept_*.py 临时验收脚本 + 验收记录节填写 + 最终三件套。按 `docs/AcceptanceChecklist.md` 逐项检查（实测打勾，发现问题开修复批：分支 + 三件套全绿 + 双子审查 + 合并 push）。mark_wrong 工具（§9）与「command 失败外部落盘不回滚」修复批仍留档另立。
+
+## G12 验收修复批（2026-07-24，fix/g12-command-rollback-test，双子审查收编）
+
+验收 G12（工程质量 12.5）发现 command 回滚快照（routes.py:257）无单测 → 补测试 + 双子审查，连带修出预存缺陷：
+
+| 发现 | 修复 |
+|------|------|
+| 🔴（审查 B）[超前学习] 死胡同（预存缺陷）：超前单元落盘后 LLM 失败回滚 session → 重发 [超前学习] 被「还有 1 个未完成」拦截、[下一内容] 把 completed 改回 in_progress 撞 validator 报「指令执行失败」，唯一出口 [恢复学习] 但用户无从得知 | next_content ahead 分支幂等续学（remaining 仅剩超前单元时定位续学而非拦截）；常规分支分裂态护栏（session 定位不在超前单元时引导 [恢复学习]/[超前学习]，session 定位在超前单元的正常流程不误伤）。回归 test_arch_fixes 三新测试 |
+| 🔴（审查 A）新回滚测试变异杀不死：[同步] 不改 session，删掉 save(snapshot) 测试照样绿 | spy SessionStore.save：断言失败路径恰好 save 一次且内容=指令前快照；补中途断流变体（部分输出同样回滚） |
+| 🔴（审查 A）Day_02.md 硬编码，真实进度推进后假性变红 | 从复制的 StudyState.json 动态读 current_day |
+
+留档（🟡 不阻塞）：handler.run 异常路径无回滚（routes.py:242，铁律 10 仅覆盖 LLM 失败）；重复 [同步] 无去重（append_sync 幂等缺失，notes 层 source_ref 已去重）；refresh_project_md 直写无备份；LLM 失败后前端已显示 sync 汇总但 chat_history 无痕迹（上下文轻微失真）。
 
 ## G3 验收修复批（2026-07-24，fix/g3-relevance-first-start，双子审查收编）
 
