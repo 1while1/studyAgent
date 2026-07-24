@@ -269,9 +269,35 @@ async function refreshState() {
 
     const sess = s.session;
     document.getElementById("session-info").textContent =
-      `${sess.day_phase || "-"} · 单元${sess.current_unit_id || "-"} · ${sess.current_stage || "-"}`;
+      `${_stageLabel(sess.day_phase)} · 单元${sess.current_unit_id || "-"} · ${_stageLabel(sess.current_stage)}`;
   } catch (e) { /* 服务未就绪时静默 */ }
 }
+
+// 状态机英文值 → 中文标签（英文状态不上屏，未知值原样兜底）
+const STAGE_LABELS = {
+  not_started: "未开始", planning: "规划中", studying: "学习中",
+  teaching: "讲解中", quiz_r1: "考核中", quiz_r2: "考核中",
+  scored: "待确认", completed: "已完成", reviewing: "复盘中",
+  interviewing: "面试中", prereq_diagnosing: "诊断中", ended: "已结束",
+};
+const _stageLabel = (v) => STAGE_LABELS[v] || v || "-";
+
+// 指令静态说明（与 settings.toml [commands] 13 条对应；后端无 description 字段，避免新请求）
+const CMD_DESC = {
+  "开始今日学习": "生成今日计划并开始导学",
+  "恢复学习": "从中断单元恢复进度",
+  "下一内容": "掌握检查确认后推进",
+  "强制下一内容": "跳过检查直接推进",
+  "超前学习": "预学明日首个单元",
+  "同步": "汇报掌握/卡壳/疑问",
+  "开始写代码": "进入复现编码模式",
+  "验证代码": "校验复现代码",
+  "模拟面试": "连环追问演练",
+  "先修诊断": "诊断先修知识缺口",
+  "开始今日复盘": "自测+拷问+评分",
+  "结束今日学习": "收尾汇总写记忆",
+  "跳转天数": "跳到指定 Day（如 Day 5）",
+};
 
 let COMMANDS = [];
 async function loadCommands() {
@@ -309,7 +335,17 @@ function updateCmdMenu() {
   for (const c of hits) {
     const item = document.createElement("button");
     item.type = "button";
-    item.textContent = `[${c.trigger}]`;
+    const name = document.createElement("span");
+    name.className = "cmd-name";
+    name.textContent = `[${c.trigger}]`;
+    item.appendChild(name);
+    const desc = CMD_DESC[c.trigger];
+    if (desc) {
+      const d = document.createElement("span");
+      d.className = "cmd-desc";
+      d.textContent = desc;
+      item.appendChild(d);
+    }
     item.onclick = () => {
       inputEl.value = `[${c.trigger}]`;
       closeCmdMenu();
@@ -476,14 +512,38 @@ form.addEventListener("submit", (e) => {
 });
 
 // 多行输入：Enter 发送（输入法组词中除外），Shift+Enter 换行；随内容自动增高
+// 补全菜单键盘导航：↑↓ 移动高亮（.active），Enter 选高亮（无高亮选首项），Esc 关闭并复原光标
 inputEl.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && cmdMenuOpen) { closeCmdMenu(); return; }
+  if (cmdMenuOpen && !e.isComposing) {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const items = [...cmdMenu.querySelectorAll("button")];
+      if (!items.length) return;
+      const cur = items.findIndex(b => b.classList.contains("active"));
+      const next = e.key === "ArrowDown"
+        ? (cur + 1) % items.length
+        : (cur <= 0 ? items.length - 1 : cur - 1);
+      items.forEach((b, i) => b.classList.toggle("active", i === next));
+      items[next].scrollIntoView({ block: "nearest" });
+      return;
+    }
+    if (e.key === "Escape") {
+      closeCmdMenu();
+      inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
+      return;
+    }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      const pick = cmdMenu.querySelector("button.active") ||
+                   cmdMenu.querySelector("button");
+      if (pick) { pick.onclick(); return; }
+      closeCmdMenu();
+      form.requestSubmit();
+      return;
+    }
+  }
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
-    if (cmdMenuOpen) {
-      const first = cmdMenu.querySelector("button");
-      if (first) { first.onclick(); return; }
-    }
     form.requestSubmit();
   }
 });
@@ -602,22 +662,37 @@ async function openMaterials() {
   box.appendChild(list);
 }
 
-async function openMaterialPreview(id) {
+async function openMaterialPreview(id, section, line) {
   const box = document.getElementById("doc-content");
   box.textContent = "加载中…";
-  const res = await fetch(`/api/materials/preview?id=${encodeURIComponent(id)}`);
+  let url = `/api/materials/preview?id=${encodeURIComponent(id)}`;
+  if (section) url += `&section=${encodeURIComponent(section)}`;
+  if (line) url += `&line=${line}`;
+  const res = await fetch(url);
   const r = await res.json();
   box.innerHTML = "";
   const back = document.createElement("button");
   back.className = "mat-back";
-  back.textContent = "← 返回资料列表";
-  back.onclick = openMaterials;
+  back.textContent = section ? "← 返回章节目录" : "← 返回资料列表";
+  back.onclick = () => { if (section) openMaterialPreview(id); else openMaterials(); };
   box.appendChild(back);
   const body = document.createElement("div");
   body.className = "markdown-body";
   box.appendChild(body);
   document.getElementById("doc-title").textContent = r.title || "资料预览";
-  renderMarkdownInto(body, r.ok ? r.content : `加载失败：${r.error}`);
+  // 「共 N 章：」去冒号（后端文案不动，前端展示层处理）
+  const md = r.ok ? r.content.replace(/(共 \d+ 章)：/g, "$1") : `加载失败：${r.error}`;
+  renderMarkdownInto(body, md);
+  if (!section && r.ok) {
+    // 章节条目加链接感：传行号精确切片（重名章节不错切，后端 line= 优先）
+    for (const li of body.querySelectorAll("li")) {
+      const m = li.textContent.match(/^(.*)（第 (\d+) 行）\s*$/);
+      if (!m) continue;
+      li.classList.add("mat-chapter");
+      li.title = "点击阅读该章节";
+      li.onclick = () => openMaterialPreview(id, m[1].trim(), parseInt(m[2], 10));
+    }
+  }
 }
 
 // ---------- 代码浏览器（源码学习模式面板） ----------
@@ -1300,8 +1375,8 @@ async function loadWorkspaces() {
       item.innerHTML = `<span class="ws-label">${w.active ? "✓ " : ""}${escapeHtml(w.title)}</span>` +
         `<span class="ws-slug">${escapeHtml(w.slug)}</span>` +
         `<span class="ws-ops">` +
-        `<button class="ws-op" data-op="export" title="导出学习数据（zip）">⬇</button>` +
-        (w.active ? "" : `<button class="ws-op" data-op="delete" title="删除工作区">✕</button>`) +
+        `<button class="ws-op" data-op="export" title="导出学习数据（zip）"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></button>` +
+        (w.active ? "" : `<button class="ws-op" data-op="delete" title="删除工作区"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/><path d="M10 11v6M14 11v6"/></svg></button>`) +
         `</span>`;
       if (!w.active) {
         item.querySelector(".ws-label").onclick = () => switchWorkspace(w.slug);
@@ -1561,12 +1636,14 @@ async function openUsage() {
     const cells = [g.date, `${g.provider} / ${g.model}`, g.task, g.calls,
                    g.failures, g.in_tokens.toLocaleString(),
                    g.out_tokens.toLocaleString(),
-                   (g.cost ? `¥${g.cost}` : "—") + (g.est_calls ? `（估算×${g.est_calls}）` : "")];
-    for (const c of cells) {
+                   g.cost ? `¥${g.cost}` : "—"];
+    cells.forEach((c, i) => {
       const td = document.createElement("td");
       td.textContent = c;
+      if (i === 4 && g.failures > 0) td.className = "usage-err";
+      if (i === 7 && g.est_calls) td.title = `其中 ${g.est_calls} 次为估算调用（token 按单价估算）`;
       tr.appendChild(td);
-    }
+    });
     rowsEl.appendChild(tr);
   }
   renderUsageAuth(a);
@@ -1786,7 +1863,7 @@ function masteryRow(c) {
   top.appendChild(title);
   const pct = document.createElement("span");
   pct.className = "mr-pct";
-  pct.textContent = c.evidence.length ? (c.mastery * 100).toFixed(0) + "%" : "无证据";
+  pct.textContent = c.evidence.length ? (c.mastery * 100).toFixed(1) + "%" : "无证据";
   top.appendChild(pct);
   row.appendChild(top);
   // 底部极细进度线（不占独立行高）
@@ -2036,6 +2113,15 @@ function renderRadarHeat(concepts) {
     grid.appendChild(cell);
   }
   box.appendChild(grid);
+  // 全零空态：淡网格 + 居中提示层
+  const hasAny = Object.keys(counts).length > 0;
+  box.classList.toggle("is-empty", !hasAny);
+  if (!hasAny) {
+    const tip = document.createElement("div");
+    tip.className = "heat-empty";
+    tip.textContent = "暂无学习活动";
+    box.appendChild(tip);
+  }
 }
 
 // 课程地图：垂直时间轴（先修链是线性数据，竖排全标题可读，节点可点击跳转）
@@ -2094,7 +2180,7 @@ function renderRadarTimeline(model) {
       main.append(t, cid);
       const pct = document.createElement("span");
       pct.className = "tl-pct " + band;
-      pct.textContent = c.evidence.length ? (c.mastery * 100).toFixed(0) + "%" : "—";
+      pct.textContent = c.evidence.length ? (c.mastery * 100).toFixed(1) + "%" : "—";
       row.append(dot, main, pct);
       // M7：上游未达标徽标（▲N）
       const ups = upstreamOf(c.id);
@@ -2124,6 +2210,13 @@ function renderRadarTimeline(model) {
       box.appendChild(row);
       if (String(day) === curDay && !currentRow) currentRow = row;
     }
+  }
+  // ▲n 图例：有徽标时才显示
+  if (box.querySelector(".tl-badge")) {
+    const lg = document.createElement("div");
+    lg.className = "tl-legend";
+    lg.textContent = "▲n = 补弱优先级（先修链第 n 顺位）";
+    box.appendChild(lg);
   }
   if (currentRow) setTimeout(() => currentRow.scrollIntoView({ block: "center" }), 60);
 }
@@ -2167,7 +2260,7 @@ async function refreshUrgentWidget() {
       t.title = c.id;
       const m = document.createElement("span");
       m.className = "uw-mastery " + masteryBand(c);
-      m.textContent = (c.mastery * 100).toFixed(0) + "%";
+      m.textContent = (c.mastery * 100).toFixed(1) + "%";
       it.append(t, m);
       it.onclick = () => openLearner(c.id);
       box.appendChild(it);
@@ -2901,7 +2994,15 @@ document.getElementById("demo-new").onclick = async () => {
   for (const s of r.scaffolds || []) {
     const opt = document.createElement("option");
     opt.value = s.type;
-    opt.textContent = s.description ? `${s.type} — ${s.description}` : s.type;
+    // 选项文案截断：去模板套话前缀，description 只保留到第一个标点前且 ≤24 字（全文挪 title）
+    const raw = (s.description || "").replace(/^studyAgent 实战工坊生成的\s*/, "")
+      .split(/[，。；：,.;:!！？?（(]/)[0].trim();
+    let desc = raw.slice(0, 24);
+    if (raw.length > 24 && /[A-Za-z0-9]$/.test(desc) && /[A-Za-z0-9]/.test(raw[24])) {
+      desc = desc.replace(/\s*\S*$/, "").trim();  // 退到词界，避开英文单词中间截断
+    }
+    opt.textContent = desc ? `${s.type} — ${desc}` : s.type;
+    opt.title = s.description || s.type;
     sel.appendChild(opt);
   }
   const msg = document.getElementById("demo-msg");
@@ -2960,6 +3061,15 @@ document.getElementById("proc-close").onclick = () => {
   stopProcWatch();
 };
 document.getElementById("proc-refresh").onclick = refreshProcesses;
+
+// 清理已停止：走后端 clear-stopped 端点（条目真移除，P2-5 语义补全）
+document.getElementById("proc-clean").onclick = async () => {
+  const res = await fetch("/api/processes/clear-stopped", { method: "POST" });
+  const r = await res.json();
+  if (!r.ok) { toast(r.error || "清理失败"); return; }
+  toast(r.cleared ? `已清理 ${r.cleared} 个已停止进程` : "没有已停止的进程");
+  refreshProcesses();
+};
 
 async function refreshProcesses() {
   const res = await fetch("/api/processes");

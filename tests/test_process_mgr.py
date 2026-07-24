@@ -297,6 +297,29 @@ class TestProcessRoutes(unittest.TestCase):
         self.assertTrue(out["ok"])
         self.assertTrue(out["stopped"])
 
+    def test_api_clear_stopped(self):
+        """clear-stopped 端点：已停止条目真移除，running 不受影响。"""
+        r = self.routes.process_start({
+            "cwd": str(self.demo),
+            "cmd": [PY, "-c", "import time;time.sleep(30)"],
+            "name": "keep"})
+        self.assertTrue(r["ok"], r.get("error"))
+        keep_id = r["id"]
+        r2 = self.routes.process_start({
+            "cwd": str(self.demo),
+            "cmd": [PY, "-c", "import time;time.sleep(1)"],
+            "name": "gone"})
+        gone_id = r2["id"]
+        self.routes.process_stop({"id": gone_id})
+        out = self.routes.process_clear_stopped()
+        self.assertTrue(out["ok"])
+        self.assertGreaterEqual(out["cleared"], 1)
+        lst = self.routes.process_list()["processes"]
+        ids = [p["id"] for p in lst]
+        self.assertNotIn(gone_id, ids)      # 已停止条目被移除
+        self.assertIn(keep_id, ids)         # running 保留
+        self.routes.process_stop({"id": keep_id})
+
     def test_api_rejects(self):
         r = self.routes.process_start({"cwd": "C:/Windows", "cmd": f'"{PY}" -V'})
         self.assertFalse(r["ok"])                    # 白名单外 cwd

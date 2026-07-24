@@ -275,6 +275,19 @@ class ProcessManager:
                     pass
         return n
 
+    def clear_stopped(self) -> int:
+        """移除登记簿中全部已停止条目（P2-5：UI「清理已停止」语义补全）。
+        返回移除条数；running 条目不受影响。"""
+        with _REG_LOCK:
+            data = self._load()
+            stopped = [k for k, e in data["processes"].items()
+                       if self._live_status(e) != "running"]
+            for k in stopped:
+                data["processes"].pop(k)
+            if stopped:
+                self._save(data)
+        return len(stopped)
+
     # ---- 日志 ----
 
     def logs_tail(self, pid_id: str, n: int = 200) -> dict:

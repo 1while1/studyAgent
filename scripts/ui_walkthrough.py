@@ -138,7 +138,9 @@ def main():
         check("代码面板打开", page.locator("#code-panel").is_visible())
         h1 = page.locator("#chat-topbar").evaluate("el=>el.offsetHeight")
         h2 = page.locator(".code-panel-head").evaluate("el=>el.offsetHeight")
-        check("双头部对齐", h1 == h2, f"{h1} vs {h2}")
+        # P0-1 起 pair 顶栏允许换行增高（min-height 47，内容两行时 >47）：
+        # 对齐语义从「严格同高」放宽为「代码面板头保持 47 且顶栏不矮于它」
+        check("双头部对齐", h1 >= h2 == 47, f"{h1} vs {h2}")
         # 双轴钉住：布局留在 pair，agent 模式回 study（7b 聊天仍走导学引擎，语义同旧走查）
         api("/api/session/mode", {"mode": "study"})
         check("双轴-模式回 study 布局不动", page.evaluate("document.body.dataset.layout") == "pair")

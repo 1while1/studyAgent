@@ -527,6 +527,15 @@ def process_stop(body: dict):
         return {"ok": False, "error": f"停止失败: {e}"}
 
 
+@router.post("/api/processes/clear-stopped")
+def process_clear_stopped():
+    """移除登记簿中全部已停止条目（running 不受影响）。"""
+    try:
+        return {"ok": True, "cleared": _process_mgr().clear_stopped()}
+    except Exception as e:
+        return {"ok": False, "error": f"清理失败: {e}"}
+
+
 @router.get("/api/processes/logs")
 def process_logs(id: str, tail: int = 200):
     try:
@@ -896,7 +905,7 @@ def materials_register(body: dict):
 
 
 @router.get("/api/materials/preview")
-def materials_preview(id: str, section: str = ""):
+def materials_preview(id: str, section: str = "", line: int | None = None):
     """资料预览：章节目录 + 开头节选（弹窗阅读用）。"""
     ms = _materials()
     entry = ms.get(id)
@@ -905,8 +914,8 @@ def materials_preview(id: str, section: str = ""):
     if entry["type"] == "video_link":
         return {"ok": True, "title": entry["title"],
                 "content": f"视频链接：{entry['path']}\n\n（M1 仅登记，不提供内容预览）"}
-    if section:
-        res = ms.read_section(id, section)
+    if section or line is not None:
+        res = ms.read_section(id, section, line=line)
         if not res.get("ok"):
             return {"ok": False, "error": res.get("error", "读取失败")}
         return {"ok": True, "title": f"{entry['title']} · {res['section']}",
