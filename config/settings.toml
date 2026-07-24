@@ -67,9 +67,8 @@ deepseek-chat = 65536
 deepseek-v4-pro = 256000
 
 [llm]
-provider = "openai_compat"
-fallback_provider = "deepseek_official"
-warmup_on_start = true
+provider = "mock"
+warmup_on_start = false
 [llm.openai_compat]
 model = "deepseek-v4-pro"
 max_tokens = 4096
@@ -237,3 +236,8 @@ workspace = "tinyrag"
 name = "onecoupon"
 path = "D:\\IntelliJ IDEA 2025.1.2\\onecoupon"
 workspace = "onecoupon"
+
+[[code_roots]]
+name = "demo"
+path = "workspaces/ragent/demo"
+workspace = "ragent"

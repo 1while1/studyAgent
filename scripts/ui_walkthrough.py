@@ -3,7 +3,10 @@
 用法：服务运行中（8765）执行  python scripts/ui_walkthrough.py
 覆盖：加载/指令/聊天/主题/侧栏/双布局/代码浏览器（Monaco）/片段卡片/弹窗/
 面板控件/Mermaid 渲染/AI 读文件 tool-use（Mock 渠道全链路）/code 模式与
-实战工坊（模式落盘/demo 脚手架/编辑保存/进程起停/面板显隐，存在性清理）。
+实战工坊（模式落盘/demo 脚手架/编辑保存/进程起停/面板显隐）/模拟面试/
+先修诊断（9i）/指令族 E2E（9j：超前学习/跳转天数骨架+链路/恢复学习/
+code 模式 guard，学习数据存在性感知备份还原）/UI 交互（9k：补全键盘导航/
+章节精确链接/进程清理按钮）。
 """
 import sys
 import time
@@ -739,6 +742,213 @@ def main():
                 "fallback_provider": _orig2.get("fallback_provider", ""),
                 "warmup_on_start": _orig2.get("warmup_on_start", True),
                 "sections": {}})
+
+        # ---- 9j. 指令族 E2E（超前学习/跳转天数/恢复学习/agent guard）：
+        #      Mock 渠道 + 学习数据存在性感知备份（StudyState/Study.md/
+        #      StudyMemory/concepts/learner_model/notes，finally 全部还原） ----
+        mark("9j 指令族")
+        _docx_dir = (ROOT / _ws["docx_dir"]).resolve()
+        _study_files = [_docx_dir / "StudyState.json",
+                        _docx_dir / "Study.md",
+                        _docx_dir / "concepts.json",
+                        _docx_dir / "learner_model.json",
+                        _docx_dir / "notes.json",
+                        _docx_dir / "StudyMemory" / "Day_02.md",
+                        _docx_dir / "StudyMemory" / "Day_03.md"]
+        _bak3 = {p: (p.exists(), p.read_bytes() if p.exists() else b"")
+                 for p in _study_files + [_sess_p, _lm_p]}
+        _orig3 = page.request.get(BASE + "/api/llm-config").json()
+        try:
+            page.request.post(BASE + "/api/llm-config", data={
+                "provider": "mock",
+                "fallback_provider": _orig3.get("fallback_provider", ""),
+                "warmup_on_start": False, "sections": {}})
+            # 造景：Day 2 全部单元 completed（StudyState 与 StudyMemory
+            # 勾选/评分行必须同步改——validator 三方一致性，缺一不可）
+            import json as _j3
+            _ssp = _docx_dir / "StudyState.json"
+            _ss = _j3.loads(_ssp.read_text(encoding="utf-8"))
+            for u in _ss["days"]["2"]["units"]:
+                u["status"] = "completed"
+                u["rating"] = 4.0
+            _ssp.write_text(_j3.dumps(_ss, ensure_ascii=False, indent=2),
+                            encoding="utf-8")
+            _mem2 = _docx_dir / "StudyMemory" / "Day_02.md"
+            _mc = _mem2.read_text(encoding="utf-8")
+            import re as _re3
+            for u in _ss["days"]["2"]["units"]:
+                _mc = _re3.sub(
+                    rf"^(\s*-\s*)\[ \](\s*单元{u['id']}[:：])",
+                    rf"\g<1>[x]\g<2>", _mc, flags=_re3.MULTILINE)
+                if not _re3.search(
+                        rf"^-\s*单元{u['id']}[:：]\s*\d+(?:\.\d+)?分",
+                        _mc, flags=_re3.MULTILINE):
+                    _mc = _mc.replace("### 掌握度评分（1-5分）",
+                                      "### 掌握度评分（1-5分）\n"
+                                      f"- 单元{u['id']}：4.0分", 1)
+            _mem2.write_text(_mc, encoding="utf-8")
+            _md = (_docx_dir / "Study.md").read_text(encoding="utf-8")
+            (_docx_dir / "Study.md").write_text(_md + (
+                "\n## Day 3 | 2026-07-25（星期六）\n"
+                "**目标**：走查构造日\n"
+                "**导学单元**：\n"
+                "1. [ ] 单元A：走查单元（预计 40min）\n"
+                "   - 文档：无\n"
+                "**编码目标**：无\n**推荐论文**：无\n**面试话术目标**：无\n"),
+                encoding="utf-8")
+            # 1) 超前学习（C1 修复后首覆盖：曾 100% PersistError）
+            page.locator("#command-chips .chip", has_text="超前学习").click()
+            ok_ahead = False
+            for i in range(30):
+                page.wait_for_timeout(1000)
+                all_text = page.locator("#messages").text_content() or ""
+                if "已超前加载 Day 3" in all_text:
+                    ok_ahead = True
+                    break
+            check("超前学习成功（C1 修复）", ok_ahead)
+            # 2) 跳转天数到 Day 3（骨架带单元行，复核-1 修复后链路）
+            page.fill("#input", "[跳转天数] Day 3")
+            page.locator("#input-form button").click()
+            ok_jump = False
+            for i in range(20):
+                page.wait_for_timeout(500)
+                all_text = page.locator("#messages").text_content() or ""
+                if "[开始今日学习]" in all_text and "Day 3" in all_text:
+                    ok_jump = True
+                    break
+            check("跳转天数成功", ok_jump)
+            md3 = (_docx_dir / "StudyMemory" / "Day_03.md") \
+                .read_text(encoding="utf-8")
+            check("跳转骨架带单元行（复核-1）", "- [ ] 单元A：走查单元" in md3)
+            # 3) 跳转后 [开始今日学习] 链路不死（🔴-1 端到端）
+            page.locator("#command-chips .chip", has_text="开始今日学习").click()
+            ok_sd = False
+            for i in range(30):
+                page.wait_for_timeout(1000)
+                last = page.locator("#messages .bubble").last.text_content() or ""
+                if "Step 3" in last or "FAIL-FAST" in last:
+                    ok_sd = True
+                    break
+                if "指令执行失败" in last:
+                    break
+            check("跳转后开始学习链路不死", ok_sd)
+            if "FAIL-FAST" in (page.locator("#messages").text_content() or ""):
+                page.fill("#input", "重新开始今日学习")
+                page.locator("#input-form button").click()
+                for i in range(30):
+                    page.wait_for_timeout(1000)
+                    last = page.locator("#messages .bubble").last.text_content() or ""
+                    if "Step 3" in last:
+                        break
+                check("重新开始今日学习出 Step 3", "Step 3" in
+                      (page.locator("#messages").text_content() or ""))
+            # 4) 恢复学习
+            page.locator("#command-chips .chip", has_text="恢复学习").click()
+            ok_resume = False
+            for i in range(20):
+                page.wait_for_timeout(500)
+                all_text = page.locator("#messages").text_content() or ""
+                if "会话恢复" in all_text:
+                    ok_resume = True
+                    break
+            check("恢复学习响应", ok_resume)
+            # 5) code 模式指令 guard（AGENT_COMMAND_HINT）
+            page.request.post(BASE + "/api/session/mode", data={"mode": "code"})
+            page.locator("#command-chips .chip", has_text="开始今日学习").click()
+            ok_guard = False
+            for i in range(15):
+                page.wait_for_timeout(500)
+                last = page.locator("#messages .bubble").last.text_content() or ""
+                if "该指令请在导学模式使用" in last:
+                    ok_guard = True
+                    break
+            check("code 模式指令 guard", ok_guard)
+            page.request.post(BASE + "/api/session/mode", data={"mode": "study"})
+        finally:
+            for p, (existed, data) in _bak3.items():
+                if existed:
+                    p.write_bytes(data)
+                elif p.exists():
+                    p.unlink()
+            try:
+                api("/api/session/mode", {"mode": "study"})
+                page.request.post(BASE + "/api/llm-config", data={
+                    "provider": _orig3.get("provider", "openai_compat"),
+                    "fallback_provider": _orig3.get("fallback_provider", ""),
+                    "warmup_on_start": _orig3.get("warmup_on_start", True),
+                    "sections": {}})
+            except Exception:
+                pass
+
+        # ---- 9k. 新 UI 交互（键盘导航/章节精确链接/进程清理按钮） ----
+        mark("9k UI 交互")
+        page.goto(BASE, wait_until="networkidle")
+        page.wait_for_timeout(1500)
+        # 1) 指令补全键盘导航
+        page.locator("#input").press("[")
+        page.wait_for_timeout(400)
+        check("补全菜单打开", page.locator("#cmd-menu").is_visible())
+        page.locator("#input").press("ArrowDown")
+        page.wait_for_timeout(200)
+        check("↓ 高亮生效", page.locator("#cmd-menu button.active").count() == 1)
+        page.locator("#input").press("Escape")
+        page.wait_for_timeout(200)
+        check("Esc 关闭菜单", page.locator("#cmd-menu").is_hidden())
+        page.fill("#input", "")  # 清掉残留 [，防二次键入成 [[
+        page.locator("#input").press("[")
+        page.wait_for_timeout(300)
+        page.locator("#input").press("Enter")  # 无高亮选首项
+        page.wait_for_timeout(300)
+        check("Enter 选首项回填", page.locator("#input").input_value().startswith("["))
+        page.fill("#input", "")
+        # 2) 章节精确链接（line= 切片）
+        page.locator("#open-docs").click()
+        page.wait_for_timeout(600)
+        page.locator('.doc-tab[data-doc="materials"]').click()
+        page.wait_for_timeout(1200)
+        first_mat = page.locator(".mat-item:not(.err)").first
+        if first_mat.count() >= 1:
+            first_mat.click()
+            page.wait_for_timeout(1200)
+            if page.locator(".mat-chapter").count() >= 1:
+                page.locator(".mat-chapter").first.click()
+                page.wait_for_timeout(1200)
+                check("章节精确链接跳切片", "·" in
+                      (page.locator("#doc-title").text_content() or ""))
+            else:
+                check("章节精确链接跳切片", True, "该资料无章节结构，跳过")
+        else:
+            check("章节精确链接跳切片", False, "无可用资料")
+        page.locator("#doc-close").click()
+        page.wait_for_timeout(300)
+        # 3) 进程清理按钮（clear-stopped 真移除）
+        try:
+            (ROOT / "workspaces" / "ragent" / "demo").mkdir(
+                parents=True, exist_ok=True)
+            import sys as _sys3
+            r0 = api("/api/processes/start", {
+                "cwd": str(ROOT / "workspaces" / "ragent" / "demo"),
+                "cmd": [_sys3.executable, "-c", "import time;time.sleep(60)"],
+                "name": "wt-clean"})
+            check("清理测试进程已登记", r0.get("ok") is True)
+            api("/api/processes/stop", {"id": r0["id"]})  # 造一个已停止条目
+            page.request.post(BASE + "/api/session/mode", data={"mode": "code"})
+            page.goto(BASE, wait_until="networkidle")
+            page.wait_for_timeout(1500)
+            page.locator("#proc-toggle").click()
+            page.wait_for_timeout(600)
+            page.locator("#proc-clean").click()
+            page.wait_for_timeout(1200)
+            _left = api("/api/processes")["processes"]
+            check("清理按钮移除已停止条目",
+                  all(p_["status"] == "running" for p_ in _left))
+            page.locator("#proc-close").click()
+            page.request.post(BASE + "/api/session/mode", data={"mode": "study"})
+        finally:
+            for p_ in api("/api/processes")["processes"]:
+                if p_["status"] == "running":
+                    api("/api/processes/stop", {"id": p_["id"]})
+            api("/api/processes/clear-stopped", {})
 
         # ---- 汇总 ----
         check("全程零 JS 错误", len(errors) == 0, "; ".join(errors[:3]))
