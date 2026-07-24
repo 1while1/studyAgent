@@ -17,7 +17,7 @@ import re
 from ...domain.enums import DayPhase
 from ...domain.learner import concept_id
 from ...domain.models import SessionContext
-from .base import CommandHandler, CommandResult, Deps
+from .base import CommandHandler, CommandResult, Deps, INTERVIEW_EXIT_HINT
 
 _MAX_TARGETS = 5
 
@@ -36,7 +36,7 @@ class PrereqHandler(CommandHandler):
                       DayPhase.ENDED.value: "今日学习已结束，请明天再来",
                       DayPhase.NOT_STARTED.value: "今日尚未开始，请先 [开始今日学习]",
                       DayPhase.PLANNING.value: "今日计划生成中，请稍后",
-                      DayPhase.INTERVIEW.value: "模拟面试进行中，请先完成面试"}
+                      DayPhase.INTERVIEW.value: "模拟面试进行中，请先完成面试" + INTERVIEW_EXIT_HINT + ""}
             return (labels.get(session.day_phase, "当前状态不能开始先修诊断")
                     + "。")
         return None

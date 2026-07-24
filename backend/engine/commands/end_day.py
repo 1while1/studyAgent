@@ -14,7 +14,7 @@ from ...domain.models import SessionContext
 from ...services.config_service import PROMPTS_DIR
 from ...services.study_plan import (StudyPlanError, check_unit_docs,
                                     parse_day_text, strip_project_doc_prefix)
-from .base import CommandHandler, CommandResult, Deps
+from .base import CommandHandler, CommandResult, Deps, INTERVIEW_EXIT_HINT
 
 
 class EndDayHandler(CommandHandler):
@@ -25,7 +25,7 @@ class EndDayHandler(CommandHandler):
         if not deps.state_store.exists():
             return "今日还没 [开始今日学习]，无内容可结束。"
         if session.day_phase == DayPhase.INTERVIEW.value:
-            return "模拟面试进行中，请先完成本场面试再结束今日学习。"
+            return "模拟面试进行中，请先完成本场面试再结束今日学习。" + INTERVIEW_EXIT_HINT
         if session.day_phase == DayPhase.PREREQ.value:
             return "先修诊断进行中，请先完成本场诊断再结束今日学习。"
         state = deps.state_store.load()

@@ -21,6 +21,10 @@ from ...services.config_service import ConfigService
 from ...services.memory_store import MemoryStore
 from ...services.state_store import StateStore
 from ...services.study_plan import StudyPlanStore
+
+# 面试相位拦截文案的统一出口提示：相位锁是有意设计（防状态分裂），
+# 但必须告诉用户退路——[恢复学习] 会清面试字段回到导学（不留成绩）。
+INTERVIEW_EXIT_HINT = "（想放弃本场面试可 [恢复学习] 退出，不留成绩）"
 from ...services.template_service import TemplateService
 
 
