@@ -330,7 +330,10 @@ class TestSyncMultiline(ArchFixABase):
         session = SessionContext(day_phase="studying", current_unit_id="A")
         self.assertIsNone(handler.fail_fast(self.deps, session, args))
         handler.run(self.deps, session, args)
-        self.assertIn("背压第一行\n背压第二行", self._read_memory())
+        # 🟡-2 复核修复：行式契约文件内多行压平为 ` / ` 分隔（防 ### 截断
+        # 小节状态机/伪造评分行/对计数蒸馏不可见）；notes.json 保留原文
+        self.assertIn("背压第一行 / 背压第二行", self._read_memory())
+        self.assertNotIn("背压第一行\n背压第二行", self._read_memory())
         self._validate()
 
 
