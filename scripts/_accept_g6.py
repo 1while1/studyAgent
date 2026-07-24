@@ -71,9 +71,11 @@ def main():
         st_bak = st.read_text(encoding="utf-8")
         tinyrag_sec = 'slug = "tinyrag"'
         assert tinyrag_sec in st_bak
-        # 直接在 tinyrag 节首插一行（节内键顺序无关）
+        # 直接在 tinyrag 节首插一行（节内键顺序无关）；前置防 TOML 重复键
         lines = st_bak.splitlines()
         idx = next(i for i, l in enumerate(lines) if l.strip() == tinyrag_sec)
+        sec_tail = "\n".join(lines[idx:idx + 12])
+        assert "materials_dir" not in sec_tail, "tinyrag 节已有 materials_dir"
         lines.insert(idx + 1, 'materials_dir = "runtime/_accept_g6_mat"')
         st.write_text("\n".join(lines) + "\n", encoding="utf-8")
         try:
@@ -83,9 +85,10 @@ def main():
             api("/api/materials/rescan", {})
             b = next((m for m in api("/api/materials")["materials"]
                       if m["id"] == "扫描教材"), {})
-            time.sleep(1.1)
+            import os
             scan_file.write_text("# 第一章 RAG\n检索增强生成。\n# 第二章 向量\n嵌入。\n",
                                  encoding="utf-8")
+            os.utime(scan_file, (time.time() + 5, time.time() + 5))  # mtime 粒度保险
             rs = api("/api/materials/rescan", {})
             a = next((m for m in api("/api/materials")["materials"]
                       if m["id"] == "扫描教材"), {})
@@ -98,7 +101,6 @@ def main():
             api("/api/config/reload", {})
 
         # ---- 6.5 旁证：敏感文件注册被拒 ----
-        r3 = api("/api/materials/register", {"source": str(MAT / ".env")})
         (MAT / ".env").write_text("SECRET=x", encoding="utf-8")
         r3 = api("/api/materials/register", {"source": str(MAT / ".env")})
         rec("6.5 敏感文件（.env）注册被拒",
