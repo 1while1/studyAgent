@@ -3,7 +3,7 @@
 企业级学习 Agent（多工作区）：任意代码项目可一键初始化全套学习文档（LLM 生成 + 程序验证）。规则执行（模板渲染、FAIL-FAST、阶段流转、落盘校验、权限）由后端强制，内容生成（讲解/提问/拷打）由 LLM 负责。
 
 - **仓库**：<https://github.com/1while1/studyAgent>（main，推送前本地三件套全绿）
-- **演进方向（封板）**：`docs/AgentDesign.md` v3 —— 学习者模型核心的 study/code 双模式 Agent，M1-M7 分期。**M1 资料库 / M2 可观测 / M3 学习者模型 / M4 笔记管理 / M5a 工具骨架 / M5b 上下文+路由 / M5c planner / M6 实战工坊 / M7 课程本体已交付**（v3 分期全部收官）
+- **演进方向（封板）**：`docs/AgentDesign.md` v3 —— 学习者模型核心的 study/code 双模式 Agent，M1-M7 分期。**M1 资料库 / M2 可观测 / M3 学习者模型 / M4 笔记管理 / M5a 工具骨架 / M5b 上下文+路由 / M5c planner / M6 实战工坊 / M7 课程本体已交付**（v3 分期全部收官）；架构审计修复批 + UI 全面优化 + 全功能浏览器测试（152 项）已交付。**当前阶段 = 完成度验收**（`docs/AcceptanceChecklist.md` 逐项实测打勾）
 - 设计基准：`docs/InteractionModel.md`（改流程代码前必读）；设计历史与 bug 史：`docs/DevLog.md`
 
 ## 运行与测试
