@@ -76,11 +76,11 @@
 
 | # | 检查项 | 方法 | 结果 |
 |---|--------|------|------|
-| 6.1 | 清单：类型/章节数/状态（68 份 ragent 资料） | 走查 9d | |
-| 6.2 | 预览：目录 + 开头节选 + 章节精确跳切（line=，重名不错切） | 走查 9k | |
-| 6.3 | 重扫（mtime 变化重解析）+ 手工注册外部文件/视频链接 | 手动 | |
-| 6.4 | docx 损坏关系包回退裸 XML；pdf 分页切片 | 单测 | |
-| 6.5 | 敏感文件不注册不解析 | 单测 | |
+| 6.1 | 清单：类型/章节数/状态（68 份 ragent 资料） | 走查 9d | | ✅ 走查 9d（清单类型/章节数/状态） |
+| 6.2 | 预览：目录 + 开头节选 + 章节精确跳切（line=，重名不错切） | 走查 9k | | ✅ 走查 9k（目录+开头节选+line= 精确跳切） |
+| 6.3 | 重扫（mtime 变化重解析）+ 手工注册外部文件/视频链接 | 手动 | | ✅ G6 脚本 e2e：外部文件/视频链接注册 + 临时 materials_dir 重扫 mtime 重解析（headings 1→2, reparsed=1）+ test_mtime_change_reparse |
+| 6.4 | docx 损坏关系包回退裸 XML；pdf 分页切片 | 单测 | | ✅ test_pdf_parse_pages + 本组补测 test_docx_broken_package_raw_fallback（缺 [Content_Types].xml 走裸 XML 回退） |
+| 6.5 | 敏感文件不注册不解析 | 单测 | | ✅ test_scan_txt_md_and_skip_sensitive + G6 脚本 e2e（.env 注册被拒） |
 
 ## 7. 实战工坊
 

@@ -1,7 +1,7 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-24（**完成度验收 G5 交付**——笔记与话术 9 项实测 ✅ 无修复批：G5 脚本 e2e 验证蒸馏去重/合并残骸+不写证据/挂接销账幂等；5.8 提炼质量环境阻塞标注）
+> 最近更新：2026-07-24（**完成度验收 G6 交付**——资料库 5 项实测 ✅；修复批 fix/g6-docx-fallback-test：6.4 docx 损坏关系包裸 XML 回退补单测（覆盖缺口）；461 单测/155 走查全绿）
 
 ## 当前运行状态
 
@@ -11,14 +11,14 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 460 个全绿；UI 走查 155 项全绿
+- 测试：`python -m unittest discover -s tests` → 461 个全绿；UI 走查 155 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步
 
 v1 Roadmap 与 v3 分期（M1 资料库 → M2 可观测 → M3 学习者模型 → M4 笔记管理 → M5a 工具骨架 → M5b 上下文+路由 → M5c planner → M6 实战工坊 → **M7 课程本体 ✅**）全部收官；架构审计修复批 ✅、UI 全面优化 ✅、全功能浏览器测试（152 项）✅。
 
-**当前阶段 = 完成度验收**：G1-G5 ✅（G2/G3 含修复批）；G6-G12 待办。按 `docs/AcceptanceChecklist.md` 逐项检查（实测打勾，发现问题开修复批：分支 + 三件套全绿 + 双子审查 + 合并 push）。mark_wrong 工具（§9）与「command 失败外部落盘不回滚」修复批仍留档另立。
+**当前阶段 = 完成度验收**：G1-G6 ✅（G2/G3/G6 含修复批）；G7-G12 待办。按 `docs/AcceptanceChecklist.md` 逐项检查（实测打勾，发现问题开修复批：分支 + 三件套全绿 + 双子审查 + 合并 push）。mark_wrong 工具（§9）与「command 失败外部落盘不回滚」修复批仍留档另立。
 
 ## G3 验收修复批（2026-07-24，fix/g3-relevance-first-start，双子审查收编）
 
