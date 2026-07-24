@@ -61,7 +61,7 @@
     <div id="command-chips"></div>
     <div id="cmd-menu" class="hidden"></div>
     <form id="input-form">
-      <textarea id="input" rows="1" placeholder="输入消息…（Enter 发送，Shift+Enter 换行，键入 [ 快速唤起指令）"></textarea>
+      <textarea id="input" rows="1" placeholder="输入消息…（键入 [ 唤起指令）" title="输入消息…（Enter 发送，Shift+Enter 换行，键入 [ 快速唤起指令）"></textarea>
       <button type="submit">发送</button>
     </form>
   </main>
@@ -106,6 +106,7 @@
       <div class="proc-head">
         <span class="proc-title">进程</span>
         <span id="proc-status" class="proc-status"></span>
+        <button id="proc-clean" title="清理已停止的进程（幂等停止校对状态）">清理已停止</button>
         <button id="proc-refresh" title="刷新进程列表">↻</button>
         <button id="proc-close" title="收起进程面板">×</button>
       </div>
@@ -137,10 +138,10 @@
         <label>demo 名称</label>
         <input id="demo-name" placeholder="字母/数字/_/-，如 rag-demo">
       </div>
-      <div class="modal-foot">
-        <button id="demo-create" class="primary">创建</button>
-        <span id="demo-msg"></span>
-      </div>
+    </div>
+    <div class="modal-foot">
+      <button id="demo-create" class="primary">创建</button>
+      <span id="demo-msg"></span>
     </div>
   </div>
 </div>
@@ -264,10 +265,10 @@
       <aside id="notes-shelf">
         <div class="shelf-group">
           <div class="shelf-head">书架</div>
-          <button class="shelf-item" data-shelf="all">📚 全部笔记<span class="shelf-count" id="cnt-all"></span></button>
-          <button class="shelf-item" data-shelf="open">○ 待解决<span class="shelf-count" id="cnt-open"></span></button>
-          <button class="shelf-item" data-shelf="resolved">✓ 已解决<span class="shelf-count" id="cnt-resolved"></span></button>
-          <button class="shelf-item" data-shelf="triage">⚠ 待整理<span class="shelf-count" id="cnt-triage"></span></button>
+          <button class="shelf-item" data-shelf="all"><svg class="ic" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15z"/><path d="M8 6h8M8 10h5"/></svg>全部笔记<span class="shelf-count" id="cnt-all"></span></button>
+          <button class="shelf-item" data-shelf="open"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg>待解决<span class="shelf-count" id="cnt-open"></span></button>
+          <button class="shelf-item" data-shelf="resolved"><svg class="ic" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>已解决<span class="shelf-count" id="cnt-resolved"></span></button>
+          <button class="shelf-item" data-shelf="triage"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17.5v.5"/></svg>待整理<span class="shelf-count" id="cnt-triage"></span></button>
         </div>
         <div class="shelf-group">
           <div class="shelf-head">知识点</div>
@@ -313,10 +314,10 @@
             <button data-md="ol" title="有序列表">1.</button>
             <button data-md="task" title="任务列表">☑</button>
             <span class="ne-sep"></span>
-            <button data-md="link" title="链接">🔗</button>
+            <button data-md="link" title="链接"><svg class="ic" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></button>
             <button data-md="table" title="表格">⊞</button>
             <button data-md="hr" title="分隔线">―</button>
-            <button data-md="mermaid" title="Mermaid 图">📊</button>
+            <button data-md="mermaid" title="Mermaid 图"><svg class="ic" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M8 17v-5M13 17V8M18 17V5"/></svg></button>
             <span class="ne-spacer"></span>
             <div id="ne-view-switch">
               <button data-view="edit" class="active">编辑</button>
@@ -324,7 +325,7 @@
               <button data-view="preview">预览</button>
             </div>
           </div>
-          <div id="ne-body" data-view="split">
+          <div id="ne-body" data-view="edit">
             <textarea id="ne-text" placeholder="用 Markdown 记录你的理解…（支持标题/列表/代码块/Mermaid 图）"></textarea>
             <div id="ne-preview" class="markdown-body"></div>
           </div>

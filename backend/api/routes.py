@@ -527,6 +527,15 @@ def process_stop(body: dict):
         return {"ok": False, "error": f"停止失败: {e}"}
 
 
+@router.post("/api/processes/clear-stopped")
+def process_clear_stopped():
+    """移除登记簿中全部已停止条目（running 不受影响）。"""
+    try:
+        return {"ok": True, "cleared": _process_mgr().clear_stopped()}
+    except Exception as e:
+        return {"ok": False, "error": f"清理失败: {e}"}
+
+
 @router.get("/api/processes/logs")
 def process_logs(id: str, tail: int = 200):
     try:
