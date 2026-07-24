@@ -120,8 +120,9 @@ def update_code_roots(path: Path, roots: list[dict]) -> None:
 
 
 def _esc(value) -> str:
-    """TOML 基本字符串转义。"""
-    return str(value).replace("\\", "\\\\").replace('"', '\\"')
+    """TOML 基本字符串转义（C3：补换行——裸换行会写出非法 TOML）。"""
+    return (str(value).replace("\\", "\\\\").replace('"', '\\"')
+            .replace("\n", "\\n").replace("\r", "\\r"))
 
 
 def update_workspaces(path: Path, workspaces: list[dict], active: str) -> None:

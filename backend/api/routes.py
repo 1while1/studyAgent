@@ -155,7 +155,7 @@ class LLMStreamer:
 def chat(body: TextIn):
     deps, orch = _deps, _orchestrator
 
-    def gen():
+    def _flow():
         session = deps.session_store.load()
         text = body.text.strip()
         engine = build_turn_engine(session, deps, tutor=orch)  # M5a 引擎路由
@@ -197,6 +197,12 @@ def chat(body: TextIn):
         ContextManager(deps).maybe_compress(session, streamer.ctx_plan)
         deps.session_store.save(session)
 
+    def gen():
+        # R2/R4 修复：流程锁覆盖整个 chat 流（load→多次 save 与 mode/reset/
+        # 并发 chat 互斥；threading.Lock 支持 SSE 生成器跨线程释放）
+        with deps.session_store.locked():
+            yield from _flow()
+
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
@@ -204,7 +210,7 @@ def chat(body: TextIn):
 def command(body: TextIn):
     deps, orch = _deps, _orchestrator
 
-    def gen():
+    def _flow():
         from ..engine.commands.registry import CommandRegistry
         registry = CommandRegistry(deps.config)
         matched = registry.match(body.text)
@@ -238,6 +244,7 @@ def command(body: TextIn):
             return
         for msg in result.messages:
             yield sse({"type": "message", "content": msg})
+        streamer = None  # R3 修复：无 llm_instruction 的纯消息指令不绑定 streamer
         if result.llm_instruction:
             sop = result.sop_card if result.sop_card is not None else entry["sop_card"]
             streamer = LLMStreamer(deps)
@@ -254,9 +261,15 @@ def command(body: TextIn):
                 {"role": "assistant", "content": streamer.text})
             deps.session_store.save(session)
         yield sse({"type": "done"})
-        # M5b：done 之后压缩（对称于 chat 路由；失败静默降级）
-        ContextManager(deps).maybe_compress(session, streamer.ctx_plan)
+        # M5b：done 之后压缩（对称于 chat 路由；失败静默降级）；
+        # R3 修复：纯消息指令无 streamer，传空计划（压缩顺延到下轮 chat）
+        ContextManager(deps).maybe_compress(
+            session, streamer.ctx_plan if streamer else {})
         deps.session_store.save(session)
+
+    def gen():
+        with deps.session_store.locked():  # 同 chat 流：全程流程锁
+            yield from _flow()
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 
@@ -309,7 +322,12 @@ def history():
 def read_doc(name: str):
     """学习资料查看：memory=当日 StudyMemory，interview_qa=面试话术库。"""
     if name == "memory":
-        day = _deps.state_store.load()["current_day"]
+        try:
+            day = _deps.state_store.load()["current_day"]
+        except Exception as e:
+            # 🟡-7：StudyState 缺失/损坏时按契约返回，不冒 500
+            return {"ok": False, "error": f"学习状态读取失败: {e}",
+                    "content": ""}
         path = _deps.memory.path_for(day)
         title = f"StudyMemory Day {day}"
     elif name == "interview_qa":
@@ -348,6 +366,11 @@ def add_code_root(body: dict):
     raw_path = (body or {}).get("path", "").strip()
     if not name or not raw_path:
         return {"ok": False, "error": "name 和 path 不能为空"}
+    # C3：名称白名单（XSS 防线——name 会进 settings 并回显到前端 DOM）
+    import re as _re
+    if not _re.fullmatch(r"[A-Za-z0-9_-]{1,40}", name):
+        return {"ok": False,
+                "error": "项目根名称仅限字母/数字/_/-（≤40 字符）"}
     # ⚠️ 写 settings 必须基于全量未过滤根清单（M6 审查修复 R1），
     # 过滤后的 config.code_roots 只用于"当前工作区是否重名"判断
     if any(r["name"] == name for r in _deps.config.code_roots):
@@ -402,6 +425,8 @@ def code_file(root: str, path: str):
         data = _code_browser().read_file(root, path)
         # M6：可编辑标记（demo/replica 白名单 + 非敏感文件；异常一律 False）
         data["editable"] = _workshop().editable(root, path)
+        # Y11：mtime 供 UI 保存时做外部修改冲突检测（失败为 None）
+        data["mtime"] = _workshop().file_mtime(root, path)
         return {"ok": True, **data}
     except CodeBrowserError as e:
         return {"ok": False, "error": str(e)}
@@ -415,8 +440,24 @@ def code_save(body: dict):
     content = (body or {}).get("content")
     if not root.strip() or not path.strip() or content is None:
         return {"ok": False, "error": "root / path / content 均不能为空"}
+    mtime = (body or {}).get("mtime")
+    if mtime is not None:
+        # Y11：客户端带来打开时的 mtime → 与当前值比对（容差 1e-3），
+        # 不一致说明文件已被外部修改（AI 或编辑器），拒写要求刷新
+        try:
+            client_mtime = float(mtime)
+        except (TypeError, ValueError):
+            client_mtime = None
+        current = _workshop().file_mtime(root, path)
+        if client_mtime is None or current is None \
+                or abs(current - client_mtime) > 1e-3:
+            return {"ok": False, "conflict": True,
+                    "error": "文件已被外部修改（AI 或编辑器），请刷新后重试"}
     try:
-        return {"ok": True, **_workshop().save_via_root(root, path, str(content))}
+        result = _workshop().save_via_root(root, path, str(content))
+        # 保存后回读新 mtime（前端连续保存免二次拉取，B 包契约补强）
+        result["mtime"] = _workshop().file_mtime(root, path)
+        return {"ok": True, **result}
     except WorkshopError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
@@ -752,12 +793,16 @@ def notes_distill(body: dict):
     """日志蒸馏：StudyMemory 各天 [同步] 卡壳/疑问行 → 条目层（去重幂等）。"""
     deps = _deps
     body = body or {}
-    if body.get("day"):
-        days = [int(body["day"])]
-    elif deps.state_store.exists():
-        days = [int(k) for k in deps.state_store.load().get("days", {})]
-    else:
-        days = []
+    try:
+        if body.get("day"):
+            days = [int(body["day"])]
+        elif deps.state_store.exists():
+            days = [int(k) for k in deps.state_store.load().get("days", {})]
+        else:
+            days = []
+    except Exception as e:
+        # 🟡-7：非法天数键按契约返回，不冒 500
+        return {"ok": False, "error": f"天数解析失败: {e}"}
     svc = _notes()
     added = 0
     for d in days:
@@ -985,13 +1030,14 @@ def reload_config():
 @router.post("/api/session/reset")
 def reset_session():
     """清空对话历史（不影响 docx 学习数据）。用于清除上下文污染。"""
-    session = _deps.session_store.load()
-    n = len(session.chat_history)
-    session.chat_history = []
-    session.archive_summary = ""  # M5b：归档层同步重置
-    session.archive_upto = 0
-    session.compress_cooldown = 0
-    _deps.session_store.save(session)
+    with _deps.session_store.locked():  # 与在途 chat 流互斥（R2 修复）
+        session = _deps.session_store.load()
+        n = len(session.chat_history)
+        session.chat_history = []
+        session.archive_summary = ""  # M5b：归档层同步重置
+        session.archive_upto = 0
+        session.compress_cooldown = 0
+        _deps.session_store.save(session)
     return {"cleared": n}
 
 
@@ -1018,16 +1064,31 @@ def set_session_mode(body: dict):
     if mode not in _SESSION_MODES:
         return {"ok": False,
                 "error": f"非法模式: {mode or '（空）'}（枚举: {_SESSION_MODES}）"}
-    session = _deps.session_store.load()
-    session.mode = mode
-    _deps.session_store.save(session)
-    return {"ok": True, "mode": mode}
+    note = ""
+    with _deps.session_store.locked():  # 与在途 chat 流互斥（R2 修复）
+        session = _deps.session_store.load()
+        session.mode = mode
+        # 🟡-9：进行中的面试/诊断/复盘相位在切模式后不可恢复（指令全被
+        # AGENT_COMMAND_HINT 锁死）——清相位字段并明示，防状态机缠绕
+        from ..domain.enums import DayPhase
+        if session.day_phase in (DayPhase.INTERVIEW.value,
+                                 DayPhase.PREREQ.value,
+                                 DayPhase.REVIEWING.value):
+            session.interview_cid = ""
+            session.interview_round = 0
+            session.interview_score = None
+            session.prereq_targets = []
+            session.prereq_retry = 0
+            session.day_phase = DayPhase.STUDYING.value
+            note = "（进行中的面试/诊断/复盘已中断）"
+        _deps.session_store.save(session)
+    return {"ok": True, "mode": mode, "note": note}
 
 
 # ---------- 模型配置页面 ----------
 
 from ..llm.factory import _BUILDERS, create_llm, create_llm_cheap
-from ..services.config_writer import (mask_key, update_env_file,
+from ..services.config_writer import (_esc, mask_key, update_env_file,
                                       update_toml_sections)
 from ..services.config_service import ENV_PATH, SETTINGS_PATH
 
@@ -1056,18 +1117,20 @@ def _section_view(section: str) -> dict:
 
 def _context_view() -> dict:
     """上下文窗口视图（M5b）：预算/触发比例 + 模型上限与生效预算预览。"""
-    from ..engine.context_manager import effective_budget
+    from ..engine.context_manager import (_safe_float, _safe_int,
+                                          effective_budget)
     cfg = _deps.config
     ctx = cfg.data.get("context", {})
     llm_cfg = cfg.llm_config
     provider = llm_cfg.get("provider", "")
     model = llm_cfg.get(provider, {}).get("model", "")
     limits = cfg.data.get("model_context", {})
-    return {"budget_tokens": int(ctx.get("budget_tokens", 256000)),
-            "trigger_ratio": float(ctx.get("trigger_ratio", 0.8)),
+    return {"budget_tokens": _safe_int(ctx.get("budget_tokens"), 256000),
+            "trigger_ratio": _safe_float(ctx.get("trigger_ratio"), 0.8),
             "model": model,
-            "model_limit": int(limits.get(model,
-                                          limits.get("default", 32768))),
+            "model_limit": _safe_int(limits.get(model,
+                                                limits.get("default", 32768)),
+                                     32768),
             "effective_budget": effective_budget(cfg)}
 
 
@@ -1096,22 +1159,22 @@ class LlmConfigIn(BaseModel):
 
 def _toml_section_lines(name: str, params: dict, meta: dict) -> list[str]:
     lines = [f"[llm.{name}]"]
-    lines.append(f'model = "{params.get("model", "")}"')
+    lines.append(f'model = "{_esc(params.get("model", ""))}"')
     lines.append(f"max_tokens = {int(params.get('max_tokens', 4096))}")
     lines.append(f"temperature = {float(params.get('temperature', 0.7))}")
     if params.get("base_url"):
-        lines.append(f'base_url = "{params["base_url"]}"')
-    lines.append(f'api_key_env = "{meta["api_key_env"]}"')
+        lines.append(f'base_url = "{_esc(params["base_url"])}"')
+    lines.append(f'api_key_env = "{_esc(meta["api_key_env"])}"')
     return lines
 
 
 def _toml_value(v) -> str:
-    """TOML 标量渲染：数字裸写，字符串加引号（[context] 节区重写用）。"""
+    """TOML 标量渲染：数字裸写，字符串加引号并转义（防写坏 settings，C3）。"""
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, (int, float)):
         return str(v)
-    return f'"{v}"'
+    return f'"{_esc(v)}"'
 
 
 @router.post("/api/llm-config")
@@ -1121,16 +1184,17 @@ def save_llm_config(body: LlmConfigIn):
     if body.fallback_provider and body.fallback_provider not in _BUILDERS:
         return {"ok": False, "error": f"未知 fallback provider: {body.fallback_provider}"}
 
-    # 1. 写 settings.toml 的三个 llm 节区
-    llm_lines = ["[llm]", f'provider = "{body.provider}"']
+    # 1. 写 settings.toml 的 llm 节区（仅提交的 provider——未提交的保持
+    # 文件原文，防把 env 解析值/meta 固化进 TOML，C3；字符串统一 _esc 转义）
+    llm_lines = ["[llm]", f'provider = "{_esc(body.provider)}"']
     if body.fallback_provider:
-        llm_lines.append(f'fallback_provider = "{body.fallback_provider}"')
+        llm_lines.append(f'fallback_provider = "{_esc(body.fallback_provider)}"')
     llm_lines.append(f"warmup_on_start = {'true' if body.warmup_on_start else 'false'}")
     sections = {"llm": llm_lines}
-    for name, meta in _PROVIDER_META.items():
-        if name == "mock":
+    for name, params in body.sections.items():
+        meta = _PROVIDER_META.get(name)
+        if meta is None or name == "mock":
             continue
-        params = body.sections.get(name) or _section_view(name)
         sections[f"llm.{name}"] = _toml_section_lines(name, params, meta)
     # [context] 节区（M5b）：先读现有键合并再整体重写，防丢 pin_top_k 等键
     if (body.context_budget_tokens is not None
@@ -1148,7 +1212,7 @@ def save_llm_config(body: LlmConfigIn):
         sections["context"] = ["[context]"] + [
             f"{k} = {_toml_value(existing[k])}" for k in ordered]
     try:
-        update_toml_sections(SETTINGS_PATH, sections)
+        update_toml_sections(_deps.config.path, sections)  # C3：实例路径（可注入）
     except Exception as e:
         return {"ok": False, "error": f"写入 settings.toml 失败: {e}"}
 

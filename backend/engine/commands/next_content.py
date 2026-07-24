@@ -18,6 +18,8 @@ class NextContentHandler(CommandHandler):
             return "模拟面试进行中，请先完成本场面试。"
         if getattr(session, "day_phase", None) == DayPhase.PREREQ.value:
             return "先修诊断进行中，请先完成本场诊断。"
+        if getattr(session, "day_phase", None) == DayPhase.ENDED.value:
+            return "今日学习已结束，请明天 [开始今日学习]，或用 [跳转天数] 调整进度。"
         state = deps.state_store.load()
         if not deps.memory.exists(state["current_day"]):
             return "当日 StudyMemory 不存在，请先 [开始今日学习]。"
@@ -106,12 +108,14 @@ class NextContentHandler(CommandHandler):
             if new_id in existing:
                 new_id = f"{new_id}A"  # 防 id 冲突
             day_data["units"].append({
-                "id": new_id, "title": f"（超前）{first['title']}",
+                "id": new_id, "title": f"{first['title']}（超前）",
                 "status": "in_progress", "rating": 0, "ahead": True})
             content = deps.memory.read(day)
             content = content.replace(
                 "### [同步] 记录",
-                f"- [ ] 单元{new_id}（超前）：{first['title']}\n\n### [同步] 记录")
+                # （超前）后缀放标题后：validator/memory_store 的单元行正则
+                # 要求 id 紧跟冒号（中缀写法会断链 PersistError，已踩坑）
+                f"- [ ] 单元{new_id}：{first['title']}（超前）\n\n### [同步] 记录")
             deps.backup.atomic_persist(
                 {deps.state_store.path: deps.state_store.dump(state),
                  deps.memory.path_for(day): content},
@@ -139,24 +143,23 @@ class NextContentHandler(CommandHandler):
         # ---- 常规：输出掌握情况检查 + 进入 quiz_r1 ----
         state = deps.state_store.load()
         day = state["current_day"]
+        units = deps.state_store.day(state)["units"]
+        if units and all(u["status"] == "completed" for u in units):
+            # 护栏：全部完成后常规分支会把 completed 单元改回 in_progress
+            # （rating 保留状态回退，撞 validator 语义），直接提示后续出口
+            return CommandResult(messages=[
+                "今日单元已全部完成，可 [超前学习] 或 [结束今日学习]。"])
         unit = deps.state_store.set_unit(state, session.current_unit_id)  # 校验存在
         deps.state_store.set_unit(state, session.current_unit_id, status="in_progress")
         deps.backup.atomic_persist(
             {deps.state_store.path: deps.state_store.dump(state)},
             validator=deps.validator())
 
-        done_stages = []
-        names = deps.stages.names()
-        if session.current_stage in names:
-            done_stages = names[: names.index(session.current_stage) + 1]
-        check = (deps.templates.get("mastery_check")
-                 .replace("<填入>", unit["title"], 1)
-                 .replace("<填入>",
-                          "、".join(deps.stages.sop_step(s) for s in done_stages) or "见讲解记录", 1)
-                 .replace("<填入>", "见对话记录", 1)
-                 .replace("[已掌握 / 基本掌握 / 需巩固]", "[需巩固]"))
-        if any(s == "coding" for s in done_stages):
-            check = check.replace("[已完成 / 进行中 / 未开始 / 不适用]", "[已完成]")
+        # Y3（InteractionModel §3 决策 2）：与自动触发共用同一渲染函数
+        from .base import render_mastery_check
+        check = render_mastery_check(
+            deps.state_store, deps.stages, deps.templates, session,
+            preselect="需巩固")
 
         session.current_stage = "quiz_r1"
         session.quiz_round = 1

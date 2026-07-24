@@ -63,6 +63,7 @@ class StartDayHandler(CommandHandler):
         text = deps.templates.get("step1_history")
         text = (text
                 .replace("<N>", str(day))
+                .replace("<总天数>", str(deps.config.workspace.total_days))
                 .replace("<日期>", prev.get("date", "无") if prev else "无")
                 .replace("<X>", str(prev_done))
                 .replace("<列表>", "无", 1)            # 昨日卡壳（v1 未跨日追踪）
@@ -95,6 +96,7 @@ class StartDayHandler(CommandHandler):
         text = deps.templates.get("step3_plan")
         text = (text
                 .replace("<N>", str(day))
+                .replace("<复现名>", deps.config.workspace.replica_name)
                 .replace("<YYYY-MM-DD>", today)
                 .replace("星期X", f"星期{weekday}")
                 .replace("<1 句话>", plan["goal"] or "见大纲")

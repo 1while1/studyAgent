@@ -57,7 +57,7 @@ class TestToolRegistry(unittest.TestCase):
         settings = self.tmp / "settings.toml"
         settings.write_text(
             'active_workspace = "t"\n'
-            'status_enum = ["not_started", "in_progress", "completed"]\n'
+            'status_enum = ["not_started", "in_progress", "completed", "postponed"]\n'
             '[evidence_delta]\nquiz_right = 0.10\nsync_mastered = 0.10\n'
             '[[stages]]\nname = "teaching"\nnext = ""\n'
             'sop_step = "步骤一"\ninstruction = "讲"\n'
@@ -175,14 +175,15 @@ class TestToolRegistry(unittest.TestCase):
         self.assertFalse(result.ok)
 
     def test_persist_state_set_unit_status(self):
+        # 🟡-4 起 completed 不开放（见 test_arch_fixes_a），此处用 postponed 走通落盘
         result = self.registry.invoke(
             "persist_state", {"op": "set_unit_status", "unit_id": "A",
-                              "status": "completed"}, self.ctx)
+                              "status": "postponed"}, self.ctx)
         self.assertTrue(result.ok, result.error)
         saved = json.loads(
             (self.docx / "StudyState.json").read_text(encoding="utf-8"))
         self.assertEqual(saved["days"]["2"]["units"][0]["status"],
-                         "completed")
+                         "postponed")
 
     # ---- write_note ----
 

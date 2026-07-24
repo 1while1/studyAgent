@@ -26,7 +26,7 @@ class SyncHandler(CommandHandler):
             return "模拟面试进行中，请先完成本场面试。"
         if getattr(session, "day_phase", None) == DayPhase.PREREQ.value:
             return "先修诊断进行中，请先完成本场诊断。"
-        m = re.match(r"^\s*(已掌握|卡壳|疑问|面试话术|代码完成)\s+(.+)$", args)
+        m = re.match(r"^\s*(已掌握|卡壳|疑问|面试话术|代码完成)\s+([\s\S]+)$", args)
         if not m:
             return "未识别子类型或内容为空，可选：已掌握/卡壳/疑问/面试话术/代码完成。\n用法：[同步] 已掌握 XXX"
         state = deps.state_store.load()
@@ -36,7 +36,7 @@ class SyncHandler(CommandHandler):
 
     def run(self, deps: Deps, session: SessionContext,
             args: str, mode: str = "") -> CommandResult:
-        m = re.match(r"^\s*(已掌握|卡壳|疑问|面试话术|代码完成)\s+(.+)$", args)
+        m = re.match(r"^\s*(已掌握|卡壳|疑问|面试话术|代码完成)\s+([\s\S]+)$", args)
         subtype, content_text = m.group(1), m.group(2).strip()
         state = deps.state_store.load()
         day = state["current_day"]

@@ -150,22 +150,35 @@ class MemoryStore:
     def set_unit_score(content: str, unit_id: str, score: float) -> str:
         out = []
         in_scores = False
+        found = False
         pattern = re.compile(rf"^(\s*-\s*单元{re.escape(unit_id)}[:：])\s*.*$")
         for line in content.splitlines():
             if line.startswith("### 掌握度评分"):
                 in_scores = True
             elif line.startswith("### "):
+                if in_scores and not found:
+                    # 评分区无该行（超前等后注册单元）→ 补行（契约级修复：
+                    # 否则 validator 必拒「completed but score missing」）
+                    out.append(f"- 单元{unit_id}：{score}分")
+                    found = True
                 in_scores = False
             if in_scores and pattern.match(line):
                 out.append(f"{pattern.match(line).group(1)}{score}分")
+                found = True
             else:
                 out.append(line)
+        if in_scores and not found:  # 评分区在文件末尾的边界
+            out.append(f"- 单元{unit_id}：{score}分")
         return "\n".join(out)
 
     @staticmethod
     def append_sync(content: str, field: str, value: str) -> str:
         if field not in SYNC_FIELDS:
             raise ValueError(f"未知 [同步] 字段: {field}")
+        # 🟡-2 消毒：多行内容压平为单行——StudyMemory 是行式契约文件，
+        # 裸续行会截断 ### 小节状态机、伪造评分/勾选行、对计数与蒸馏不可见
+        value = " / ".join(seg.strip() for seg in value.splitlines()
+                           if seg.strip())
         out = []
         in_sync = False
         pattern = re.compile(rf"^(-\s*{re.escape(field)}[:：])\s*(.*)$")

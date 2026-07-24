@@ -130,7 +130,7 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 
 ```bash
 cd study-web
-python -m unittest discover -s tests    # 382 个后端测试，stdlib，无需真实 LLM
+python -m unittest discover -s tests    # 432 个后端测试，stdlib，无需真实 LLM
 python scripts/ui_walkthrough.py        # UI 真实点击走查 139 项（需服务运行中）
 python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name]
 ```

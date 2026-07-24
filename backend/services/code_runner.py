@@ -13,7 +13,10 @@ import subprocess
 import time
 from pathlib import Path
 
+import psutil
+
 TAIL_CHARS = 4000  # 回喂 LLM 的日志尾部上限
+_STOP_GRACE = 3.0  # terminate 后等待再 kill 的宽限（秒）
 
 
 def detect_build_tool(root: Path) -> str | None:
@@ -95,23 +98,51 @@ def build_command(tool: str, kind: str, offline: bool = False) -> list[str]:
     raise ValueError(f"未知构建工具: {tool}")
 
 
+def _kill_tree(proc: subprocess.Popen) -> None:
+    """超时杀进程树（children 递归 + self，terminate → 宽限 → kill 残余）。
+
+    与 process_mgr 同款策略的内联实现（services 层互不引用，禁止 import
+    process_mgr）——Windows 下 maven/cmd 派生的孙进程在只杀直接子进程时会存活。
+    """
+    try:
+        root = psutil.Process(proc.pid)
+        tree = root.children(recursive=True) + [root]
+    except psutil.NoSuchProcess:
+        return
+    for p in tree:
+        try:
+            p.terminate()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    _, alive = psutil.wait_procs(tree, timeout=_STOP_GRACE)
+    for p in alive:
+        try:
+            p.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+
 def run_build(root: Path, tool: str, kind: str = "compile",
               timeout: int = 300, offline: bool = False) -> dict:
     """执行构建/测试。返回 {cmd, code, tail, seconds, timed_out}。"""
     cmd = build_command(tool, kind, offline)
     started = time.time()
+    proc = subprocess.Popen(
+        cmd, cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, encoding="utf-8", errors="replace")
     try:
-        proc = subprocess.run(
-            cmd, cwd=str(root), capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=timeout)
-        output = (proc.stdout or "") + (proc.stderr or "")
+        out, err = proc.communicate(timeout=timeout)
+        output = (out or "") + (err or "")
         return {"cmd": " ".join(cmd), "code": proc.returncode,
                 "tail": output[-TAIL_CHARS:], "seconds": round(time.time() - started, 1),
                 "timed_out": False}
-    except subprocess.TimeoutExpired as e:
-        output = ((e.stdout or "") + (e.stderr or ""))
-        if isinstance(output, bytes):
-            output = output.decode("utf-8", errors="replace")
+    except subprocess.TimeoutExpired:
+        _kill_tree(proc)  # 杀整棵树：孙进程不留活口
+        try:
+            out, err = proc.communicate(timeout=10)  # 收割残余输出（树已死，管道 EOF）
+        except subprocess.TimeoutExpired:
+            out, err = "", ""  # 管道被遗孤句柄占用：放弃收割（进程树已杀）
+        output = (out or "") + (err or "")
         return {"cmd": " ".join(cmd), "code": -1,
                 "tail": output[-TAIL_CHARS:] + f"\n（超过 {timeout}s 被强杀）",
                 "seconds": round(time.time() - started, 1), "timed_out": True}

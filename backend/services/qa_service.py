@@ -143,7 +143,9 @@ def parse(md: str) -> dict:
     for k in range(len(region_starts) - 1):
         block = "\n".join(lines[region_starts[k]:region_starts[k + 1]])
         entry = _parse_block(block)
-        if entry is not None and not tail_blocks:
+        # 坏块仅自身进 tail，其后合法条目仍正常解析（修复：一个坏块
+        # 曾使其后全部条目降级进 tail）
+        if entry is not None:
             entries.append(entry)
         else:
             tail_blocks.append(block)

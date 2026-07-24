@@ -33,7 +33,7 @@
    * 若不存在：初始化该天的基本结构（含 `units` 列表为空、`sync_records` 等）。
    * 若已存在：询问用户：“检测到 Day <X> 已有历史进度。重置该天进度？回 [是] 重置 / [否] 保留历史继续。”
 5. 将 Day `<X>` 之前的所有天数在 JSON 中标记为已完成（若无历史记录，初始化为空完成态）；将 Day `<X>` 之后的所有天数记录清除或置为 pending。
-6. 计算并更新 `overall_completion_percentage` 值为 `((X - 1) / 25) * 100`。
+6. 计算并更新 `overall_completion_percentage` 值为 `((X - 1) / <总天数>) * 100`。
 7. 覆写更新 `docx/StudyState.json`。
 
 ### Step 2: 调整 Study.md 与物理文件

@@ -9,6 +9,9 @@ from ...domain.models import SessionContext
 from .base import CommandHandler, CommandResult, Deps
 
 
+_CONFIRM_RE = re.compile(r"(?<!不)(?<!还)(?<!算)是\s*$")
+
+
 class JumpDayHandler(CommandHandler):
     name = "jump_day"
 
@@ -20,8 +23,6 @@ class JumpDayHandler(CommandHandler):
             return "模拟面试进行中，请先完成本场面试。"
         if getattr(session, "day_phase", None) == DayPhase.PREREQ.value:
             return "先修诊断进行中，请先完成本场诊断。"
-        if args.strip() in ("[是]", "是"):
-            return None  # 用户已确认重置
         m = re.search(r"(\d+)", args)
         if not m:
             total = deps.config.workspace.total_days
@@ -30,10 +31,14 @@ class JumpDayHandler(CommandHandler):
         total = deps.config.workspace.total_days
         if not 1 <= x <= total:
             return f"跳转天数超出范围，必须在 1-{total} 之间。"
+        # 确认形态「[跳转天数] Day X 是」→ 放行（R2 修复：args 含天数+是，原
+        # 精确匹配 "是" 永远落空形成确认死循环）
+        if _CONFIRM_RE.search(args.strip()):
+            return None
         state = deps.state_store.load()
         if str(x) in state.get("days", {}) and state["days"][str(x)].get("units"):
             return (f"检测到 Day {x} 已有历史进度。重置该天进度？\n"
-                    f"回 [跳转天数] {x} 是 重置 / 回 [否] 保留历史继续。")
+                    f"回「[跳转天数] Day {x} 是」确认重置；回其他内容取消。")
         return None
 
     def run(self, deps: Deps, session: SessionContext,
@@ -47,7 +52,7 @@ class JumpDayHandler(CommandHandler):
 
         state["current_day"] = x
         day_data = deps.state_store.ensure_day(state, x)
-        if args.strip() in ("[是]", "是") or not day_data.get("units"):
+        if _CONFIRM_RE.search(args.strip()) or not day_data.get("units"):
             day_data["units"] = []
             day_data["sync_records"] = {"mastered": [], "stuck": [],
                                         "questions": [], "code_completed": []}
@@ -64,12 +69,30 @@ class JumpDayHandler(CommandHandler):
                 del state["days"][key]
         deps.state_store.recompute_percentage(state)
 
+        # R2 修复：目标天无 StudyMemory 时补建骨架（否则 validator 时序死锁——
+        # StudyMemory 原由 [开始今日学习] 在跳转之后才创建）。
+        # 🔴-1 修复：骨架必须带当日大纲单元行——空骨架会让 [开始今日学习]
+        # 两条出路全死（restart→JSON 有单元 MD 无行→PersistError；
+        # 恢复学习→units=[] 误报「全部完成」）；大纲不可解析时回退空骨架
+        from datetime import date as _date
+        mem_files = {}
+        if not deps.memory.exists(x):
+            try:
+                skeleton_units = deps.study_plan.parse_day(x).get("units", [])
+            except Exception:
+                skeleton_units = []  # 未细化天：空骨架（start_day 会细化后重渲染）
+            mem_files[deps.memory.path_for(x)] = deps.memory.render_new(
+                _date.today().isoformat(),
+                [{"id": u["id"], "title": u["title"]} for u in skeleton_units],
+                None)
+
         study_content = deps.study_plan.read()
         study_content = deps.study_plan.update_header(
             study_content, x, state["overall_completion_percentage"])
         deps.backup.atomic_persist(
             {deps.state_store.path: deps.state_store.dump(state),
-             deps.config.docx_dir / "Study.md": study_content},
+             deps.config.docx_dir / "Study.md": study_content,
+             **mem_files},
             validator=deps.validator())
 
         goal = ""

@@ -133,13 +133,29 @@ class EndDayHandler(CommandHandler):
         # ---- Step 1: [同步] 汇总 ----
         counts = deps.memory.sync_counts(content)
         pending_q = content.count("（待解答）")
+        # 「已解决」只读计数：notes.json 当日创建的已销账卡壳条目
+        # （铁律 16 单一路径语义不变，此处只读不写）
+        from ...services.notes_service import NotesService
+        resolved_stuck = sum(
+            1 for n in NotesService(deps.config).list(status="resolved",
+                                                      kind="stuck")
+            if n.get("created_day") == day)
         summary = (deps.templates.get("end_step1_sync")
                    .replace("<N> 项", f"{counts.get('已掌握', 0)} 项", 1)
                    .replace("<N> 项（其中已解决 <X> 项）",
-                            f"{counts.get('卡壳', 0)} 项（其中已解决 0 项）")
+                            f"{counts.get('卡壳', 0)} 项（其中已解决 {resolved_stuck} 项）")
                    .replace("<N> 项（已解答 <X> / 待解答 <Y>）",
                             f"{counts.get('疑问', 0)} 项（已解答 {counts.get('疑问', 0) - pending_q} / 待解答 {pending_q}）")
                    .replace("<N> 模块", f"{counts.get('代码完成', 0)} 模块"))
+        if pending_q:
+            summary = (summary
+                       .replace("(如有「待解答」)", "")
+                       .replace("<Y>", str(pending_q)))
+        else:
+            # 无待解答疑问：警告行整行移除（含前导空行），不留未替换占位符
+            summary = summary.replace(
+                "\n\n(如有「待解答」)⚠️ 仍有 <Y> 个待解答疑问，"
+                "建议补充 `[同步] 疑问 XXX` 解答完再结束。", "")
         messages.append(summary)
 
         # ---- Step 2: 完善 StudyMemory 与 JSON ----
@@ -180,7 +196,8 @@ class EndDayHandler(CommandHandler):
                 f"单元：{'、'.join(u['title'] for u in units)}。\n"
                 f"必须严格按以下模板结构（7 个二级标题齐全），总字数 ≥ "
                 f"{deps.config.get('study_review_min_chars', 3000)} 字：\n\n"
-                + deps.templates.get("study_review_doc")},
+                + deps.templates.get("study_review_doc")
+                .replace("<复现名>", deps.config.workspace.replica_name)},
         ]
         review_text = deps.llm.chat(review_prompt)
         min_chars = int(deps.config.get("study_review_min_chars", 3000))
@@ -242,5 +259,6 @@ class EndDayHandler(CommandHandler):
         messages.append(step6)
 
         session.day_phase = DayPhase.ENDED.value
+        session.current_stage = ""  # 🟡-2：阶段随结束复位（残留阶段指令不再注入）
         deps.session_store.save(session)
         return CommandResult(messages=messages)

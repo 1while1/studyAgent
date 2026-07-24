@@ -254,9 +254,15 @@ class MaterialsService:
     def _extract_text(self, path: Path, doc_type: str) -> str:
         if doc_type in ("md", "txt"):
             try:
-                return path.read_text(encoding="utf-8")
+                return path.read_text(encoding="utf-8")  # 严格 UTF-8 主路径
             except UnicodeDecodeError:
-                return path.read_text(encoding="gbk", errors="replace")
+                pass
+            try:
+                # 仅严格 GBK 成功才按 GBK（真 GBK 文件）
+                return path.read_text(encoding="gbk")
+            except UnicodeDecodeError:
+                # 含坏字节的 UTF-8：替换符兜底——保住其余中文，不整体转 GBK 乱码
+                return path.read_text(encoding="utf-8", errors="replace")
         if doc_type == "docx":
             try:
                 return self._extract_docx_styled(path)
@@ -481,7 +487,8 @@ class MaterialsService:
                 return e
         for doc_id, e in materials.items():
             il = doc_id.lower()
-            if il.endswith("/" + t) or t.endswith("/" + il) or t.endswith(il):
+            # 后缀匹配一律带 "/" 分隔符边界（防 token 尾部巧合重叠错配短 id 资料）
+            if il.endswith("/" + t) or t.endswith("/" + il) or t == il:
                 return e
         stem = t.split("/")[-1]
         if len(stem) < 4:  # 词干兜底防误命中（"ai" 这类短词不猜）
