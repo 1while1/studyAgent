@@ -83,6 +83,29 @@ class TestAtomicWrite(unittest.TestCase):
         self.assertFalse((self.tmp / "x.toml.tmp").exists())
 
 
+class TestAtomicPersistRollback(unittest.TestCase):
+    """atomic_persist 写入期失败回滚（G2 审查 🟡：双文件落盘写失败破窗盲区）。"""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="apr_"))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_write_failure_rolls_back_first_file(self):
+        import types
+        from backend.services.backup_service import BackupService
+        a = self.tmp / "a.md"
+        a.write_text("旧内容", encoding="utf-8")
+        blocker = self.tmp / "blocker"
+        blocker.mkdir()  # 写入目标是目录 → atomic_write 必失败
+        svc = BackupService(types.SimpleNamespace(docx_dir=self.tmp))
+        with self.assertRaises(Exception):
+            svc.atomic_persist({a: "新内容", blocker: "x"})
+        # 第一个文件必须回滚到旧内容（写入期失败不留破窗）
+        self.assertEqual(a.read_text(encoding="utf-8"), "旧内容")
+
+
 class TestScoreRange(unittest.TestCase):
     def test_out_of_range_rejected(self):
         self.assertIsNone(QuizEngine.extract_score("【评分：99】"))

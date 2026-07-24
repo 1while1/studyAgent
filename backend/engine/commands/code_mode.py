@@ -16,6 +16,8 @@ class CodeModeHandler(CommandHandler):
             return "模拟面试进行中，请先完成本场面试。"
         if getattr(session, "day_phase", None) == DayPhase.PREREQ.value:
             return "先修诊断进行中，请先完成本场诊断。"
+        if getattr(session, "day_phase", None) == DayPhase.REVIEWING.value:
+            return "今日复盘进行中，请先完成复盘再写代码。"
         if not session.current_unit_id:
             return "当前没有学习单元，请先 [开始今日学习]。"
         if session.current_stage == deps.stages.first:

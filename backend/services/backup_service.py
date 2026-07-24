@@ -67,9 +67,15 @@ class BackupService:
         with _lock_for(self.backup_dir):
             targets = list(files.keys())
             self.backup(*targets)
-            for path, content in files.items():
-                path.parent.mkdir(parents=True, exist_ok=True)
-                atomic_write(path, content)
+            try:
+                for path, content in files.items():
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    atomic_write(path, content)
+            except Exception:
+                # 写入期失败（磁盘满/权限）同样回滚——防部分文件已写的破窗态
+                # （G2 审查 🟡：复盘路径首次依赖双文件落盘，盲区显形）
+                self.restore(*targets)
+                raise
             if validator is not None:
                 ok, output = validator()
                 if not ok:

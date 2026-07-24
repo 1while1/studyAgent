@@ -163,11 +163,25 @@ class ChatOrchestrator(TurnEngine):
                 day_data = self._state_store.day(state)
                 day_data["review_completed"] = True
                 day_data["review_score"] = score
+                # 复盘 = 当日完成事件：同步 overall 与 Study.md 头部，
+                # 否则 validator 的 completed_days→overall 一致性必撞回滚
+                # （G2c 实测：复盘评分落盘 100% PersistError，复盘功能全废）
+                self._state_store.recompute_percentage(state)
+                from ..services.study_plan import StudyPlanStore
+                plan = StudyPlanStore(self._config)
+                files = {self._state_store.path: self._state_store.dump(state)}
+                try:
+                    # Study.md 缺失/损坏时降级只落 StudyState（防永久卡 REVIEWING；
+                    # validator 对缺失 Study.md 仅 warn 跳过）
+                    files[self._config.docx_dir / "Study.md"] = plan.update_header(
+                        plan.read(), state["current_day"],
+                        state["overall_completion_percentage"])
+                except Exception:
+                    pass
                 from ..engine.hooks.validate_hook import make_validator
                 from ..services.backup_service import BackupService
                 BackupService(self._config).atomic_persist(
-                    {self._state_store.path: self._state_store.dump(state)},
-                    validator=make_validator(self._config))
+                    files, validator=make_validator(self._config))
                 try:
                     from ..services.learner_service import LearnerService
                     svc = LearnerService(self._config)
