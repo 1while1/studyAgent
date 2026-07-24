@@ -48,6 +48,13 @@ def _safe_int(v, default: int) -> int:
         return default  # 手改 TOML 非法值不炸聊天（R8）
 
 
+def _safe_float(v, default: float) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return default  # 同 _safe_int：非法比例回退默认（🟡-5）
+
+
 def effective_budget(config: ConfigService) -> int:
     """生效上下文预算：min(用户预算, 模型上限 − 输出预留)，下限 1024。"""
     budget = _safe_int(config.data.get("context", {}).get("budget_tokens"),
@@ -163,7 +170,7 @@ class ContextManager:
         if session.archive_summary:
             pinned_est += self._est_text(session.archive_summary)
         usable = max(_MIN_USABLE, budget - pinned_est)
-        trigger = float(self._ctx().get("trigger_ratio", 0.8))
+        trigger = _safe_float(self._ctx().get("trigger_ratio"), 0.8)
         if self._est_messages(candidates, cap=usable * trigger) \
                 <= usable * trigger:
             window = list(candidates)

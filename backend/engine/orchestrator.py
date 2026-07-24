@@ -33,6 +33,9 @@ class ChatOrchestrator(TurnEngine):
 
     def instruction_for(self, session: SessionContext, user_text: str) -> str:
         """生成本次回复的附加指令。"""
+        if session.day_phase in (DayPhase.ENDED.value,
+                                 DayPhase.NOT_STARTED.value):
+            return ""  # 🟡-2：已结束/未开始学习，不注入任何阶段附加指令
         stage = session.current_stage
         if session.day_phase == DayPhase.PREREQ.value:
             # 先修诊断（M7）：逐 cid 评分（机械契约：每目标恰好一行 DayN-X：【评分：X.X】）
@@ -76,6 +79,9 @@ class ChatOrchestrator(TurnEngine):
     def post_process(self, session: SessionContext, assistant_text: str
                      ) -> list[str]:
         """LLM 回复完成后的状态处理。返回需要追加展示给用户的消息块。"""
+        if session.day_phase in (DayPhase.ENDED.value,
+                                 DayPhase.NOT_STARTED.value):
+            return []  # 🟡-2：已结束/未开始学习，不做阶段推进与回合计数
         extra: list[str] = []
         stage = session.current_stage
 
@@ -203,13 +209,25 @@ class ChatOrchestrator(TurnEngine):
                         .replace("<用户哪里没答上来 / 复述哪里有偏差>",
                                  "见上方点评"))
         else:
-            # 回合复习：每 5-6 轮提示一次掌握情况检查
+            # 回合复习（InteractionModel §3 决策 2）：每 5-6 轮自动渲染
+            # 掌握情况检查（与 [下一内容] 共用同一渲染函数，选项原样由用户自评）
             session.round_count += 1
-            lo, hi = self._config.get("round_review_interval", [5, 6])
+            try:
+                lo, hi = [int(x) for x in self._config.get(
+                    "round_review_interval", [5, 6])]
+            except (TypeError, ValueError):
+                lo, hi = 5, 6  # 🟡-5：非二元组/非数值回退默认
             if session.round_count >= lo:
                 session.round_count = 0
-                extra.append("（系统：已到回合复习点，可以说 [下一内容] 触发掌握情况检查，"
-                             "或继续当前讲解）")
+                try:
+                    from .commands.base import render_mastery_check
+                    extra.append(render_mastery_check(
+                        self._state_store, self._stages, self._templates,
+                        session, preselect=None))
+                except Exception:
+                    pass  # 渲染失败不阻断回合（提示行兜底）
+                extra.append("（系统：已到回合复习点，请按上方检查自评；"
+                             "确认后可说 [下一内容] 正式推进，或继续当前讲解）")
         return extra
 
     def _current_unit_title(self, session: SessionContext) -> str:

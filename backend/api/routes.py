@@ -322,7 +322,12 @@ def history():
 def read_doc(name: str):
     """学习资料查看：memory=当日 StudyMemory，interview_qa=面试话术库。"""
     if name == "memory":
-        day = _deps.state_store.load()["current_day"]
+        try:
+            day = _deps.state_store.load()["current_day"]
+        except Exception as e:
+            # 🟡-7：StudyState 缺失/损坏时按契约返回，不冒 500
+            return {"ok": False, "error": f"学习状态读取失败: {e}",
+                    "content": ""}
         path = _deps.memory.path_for(day)
         title = f"StudyMemory Day {day}"
     elif name == "interview_qa":
@@ -420,6 +425,8 @@ def code_file(root: str, path: str):
         data = _code_browser().read_file(root, path)
         # M6：可编辑标记（demo/replica 白名单 + 非敏感文件；异常一律 False）
         data["editable"] = _workshop().editable(root, path)
+        # Y11：mtime 供 UI 保存时做外部修改冲突检测（失败为 None）
+        data["mtime"] = _workshop().file_mtime(root, path)
         return {"ok": True, **data}
     except CodeBrowserError as e:
         return {"ok": False, "error": str(e)}
@@ -433,8 +440,24 @@ def code_save(body: dict):
     content = (body or {}).get("content")
     if not root.strip() or not path.strip() or content is None:
         return {"ok": False, "error": "root / path / content 均不能为空"}
+    mtime = (body or {}).get("mtime")
+    if mtime is not None:
+        # Y11：客户端带来打开时的 mtime → 与当前值比对（容差 1e-3），
+        # 不一致说明文件已被外部修改（AI 或编辑器），拒写要求刷新
+        try:
+            client_mtime = float(mtime)
+        except (TypeError, ValueError):
+            client_mtime = None
+        current = _workshop().file_mtime(root, path)
+        if client_mtime is None or current is None \
+                or abs(current - client_mtime) > 1e-3:
+            return {"ok": False, "conflict": True,
+                    "error": "文件已被外部修改（AI 或编辑器），请刷新后重试"}
     try:
-        return {"ok": True, **_workshop().save_via_root(root, path, str(content))}
+        result = _workshop().save_via_root(root, path, str(content))
+        # 保存后回读新 mtime（前端连续保存免二次拉取，B 包契约补强）
+        result["mtime"] = _workshop().file_mtime(root, path)
+        return {"ok": True, **result}
     except WorkshopError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
@@ -770,12 +793,16 @@ def notes_distill(body: dict):
     """日志蒸馏：StudyMemory 各天 [同步] 卡壳/疑问行 → 条目层（去重幂等）。"""
     deps = _deps
     body = body or {}
-    if body.get("day"):
-        days = [int(body["day"])]
-    elif deps.state_store.exists():
-        days = [int(k) for k in deps.state_store.load().get("days", {})]
-    else:
-        days = []
+    try:
+        if body.get("day"):
+            days = [int(body["day"])]
+        elif deps.state_store.exists():
+            days = [int(k) for k in deps.state_store.load().get("days", {})]
+        else:
+            days = []
+    except Exception as e:
+        # 🟡-7：非法天数键按契约返回，不冒 500
+        return {"ok": False, "error": f"天数解析失败: {e}"}
     svc = _notes()
     added = 0
     for d in days:
@@ -1090,18 +1117,20 @@ def _section_view(section: str) -> dict:
 
 def _context_view() -> dict:
     """上下文窗口视图（M5b）：预算/触发比例 + 模型上限与生效预算预览。"""
-    from ..engine.context_manager import effective_budget
+    from ..engine.context_manager import (_safe_float, _safe_int,
+                                          effective_budget)
     cfg = _deps.config
     ctx = cfg.data.get("context", {})
     llm_cfg = cfg.llm_config
     provider = llm_cfg.get("provider", "")
     model = llm_cfg.get(provider, {}).get("model", "")
     limits = cfg.data.get("model_context", {})
-    return {"budget_tokens": int(ctx.get("budget_tokens", 256000)),
-            "trigger_ratio": float(ctx.get("trigger_ratio", 0.8)),
+    return {"budget_tokens": _safe_int(ctx.get("budget_tokens"), 256000),
+            "trigger_ratio": _safe_float(ctx.get("trigger_ratio"), 0.8),
             "model": model,
-            "model_limit": int(limits.get(model,
-                                          limits.get("default", 32768))),
+            "model_limit": _safe_int(limits.get(model,
+                                                limits.get("default", 32768)),
+                                     32768),
             "effective_budget": effective_budget(cfg)}
 
 

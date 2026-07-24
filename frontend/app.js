@@ -627,6 +627,7 @@ const codeTreeEl = document.getElementById("code-tree");
 const codeContentEl = document.getElementById("code-content");
 const floatBtn = document.getElementById("snippet-float");
 let codeState = { root: "", path: "", lang: "plaintext" };
+let codeFileSeq = 0;  // openCodeFile 响应序号（Y8：慢响应后到不覆盖新选择）
 let snippetSel = null;
 let lastMouse = { x: 0, y: 0 };
 
@@ -753,6 +754,7 @@ async function loadTreeLevel(root, rel, container, replace) {
 // ---- Monaco（M6：pair 布局首次打开文件时动态加载；失败静默降级 legacy 渲染） ----
 let monacoReady = null;   // Promise|null（加载单例）
 let mcEditor = null;      // monaco editor 实例（null = legacy 模式）
+let mcModel = null;       // 当前 model 句柄（Y10：随编辑器一并 dispose 防泄漏）
 let mcDecorations = [];   // 行高亮 decoration 句柄
 
 function loadMonaco() {
@@ -786,14 +788,20 @@ function loadMonaco() {
   return monacoReady;
 }
 
-// 代码区提示（Monaco 宿主存在时先销毁编辑器，防 innerHTML 抹掉其 DOM）
-function showCodeHint(text) {
+// 销毁 Monaco 编辑器与当前 model（Y10：model 句柄一并 dispose，防泄漏）
+function disposeMonaco() {
   if (mcEditor) {
     mcEditor.dispose();
     mcEditor = null;
     window.__codeEditor = null;
     codeContentEl.classList.remove("mc-host");
   }
+  if (mcModel) { mcModel.dispose(); mcModel = null; }
+}
+
+// 代码区提示（Monaco 宿主存在时先销毁编辑器，防 innerHTML 抹掉其 DOM）
+function showCodeHint(text) {
+  disposeMonaco();
   codeContentEl.innerHTML = "";
   const d = document.createElement("div");
   d.className = "code-hint";
@@ -813,11 +821,23 @@ async function saveCurrentFile() {
   if (!codeState.editable || !mcEditor) return;
   const res = await fetch("/api/code/save", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ root: codeState.root, path: codeState.path, content: mcEditor.getValue() }),
+    // mtime 缺失（后端未下发）时 JSON.stringify 自动省略该字段——容错不传
+    body: JSON.stringify({ root: codeState.root, path: codeState.path, content: mcEditor.getValue(), mtime: codeState.mtime }),
   });
   const r = await res.json();
-  if (r.ok) { setDirty(false); toast(`已保存 ${codeState.path}`); }
-  else toast(`保存失败：${r.error}`);
+  if (r.ok) {
+    setDirty(false);
+    toast(`已保存 ${codeState.path}`);
+    // 保存会改写文件 mtime：不同步新值则下次保存必自冲突。
+    // 响应未带新 mtime 时拉取一次 /api/code/file 刷新（只取 mtime 字段）。
+    if (r.mtime !== undefined) codeState.mtime = r.mtime;
+    else {
+      const fr = await (await fetch(`/api/code/file?root=${encodeURIComponent(codeState.root)}&path=${encodeURIComponent(codeState.path)}`)).json();
+      if (fr.ok && fr.mtime !== undefined) codeState.mtime = fr.mtime;
+    }
+  } else if (r.conflict) {
+    toast("文件已被外部修改，请刷新后重试");  // 保持脏标记，编辑内容不丢
+  } else toast(`保存失败：${r.error}`);
 }
 document.getElementById("code-save").onclick = saveCurrentFile;
 
@@ -836,21 +856,22 @@ function openInMonaco(r) {
       scrollBeyondLastLine: false,
       wordWrap: codeContentEl.classList.contains("wrap-mode") ? "on" : "off",
     });
-    window.__codeEditor = mcEditor;  // èµ°æ¥ evaluate ç¨
+    window.__codeEditor = mcEditor;  // 走查 evaluate 用
     mcEditor.onDidChangeCursorSelection(onMonacoSelection);
     mcEditor.onDidChangeModelContent(() => setDirty(true));
     mcEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, saveCurrentFile);
   }
-  // æ¯æä»¶ç¬ç« modelï¼M6 å®¡æ¥ä¿®å¤ Y3ï¼åæ¨¡å setValue ä¼è®© undo æ è·¨æä»¶æ±¡æï¼
-  // Ctrl+Z æ¤éåä¸ä¸æä»¶åå®¹åä¿å­ = çå®æ°æ®æåè·¯å¾ï¼
+  // 每文件独立 model（M6 审查修复 Y3：单模型 setValue 会让 undo 栈跨文件污染，
+  // Ctrl+Z 撤销回上一文件内容再保存 = 真实数据损坏路径）
   const oldModel = mcEditor.getModel();
-  mcEditor.setModel(monaco.editor.createModel(r.content, r.lang));
+  mcModel = monaco.editor.createModel(r.content, r.lang);
+  mcEditor.setModel(mcModel);
   mcEditor.updateOptions({ readOnly: !r.editable });
   if (oldModel) oldModel.dispose();
-  mcDecorations = [];  // decoration å¥æéæ§ model ä½åº
+  mcDecorations = [];  // decoration 句柄随旧 model 作废
   mcEditor.setScrollTop(0);
   mcEditor.setPosition({ lineNumber: 1, column: 1 });
-  setDirty(false);  // setModel ä¼è§¦å change äºä»¶è¯¯æ è
+  setDirty(false);  // setModel 会触发 change 事件误标脏
 }
 
 // Monaco 选区 → 片段提问（沿用 lastMouse 定位浮动按钮）
@@ -869,11 +890,7 @@ function onMonacoSelection(e) {
 
 // legacy 渲染（Monaco 加载失败的降级路径，保留原 gutter+hljs 实现）
 function openLegacy(r) {
-  if (mcEditor) {  // 悬空实例兜底（create 半途抛错的窄路径，M6 审查 B1）
-    mcEditor.dispose();
-    mcEditor = null;
-    window.__codeEditor = null;
-  }
+  disposeMonaco();  // 悬空实例兜底（create 半途抛错的窄路径，M6 审查 B1）
   codeContentEl.classList.remove("mc-host");
   document.getElementById("code-save").classList.add("hidden");  // 降级不可保存（Y1：按钮可见但点了无效的反人类态）
   const lines = r.content.split("\n");
@@ -897,21 +914,25 @@ function openLegacy(r) {
 }
 
 async function openCodeFile(root, rel) {
+  const seq = ++codeFileSeq;
   document.getElementById("code-file-path").textContent = `${root}/${rel}`;
   floatBtn.classList.add("hidden");
   const res = await fetch(`/api/code/file?root=${encodeURIComponent(root)}&path=${encodeURIComponent(rel)}`);
   const r = await res.json();
+  if (seq !== codeFileSeq) return;  // 过期响应：不碰 codeState/编辑器/状态栏
   if (!r.ok) { showCodeHint(r.error); return; }
-  codeState = { root, path: rel, lang: r.lang, editable: !!r.editable };
+  codeState = { root, path: rel, lang: r.lang, editable: !!r.editable, mtime: r.mtime };
   document.getElementById("csb-path").textContent = `${root}/${rel}`;
   document.getElementById("csb-meta").textContent =
     `${r.lang} · ${r.lines || r.content.split("\n").length} 行 · UTF-8${r.editable ? " · 可编辑" : " · 只读"}`;
   updateSaveBtn();
   try {
     await loadMonaco();
+    if (seq !== codeFileSeq) return;  // Monaco 加载期间又选了别的文件
     openInMonaco(r);
   } catch (e) {
     monacoReady = null;  // Y2 修复：加载失败不缓存 rejected Promise，下次打开可重试
+    if (seq !== codeFileSeq) return;
     openLegacy(r);  // vendor 缺失/加载失败：静默降级旧渲染（mermaid 同款策略）
   }
 }
@@ -2349,7 +2370,7 @@ const NOTE_KINDS = { stuck: "卡壳", question: "疑问", mastered: "已掌握",
 const notesState = {
   shelf: "all", kind: "", search: "",
   notes: [], concepts: [], selectedId: null,
-  dirty: false, mergeMode: false,
+  dirty: false, mergeMode: false, mergePicks: [],
 };
 
 document.getElementById("open-notes").onclick = openNotes;
@@ -2518,6 +2539,12 @@ function noteCard(n) {
     cb.type = "checkbox";
     cb.className = "note-merge-cb";
     cb.dataset.nid = n.id;
+    cb.checked = notesState.mergePicks.includes(n.id);  // 重渲染（搜索/筛选）后保持勾选态
+    cb.onchange = () => {
+      // Y12：记录勾选顺序——keep = 最早勾选的那条（与 confirm 文案一致）
+      if (cb.checked) notesState.mergePicks.push(n.id);
+      else notesState.mergePicks = notesState.mergePicks.filter(x => x !== n.id);
+    };
     head.appendChild(cb);
   }
   const title = document.createElement("div");
@@ -2827,15 +2854,16 @@ document.getElementById("notes-merge-btn").onclick = async () => {
   const btn = document.getElementById("notes-merge-btn");
   if (!notesState.mergeMode) {
     notesState.mergeMode = true;
+    notesState.mergePicks = [];
     btn.classList.add("active");
     renderNotesList();
     return;
   }
-  const cbs = [...document.querySelectorAll(".note-merge-cb:checked")];
+  const ids = [...notesState.mergePicks];  // Y12：点击序（最早勾选 = keep），非 DOM 序
   notesState.mergeMode = false;
+  notesState.mergePicks = [];
   btn.classList.remove("active");
-  if (cbs.length < 2) { renderNotesList(); return; }
-  const ids = cbs.map(cb => cb.dataset.nid);
+  if (ids.length < 2) { renderNotesList(); return; }
   if (!confirm(`合并 ${ids.length} 条笔记？文本并入最早勾选的那条，其余标记为已合并。`)) {
     renderNotesList();
     return;

@@ -18,6 +18,22 @@
 
 v1 Roadmap 与 v3 分期（M1 资料库 → M2 可观测 → M3 学习者模型 → M4 笔记管理 → M5a 工具骨架 → M5b 上下文+路由 → M5c planner → M6 实战工坊 → **M7 课程本体 ✅**）全部收官。后续按用户指令推进：架构审计（设计符合性 + 各模块 bug 审查）→ 子 agent 全面 UI 优化 → 全功能浏览器模拟测试。mark_wrong 工具（§9）仍留档另立。
 
+## 架构审计修复批 · A 包（2026-07-24，engine/api/resources 族，fix/arch-review）
+
+| 发现 | 修复 |
+|------|------|
+| 🟡 Y1 用户面模板/预设写死项目字面量（ragent / 25 天） | SOP_开始今日学习 step1 `Day <N> / <总天数>`、step3 `<复现名> 完成 <模块>`；SOP_结束今日学习 study_review_doc `## 6. <复现名> 编码进度`；SOP_开始写代码 卡体 4 处 `<复现名>`；presets×3 + settings [[stages]] instruction 改 `<复现名>`/`<项目名>` 占位。**替换只在消费处**（模板单源与锚点不动）：start_day `_render_step1/_render_step3`、end_day study_review_doc 注入处、`CommandHandler.read_sop_card`（唯一读卡点）、prompt_builder 阶段指令注入处（唯一 instruction 注入路径，`<项目名>` 取 `project_dir.name`） |
+| 🟡 Y2 end_step1_sync 占位符泄漏 + 「已解决」恒 0 | end_day Step 1：有待解答 → 警告行替换 `<Y>` 真实计数，无则整行移除；「已解决 `<X>` 项」接 NotesService 当日 resolved 卡壳只读计数（铁律 16 语义不变） |
+| 🟡-1 销账后 StudyMemory「（待解答）」残留 | `note_actions.resolve_note`（铁律 16 单一路径）销账 question 条目时摘除当日疑问行对应后缀（分隔符保界防子串误摘，规则 14 落盘，异常静默不阻断） |
+| 🟡-2 end_day 后阶段残留 / 相位未短路 | end_day 落盘处 `session.current_stage` 置 `""`；orchestrator `instruction_for/post_process` 顶部 ENDED/NOT_STARTED 短路（`""`/`[]`）；next_content fail_fast 拦 ENDED + 常规分支前「今日单元已全部完成」护栏（防 completed 单元被改回 in_progress） |
+| 🟡-5 手改 TOML 非法值炸装配/视图 | context_manager 新增 `_safe_float`（trigger_ratio，同 `_safe_int` 模式）；routes `_context_view` int/float 同款防御；orchestrator `round_review_interval` 解包防御（非二元组/非数值回退 [5,6]） |
+| 🟡-7 两个 500 端点 | /api/doc?name=memory 在 StudyState 缺失/损坏时改 `ok=False` 契约；notes_distill 天数解析挪进 try（非法 days 键/非法 body day → `ok=False`） |
+| 🟡-8 [同步] 多行内容被正则截断 | sync 子类型正则 `(.+)$` → `([\s\S]+)$`（fail_fast 与 run 两处），多行卡壳/疑问可提交落盘 |
+| 🟡-4 persist_state 可绕过评分置 completed | set_unit_status 白名单去 completed（completed 必须走 [下一内容] 正轨带评分，本工具不设 rating 必撞 validator）；schema enum 与描述同步注明原因；既有 `test_persist_state_set_unit_status` 改用 postponed（该夹具 status_enum 补 postponed 对齐真实配置） |
+| 🟡 Y11 UI 保存覆盖外部修改 | `workshop_service.file_mtime`（代码根内 stat，失败 None）；/api/code/file 响应加 `mtime`；/api/code/save 接受可选 `mtime`——与当前文件值容差 1e-3 比对，不一致/不可比 → `{ok:False, conflict:True}` 拒写提示刷新；未提供保持现状兼容 |
+
+测试 +23（`tests/test_arch_fixes_a.py`，ArchFixBase 同款夹具）；**428 单测全绿**（含 B 包并行 +12）；validate_study 真实 docx 通过。
+
 ## M7 审查修复批（2026-07-23，双子 agent 审查驱动，fix/m7-review）
 
 | 发现 | 修复 |

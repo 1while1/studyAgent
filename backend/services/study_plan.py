@@ -63,12 +63,20 @@ def parse_day_text(text: str, day: int, replica_name: str = "replica") -> dict:
     g = re.search(r"\*\*目标\*\*[:：]\s*(.+)", section)
     if g:
         result["goal"] = g.group(1).strip()
-    for um in re.finditer(
-            r"^\d+\.\s*\[[ xX]\]\s*单元([A-Za-z0-9_]+)[:：](.+?)（预计\s*(.+?)）",
-            section, re.MULTILINE):
+    unit_matches = list(re.finditer(
+        r"^\d+\.\s*\[[ xX]\]\s*单元([A-Za-z0-9_]+)[:：](.+?)（预计\s*(.+?)）",
+        section, re.MULTILINE))
+    for k, um in enumerate(unit_matches):
         unit = {"id": um.group(1), "title": um.group(2).strip(),
                 "duration": um.group(3).strip(), "doc": ""}
-        tail = section[um.end(): um.end() + 300]
+        # 「文档」行窗口：到下一单元行或下一 ## /** 标题为止——
+        # 防缺文档行的单元错挂下一单元的文档行（原 300 字符盲窗）
+        end = unit_matches[k + 1].start() if k + 1 < len(unit_matches) \
+            else len(section)
+        tail = section[um.end():end]
+        bound = re.search(r"^(?:##\s|\*\*)", tail, re.MULTILINE)
+        if bound:
+            tail = tail[:bound.start()]
         d = re.search(r"-\s*文档[:：]\s*(.+)", tail)
         if d:
             unit["doc"] = d.group(1).strip()

@@ -384,9 +384,13 @@ def _persist_state(ctx: ToolContext, args: dict) -> ToolResult:
         enum = ctx.config.get(
             "status_enum",
             ["not_started", "in_progress", "completed", "postponed"])
+        # 🟡-4：completed 不开放——completed 必须走 [下一内容] 正轨带评分落盘，
+        # 本工具不写 rating，直接置 completed 必撞 validator（缺评分行）
+        enum = [s for s in enum if s != "completed"]
         if status not in enum:
             return ToolResult(ok=False, error=(
-                f"非法单元状态: {status or '（空）'}（枚举: {enum}）"))
+                f"非法单元状态: {status or '（空）'}（枚举: {enum}；"
+                "completed 不可用——需走 [下一内容] 带评分落盘）"))
         try:
             detail["unit"] = ctx.state_store.set_unit(
                 state, unit_id, status=status)
@@ -660,14 +664,19 @@ def build_default_registry() -> ToolRegistry:
         handler=_update_model))
     reg.register(ToolSpec(
         name="persist_state", permission=WRITE,
-        description="StudyState 受限落盘（白名单操作集，规则14）",
+        description="StudyState 受限落盘（白名单操作集，规则14；"
+                    "completed 不可用——completed 必须走 [下一内容] 正轨带评分，"
+                    "本工具不设 rating 必撞 validator）",
         params={"type": "object",
                 "properties": {
                     "op": {"type": "string", "enum": ["set_unit_status"]},
                     "unit_id": {"type": "string"},
                     "status": {"type": "string",
                                "enum": ["not_started", "in_progress",
-                                        "completed", "postponed"]}},
+                                        "postponed"],
+                               "description": "目标状态（completed 不可用："
+                                              "completed 必须走 [下一内容] "
+                                              "正轨带评分落盘）"}},
                 "required": ["op"]},
         handler=_persist_state))
     reg.register(ToolSpec(

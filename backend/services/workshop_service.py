@@ -175,6 +175,22 @@ class WorkshopService:
         except Exception:
             return False
 
+    def file_mtime(self, root_name: str, rel: str) -> float | None:
+        """代码根内文件的 mtime（UI 保存冲突检测，Y11）；任何失败返回 None。"""
+        try:
+            raw = next((r["path"] for r in self._config.code_roots
+                        if r["name"] == (root_name or "").strip()), None)
+            if raw is None:
+                return None
+            p = Path(raw)
+            root = (p if p.is_absolute() else (WEB_ROOT / raw).resolve()).resolve()
+            target = (root / (rel or "").strip()).resolve()
+            if root != target and root not in target.parents:
+                return None
+            return target.stat().st_mtime
+        except Exception:
+            return None
+
     # ---- demo 代码根注册 ----
 
     def _ensure_demo_code_root(self) -> str:

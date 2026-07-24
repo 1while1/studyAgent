@@ -107,7 +107,11 @@ class PromptBuilder:
             parts += [
                 "## 当前阶段指令（最高优先级）",
                 f"当前阶段：{session.current_stage}（{self._stages.sop_step(session.current_stage)}）",
-                self._stages.instruction(session.current_stage),
+                # 阶段指令占位统一在此替换（唯一注入路径；
+                # <项目名> 取 project_dir 目录名）
+                self._stages.instruction(session.current_stage)
+                .replace("<复现名>", ws.replica_name)
+                .replace("<项目名>", ws.project_dir.name),
                 "",
             ]
         if extra_instruction:

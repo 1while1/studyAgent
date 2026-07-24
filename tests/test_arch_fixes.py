@@ -368,5 +368,47 @@ class TestSecurityFixes(ArchFixBase):
         self.assertEqual(ds_before, ds_after)  # 未提交节区逐字节保留
 
 
+class TestY3RoundReview(ArchFixBase):
+    """Y3（InteractionModel §3 决策 2）：回合复习自动触发真渲染掌握情况检查。"""
+
+    def test_round_trigger_renders_check_with_options_intact(self):
+        from backend.engine.orchestrator import ChatOrchestrator
+        orch = ChatOrchestrator(self.config, self.deps.stages,
+                                self.deps.quiz, self.deps.state_store,
+                                self.deps.memory, self.deps.templates)
+        self._write_state({
+            "current_day": 1, "overall_completion_percentage": 0,
+            "days": {"1": {"date": "2026-07-22", "units": [
+                {"id": "A", "title": "基础一", "status": "in_progress",
+                 "rating": 0}]}}})
+        session = SessionContext(day_phase="studying",
+                                 current_unit_id="A",
+                                 current_stage="teaching",
+                                 round_count=4)  # 默认 [5,6] → 本轮触发
+        extras = orch.post_process(session, "继续讲解。")
+        joined = chr(10).join(extras)
+        self.assertIn("掌握情况检查", joined)                 # 真渲染模板
+        self.assertIn("[已掌握 / 基本掌握 / 需巩固]", joined)  # 选项原样（用户自评）
+        self.assertIn("[下一内容]", joined)
+        self.assertEqual(session.round_count, 0)
+
+    def test_next_content_uses_shared_renderer(self):
+        """命令触发与自动触发同函数：掌握检查模板与默认预置保持原行为。"""
+        from backend.engine.commands.base import render_mastery_check
+        self._write_state({
+            "current_day": 1, "overall_completion_percentage": 0,
+            "days": {"1": {"date": "2026-07-22", "units": [
+                {"id": "A", "title": "基础一", "status": "in_progress",
+                 "rating": 0}]}}})
+        session = SessionContext(current_unit_id="A",
+                                 current_stage="teaching")
+        out = render_mastery_check(self.deps.state_store,
+                                   self.deps.stages, self.deps.templates,
+                                   session, preselect="需巩固")
+        self.assertIn("基础一", out)
+        self.assertIn("[需巩固]", out)
+        self.assertNotIn("[已掌握 / 基本掌握 / 需巩固]", out)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -77,7 +77,13 @@ class CommandHandler(ABC):
     def read_sop_card(deps: Deps, filename: str) -> str:
         from ...services.config_service import SOP_DIR
         path = SOP_DIR / filename
-        return path.read_text(encoding="utf-8") if path.exists() else ""
+        if not path.exists():
+            return ""
+        # 消费处占位替换（模板单源不动，铁律 1）：工作区名在 handler 读卡时注入
+        ws = deps.config.workspace
+        return (path.read_text(encoding="utf-8")
+                .replace("<复现名>", ws.replica_name)
+                .replace("<项目名>", ws.project_dir.name))
 
     @staticmethod
     def learner_with_concepts(deps: Deps):
@@ -115,3 +121,32 @@ class CommandHandler(ABC):
                     mats[concept_id(int(day_key), u["id"])] = ids
         svc.ensure_concepts(state, mats)
         return svc
+
+
+def render_mastery_check(state_store, stages, templates, session,
+                         preselect: str | None = "需巩固") -> str:
+    """掌握情况检查渲染（InteractionModel §3 决策 2：两个触发源共用同一函数）。
+
+    调用方：[下一内容] 命令（preselect="需巩固" 保守默认）与 orchestrator
+    回合复习自动触发（preselect=None 选项原样，由用户自评）。
+    只读渲染，不改动任何状态。
+    """
+    state = state_store.load()
+    unit = next((u for u in state_store.day(state)["units"]
+                 if u["id"] == session.current_unit_id), None)
+    title = (unit or {}).get("title", "当前单元")
+    done_stages = []
+    names = stages.names()
+    if session.current_stage in names:
+        done_stages = names[: names.index(session.current_stage) + 1]
+    check = (templates.get("mastery_check")
+             .replace("<填入>", title, 1)
+             .replace("<填入>",
+                      "、".join(stages.sop_step(s) for s in done_stages)
+                      or "见讲解记录", 1)
+             .replace("<填入>", "见对话记录", 1))
+    if preselect:
+        check = check.replace("[已掌握 / 基本掌握 / 需巩固]", f"[{preselect}]")
+    if any(s == "coding" for s in done_stages):
+        check = check.replace("[已完成 / 进行中 / 未开始 / 不适用]", "[已完成]")
+    return check
