@@ -459,6 +459,10 @@ def main():
                         break
             check("模拟面试 teach_back 落盘",
                   "模拟面试结束" in (page.locator("#messages").text_content() or ""))
+            # G2 验收回归：快流（Mock）下 message 事件（extra）不得覆盖
+            # 未触发节流渲染的 LLM 泡——评分气泡必须与 extra 泡并存
+            check("快流下 LLM 评分泡不被 extra 覆盖",
+                  page.locator("#messages .bubble:has-text('【评分：')").count() >= 1)
         finally:
             for p, (existed, data) in _bak.items():
                 if existed:
@@ -838,6 +842,8 @@ def main():
                     break
             check("跳转后开始学习链路不死", ok_sd)
             if "FAIL-FAST" in (page.locator("#messages").text_content() or ""):
+                n_mock_before = page.locator(
+                    "#messages .bubble:has-text('【Mock 讲解】')").count()
                 page.fill("#input", "重新开始今日学习")
                 page.locator("#input-form button").click()
                 for i in range(30):
@@ -847,6 +853,11 @@ def main():
                         break
                 check("重新开始今日学习出 Step 3", "Step 3" in
                       (page.locator("#messages").text_content() or ""))
+                # G2 审查补强（③回归锁）：command 流多块 messages（Step1-4+单元
+                # 开始）后，LLM 流的气泡内容必须完整独立（不被模板覆盖）
+                check("command 多 message 后 LLM 泡完整",
+                      page.locator("#messages .bubble:has-text('【Mock 讲解】')").count()
+                      > n_mock_before)
             # 4) 恢复学习
             page.locator("#command-chips .chip", has_text="恢复学习").click()
             ok_resume = False

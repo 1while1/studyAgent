@@ -20,6 +20,19 @@ v1 Roadmap 与 v3 分期（M1 资料库 → M2 可观测 → M3 学习者模型 
 
 **当前阶段 = 完成度验收**：按 `docs/AcceptanceChecklist.md` 逐项检查学习 Agent 的完成度（功能项逐条实测打勾，发现问题开修复批，流程同旧例：分支 + 三件套全绿 + 双子审查 + 合并 push）。mark_wrong 工具（§9）仍留档另立。
 
+## G2 验收修复批（2026-07-24，fix/g2-extras-overwrite，双子审查驱动）
+
+验收 G2a（学习流程手动项）实测发现：
+
+| 发现 | 修复 |
+|------|------|
+| 🔴 快流下 extras 覆盖 LLM 泡：SSE `message` 事件用 `bubble.textContent` 判空决定是否新建气泡——Mock/快流渠道 LLM 文本已累积 `rawText` 但 200ms 节流渲染未触发（textContent 仍空）→ 不新建泡 → extra（next_preview/复盘落盘消息等模板）直接覆盖 LLM 泡，评分/点评本轮从 DOM 丢失（落盘与历史回填不受影响；真实慢流渠道难触发，G2a Mock 验收当场抓住） | message 事件先把 `rawText` 终渲染落泡再开新泡放模板（`renderMarkdownInto(bubble, rawText)` + 判据加 rawText）；五态组合（FAIL-FAST 纯模板/LLM+extra/连续多 message/LLM 无 extra/tool_read 交错）经双子审查逐一验证无裂缝 |
+| 🟡 走查缺口：extras 场景无 DOM 级断言 | +2 断言：9c+ 面试终评「快流下 LLM 评分泡不被 extra 覆盖」；9j 段「command 多 message 后 LLM 泡完整」（③ 回归锁，增量判定） |
+
+🔴 留档（既有问题，本批不修，另立）：**command 流 LLM 失败的回滚只回滚 session 对象，handler `run()` 内的外部落盘（atomic_persist StudyState/StudyMemory）不回滚**（routes.py:257 vs next_content.py:43-46 等）——与铁律 10「整体回滚」文本有出入，修复涉及失败语义重设计（快照重放 vs 延迟持久化），连同 🟡「result.messages 先于 LLM 成功下发，回滚后屏幕文案与状态矛盾」「chat/command 失败语义分叉（chat 保留用户消息 vs command 回滚指令）」一并另立批次评估。
+
+G2a 复验 20/20 全过；走查 155 项全绿（+2 断言）。
+
 ## G1 验收修复批（2026-07-24，fix/g1-doc-prefix，双子审查驱动）
 
 验收 G1（工作区与初始化）实测发现，三路问题一批修：

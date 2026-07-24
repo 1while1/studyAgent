@@ -440,7 +440,10 @@ async function streamPost(url, text) {
           cancelThrottledRender();  // 防止旧气泡的迟到节流渲染覆盖模板
           const wasThinking = bubble.classList.contains("thinking");
           bubble.classList.remove("thinking");
-          if (bubble.textContent && !wasThinking) bubble = addMessage("assistant", "");
+          // 快流下 rawText 已累积但节流渲染未触发（textContent 仍空）——
+          // 必须先把 LLM 内容落泡再开新泡放模板，否则 extra 覆盖丢内容
+          if (rawText) renderMarkdownInto(bubble, rawText);
+          if ((rawText || bubble.textContent) && !wasThinking) bubble = addMessage("assistant", "");
           renderMarkdownInto(bubble, payload.content);
           rawText = "";
           // 模板渲染完后可能还有 LLM 流，继续保持等待提示

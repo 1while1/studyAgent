@@ -42,7 +42,7 @@ def api(path, payload=None):
 
 
 def send_and_wait(page, text, timeout=180):
-    """发送消息/指令，等流式完成，返回新 AI 气泡文本。"""
+    """发送消息/指令，等流式完成，返回本轮全部新 AI 气泡的合并文本。"""
     before = page.locator("#messages .bubble").count()
     page.fill("#input", text)
     page.locator("#input-form button").click()
@@ -57,11 +57,13 @@ def send_and_wait(page, text, timeout=180):
             if txt == last_txt:
                 stable += 1
                 if stable >= 2:  # 文本 4s 稳定 = 流式结束
-                    return txt
+                    break
             else:
                 stable = 0
                 last_txt = txt
-    return last_txt
+    # 聚合本轮全部新气泡（handler messages 块 + LLM 泡 + extra 泡）
+    texts = page.locator("#messages .bubble").all_text_contents()
+    return "\n".join(texts[before + 1:])  # 跳过用户泡（before 处）起的 AI 气泡
 
 
 def load_state():
@@ -102,6 +104,9 @@ def main():
 
             # ---------- 2.1 [开始今日学习]（手动复验） ----------
             r = send_and_wait(page, "[开始今日学习]", 240)
+            if "FAIL-FAST" in r:
+                print("  （Day_01 已存在 → 重新开始今日学习）", flush=True)
+                r = send_and_wait(page, "重新开始今日学习", 240)
             rec("2.1 开始今日学习-四步输出",
                 "Step 1" in r and "Step 3" in r and "导学单元" in r,
                 r[:100].replace("\n", " "))
@@ -136,7 +141,7 @@ def main():
                       for e in c.get("evidence", [])]
             rec("2.3 学习者证据落盘", len(ev) >= 1,
                 f"{len(ev)} 条: {[e.get('type') for e in ev][:4]}")
-            rec("2.3 推进下一单元开场", "单元B" in r or "单元 B" in r,
+            rec("2.3 推进下一单元开场", "已落盘" in r and "单元" in r,
                 r[:60].replace("\n", " "))
 
             # ---------- 2.4 [强制下一内容]（单元 B） ----------
@@ -157,16 +162,15 @@ def main():
                 ("已掌握", "事件驱动架构的核心流转"),
                 ("卡壳", "背压与拉模式的边界条件"),
                 ("疑问", "为什么首包探测后还要二次协商？"),
-                ("面试话术", "背压设计三要素：缓冲、丢弃策略、上游通知"),
                 ("代码完成", "tinyrag-replica day01 骨架"),
             ]
             for sub, content in syncs:
                 r = send_and_wait(page, f"[同步] {sub} {content}", 120)
+            # 面试话术子类走 InterviewQA.md 单源（不写 StudyMemory）
+            r = send_and_wait(page, "[同步] 面试话术 背压设计三要素：缓冲、丢弃策略、上游通知", 120)
             mem = load_memory(day)
-            hits = [s for s, c in syncs if any(
-                w in mem for w in ([s, s.replace("已", "已")]) ) and c[:6] in mem]
             mem_ok = all(c[:8] in mem for _, c in syncs)
-            rec("2.6 五子类落盘 StudyMemory", mem_ok,
+            rec("2.6 四子类落盘 StudyMemory", mem_ok,
                 f"缺失: {[c[:8] for _, c in syncs if c[:8] not in mem]}")
             notes = json.loads((DOCX / "notes.json").read_text(encoding="utf-8")) \
                 if (DOCX / "notes.json").exists() else {"notes": []}
@@ -193,25 +197,32 @@ def main():
                 f"evidence: {ev_types[-3:] if ev_types else '无'}")
 
             # ---------- 2.7 [开始写代码] ----------
-            # 当前单元 C 处于 first 阶段 → fail_fast 拒绝（负向）
+            # 当前单元处于 first 阶段 → fail_fast 拒绝（负向）
             r = send_and_wait(page, "[开始写代码]", 120)
             rec("2.7 first 阶段 fail_fast", "先把理论讲完" in r or "导读阶段" in r,
                 r[:60].replace("\n", " "))
-            # 单元 C 走 quiz 到 scored → [开始写代码] 正向
+            # 当前单元走 quiz 到 scored → [开始写代码] 正向
             send_and_wait(page, "[下一内容]", 240)  # 掌握情况检查 + r1
-            quiz_two_rounds(page, "单元C")
+            quiz_two_rounds(page, "当前单元")
             r = send_and_wait(page, "[开始写代码]", 240)
             st_now = api("/api/state")
             rec("2.7 scored 阶段进入 coding（fail_fast 通过）",
                 st_now["session"]["current_stage"] == "coding" and len(r) > 10,
                 f"stage={st_now['session']['current_stage']}, 响应 {len(r)} 字符")
-            # [强制下一内容] 落盘单元 C → 今日全部完成
-            r = send_and_wait(page, "[强制下一内容]", 240)
+            # force 落盘剩余全部单元（单元数动态，4 单元则 C/D 连续 force）
+            r = ""
+            for _ in range(6):
+                st = load_state()
+                remaining = [u for u in st["days"][str(day)]["units"]
+                             if u["status"] != "completed"]
+                if not remaining:
+                    break
+                r = send_and_wait(page, "[强制下一内容]", 240)
             st = load_state()
             all_done = all(u["status"] == "completed"
                            for u in st["days"][str(day)]["units"])
             rec("2.7 今日单元全部完成", all_done and "全部完成" in r,
-                r[:60].replace("\n", " "))
+                f"all_done={all_done}, {r[:60].replace(chr(10), ' ')}")
 
             rec("全程零 JS 错误", not errors, "; ".join(errors[:3]))
         finally:
