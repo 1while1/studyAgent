@@ -29,6 +29,7 @@ class ObservedLLM(LLMClient):
     def chat_stream(self, messages: list[Message],
                     max_tokens: int | None = None) -> Iterator[str]:
         start = time.time()
+        self.last_usage = None  # 每轮重置：镜像只反映本轮，杜绝陈旧值
         out_parts: list[str] = []
         err = ""
         try:
@@ -42,6 +43,7 @@ class ObservedLLM(LLMClient):
             latency_ms = int((time.time() - start) * 1000)
             in_text = "\n".join(str(m.get("content", "")) for m in messages)
             usage = getattr(self._inner, "last_usage", None)
+            self.last_usage = usage  # 镜像到自身：上游无需拆包装链取数
             model = getattr(self._inner, "_model", "") or type(self._inner).__name__
             self._observer.log_llm(
                 self._provider, model, latency_ms, in_text,

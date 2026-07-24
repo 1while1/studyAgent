@@ -68,6 +68,7 @@ class LLMStreamer:
         self._deps = deps
         self.full: list[str] = []
         self.ctx_plan: dict = {}  # M5b：assemble 产出的压缩计划（chat/command 回合边界用）
+        self.usage: dict | None = None  # M8：本轮实测 usage（上下文账本）
 
     @property
     def text(self) -> str:
@@ -149,6 +150,18 @@ class LLMStreamer:
                 if ev["type"] == "delta":
                     self.full.append(ev["content"])
                 yield sse(ev)
+        self.usage = loop.usage  # M8：供路由层落上下文账本
+
+
+def _record_ctx_ledger(session, streamer: "LLMStreamer") -> None:
+    """M8 上下文账本：本轮实测 usage 落 session；网关降级轮（无 usage）
+    标 measured=False 并保留上一轮实测值（仪表降级为估算显示）。"""
+    if streamer.usage:
+        session.ctx_prompt_tokens = streamer.usage["prompt_tokens"]
+        session.ctx_completion_tokens = streamer.usage["completion_tokens"]
+        session.ctx_measured = True
+    else:
+        session.ctx_measured = False
 
 
 @router.post("/api/chat")
@@ -174,6 +187,7 @@ def chat(body: TextIn):
             yield sse({"type": "error", "content": f"LLM 调用失败：{e}"})
             return
         session.chat_history.append({"role": "assistant", "content": streamer.text})
+        _record_ctx_ledger(session, streamer)  # M8 上下文账本
         try:
             extras = engine.post_process(session, streamer.text)
         except Exception as e:
@@ -259,6 +273,7 @@ def command(body: TextIn):
                 return
             session.chat_history.append(
                 {"role": "assistant", "content": streamer.text})
+            _record_ctx_ledger(session, streamer)  # M8 上下文账本
             deps.session_store.save(session)
         yield sse({"type": "done"})
         # M5b：done 之后压缩（对称于 chat 路由；失败静默降级）；
@@ -1141,6 +1156,51 @@ def _context_view() -> dict:
                                                 limits.get("default", 32768)),
                                      32768),
             "effective_budget": effective_budget(cfg)}
+
+
+@router.get("/api/context-status")
+def context_status():
+    """M8 上下文仪表：当前会话上下文占用。
+
+    总量：最近一轮 API 实测 prompt+completion（账本，measured）优先；
+    降级轮/未调用过 → 校准估算（estimated）。三层分解只能本地估算
+    （API 只给总量），实测模式下按估算占比等比缩放锚定实测总量。
+    口径说明：实测 prompt 含 tool-use 回合的注入内容（不进 chat_history），
+    故三层是「按占比摊派」的近似，总和锚定实测、单层不保证精确。
+    """
+    from ..engine.context_manager import _safe_float, effective_budget
+    deps = _deps
+    session = deps.session_store.load()
+    cm = ContextManager(deps)
+    budget = effective_budget(deps.config)
+    trigger = _safe_float(
+        deps.config.data.get("context", {}).get("trigger_ratio"), 0.8)
+    system = deps.prompts.build(
+        session, learner_summary=cm.learner_summary(session))
+    messages, _plan = cm.assemble(session, system)
+    pinned = [m for m in messages if m["role"] == "system"]
+    window = [m for m in messages if m["role"] != "system"]
+    est_pinned = cm._est_text(pinned[0]["content"]) if pinned else 0
+    est_archive = sum(cm._est_text(m["content"]) for m in pinned[1:])
+    est_window = cm._est_messages(window)
+    est_total = est_pinned + est_archive + est_window
+    if session.ctx_measured and session.ctx_prompt_tokens:
+        total = session.ctx_prompt_tokens + session.ctx_completion_tokens
+        source = "measured"
+        scale = total / est_total if est_total > 0 else 1.0
+    else:
+        total, source, scale = est_total, "estimated", 1.0
+    return {
+        "total": total, "source": source, "budget": budget,
+        "ratio": round(total / budget, 4) if budget else 0,
+        "trigger_ratio": trigger,
+        "layers": {"pinned": round(est_pinned * scale),
+                   "archive": round(est_archive * scale),
+                   "window": round(est_window * scale)},
+        "turns": len(session.chat_history),
+        "archived_turns": max(0, min(session.archive_upto,
+                                     len(session.chat_history))),
+    }
 
 
 @router.get("/api/llm-config")

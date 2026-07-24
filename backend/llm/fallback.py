@@ -23,14 +23,19 @@ class FallbackClient(LLMClient):
 
     def chat_stream(self, messages: list[Message],
                     max_tokens: int | None = None) -> Iterator[str]:
+        # 每轮重置并镜像实际服务分支的 usage：extract_usage 在本节点即可
+        # 取到本轮值，不会向下挖到未参与本轮分支的陈旧 last_usage
+        self.last_usage = None
         yielded_any = False
         try:
             for delta in self._primary.chat_stream(messages, max_tokens=max_tokens):
                 yielded_any = True
                 yield delta
+            self.last_usage = getattr(self._primary, "last_usage", None)
             return
         except Exception as e:
             logger.warning("主渠道失败，切换备用渠道 %s: %s", self._fallback_name, e)
         if yielded_any:
             yield "\n\n（主渠道中断，以下由备用渠道重新生成）\n\n"
         yield from self._fallback.chat_stream(messages, max_tokens=max_tokens)
+        self.last_usage = getattr(self._fallback, "last_usage", None)

@@ -53,6 +53,35 @@ _MARKER_BUF_CAP = 2000
 _ACTION_BUF_CAP = 16384
 
 
+def extract_usage(llm: LLMClient) -> dict | None:
+    """沿包装链（ObservedLLM._inner / FallbackClient._primary/_fallback）
+    找本轮的实测 usage（M8 上下文账本）。
+
+    权威规则：节点实例上显式设置了 last_usage（每轮 chat_stream 开始重置、
+    结束镜像实际服务分支的值）即为最终答案——是 None 就返回 None，
+    绝不向下挖未参与本轮分支的陈旧值；只有节点从未显式设置（如
+    MockLLM 不记账）才继续向下找。"""
+
+    def _norm(usage: dict) -> dict:
+        return {"prompt_tokens": usage.get("prompt_tokens") or 0,
+                "completion_tokens": usage.get("completion_tokens") or 0}
+
+    seen, queue = set(), [llm]
+    while queue:
+        cur = queue.pop(0)
+        if id(cur) in seen:
+            continue
+        seen.add(id(cur))
+        if "last_usage" in vars(cur):  # 实例级显式设置 = 本轮权威值
+            usage = vars(cur)["last_usage"]
+            return _norm(usage) if usage else None
+        for attr in ("_inner", "_primary", "_fallback"):
+            nxt = getattr(cur, attr, None)
+            if nxt is not None:
+                queue.append(nxt)
+    return None
+
+
 class ToolUseLoop:
     """包装 llm.chat_stream，产出 SSE 事件 dict（delta / tool_read）。
 
@@ -74,6 +103,7 @@ class ToolUseLoop:
         self._registry = registry or build_default_registry()
         self._allow_actions = allow_actions
         self.text: str = ""  # 最终文本（不含标记行），供落 chat_history
+        self.usage: dict | None = None  # 最后一轮的实测 usage（M8 上下文账本）
 
     def run(self, messages: list[Message]) -> Iterator[dict]:
         max_reads = int(self._config.get("ai_read_max_per_reply", 3))
@@ -94,6 +124,9 @@ class ToolUseLoop:
                 elif ev["type"] == "_marker":
                     pending_read = ev
                     break
+            # M8：每轮结束捕获实测 usage（回合内最后一个有 usage 的轮
+            # 即账本来源；降级轮保留上一轮值，下一回合自愈）
+            self.usage = extract_usage(self._llm) or self.usage
             if pending_read is None:
                 return  # 流正常结束
             if pending_read["kind"] == "action":

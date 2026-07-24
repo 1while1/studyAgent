@@ -107,5 +107,33 @@ class TestLengthContinuation(unittest.TestCase):
         self.assertIn("继续", out)
 
 
+def _finish_usage_chunk(pt=8, ct=8, finish="stop"):
+    """DeepSeek 风格：usage 挂在带 finish_reason 的内容块上（非空 choices）。"""
+    delta = SimpleNamespace(content=None)
+    return SimpleNamespace(
+        choices=[SimpleNamespace(delta=delta, finish_reason=finish)],
+        usage=SimpleNamespace(prompt_tokens=pt, completion_tokens=ct))
+
+
+class TestUsageCapture(unittest.TestCase):
+    """usage 捕获与块形态无关：OpenAI 独立空 choices 末块 / DeepSeek 挂在
+    finish 内容块上，两种都必须入账（M8 上下文账本 + M2 用量统计共用）。"""
+
+    def test_usage_on_finish_chunk_captured(self):
+        client, _ = _make_client([
+            [_chunk("好"), _finish_usage_chunk(11, 22)]])
+        out = "".join(client.chat_stream([{"role": "user", "content": "hi"}]))
+        self.assertEqual(out, "好")
+        self.assertEqual(client.last_usage,
+                         {"prompt_tokens": 11, "completion_tokens": 22})
+
+    def test_usage_on_empty_choices_chunk_still_captured(self):
+        client, _ = _make_client([
+            [_chunk("好", finish="stop"), _usage_chunk(33, 44)]])
+        "".join(client.chat_stream([{"role": "user", "content": "hi"}]))
+        self.assertEqual(client.last_usage,
+                         {"prompt_tokens": 33, "completion_tokens": 44})
+
+
 if __name__ == "__main__":
     unittest.main()
