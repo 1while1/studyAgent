@@ -142,6 +142,52 @@ class TestAheadFlow(ArchFixBase):
         self.assertTrue(checks["AA"])
         self.assertIn("单元AA：4.5分", content)
 
+    def test_ahead_retry_after_llm_failure_recovers(self):
+        """G12 审查 🔴：超前落盘后 LLM 失败回滚 session，重发 [超前学习]
+        曾死锁（「还有 1 个未完成」拦截）——应幂等续学磁盘上的超前单元。"""
+        handler = NextContentHandler()
+        result = handler.run(self.deps, SessionContext(
+            current_unit_id="A", day_phase="studying"), "", mode="ahead")
+        self.assertIn("已超前加载 Day 2", "\n".join(result.messages))
+        # 模拟路由回滚：session 回到指令前（定位在已完成单元 A）
+        rolled_back = SessionContext(current_unit_id="A", day_phase="studying")
+        result2 = handler.run(self.deps, rolled_back, "", mode="ahead")
+        self.assertIn("继续学习", "\n".join(result2.messages))
+        self.assertIsNotNone(result2.llm_instruction)
+        self.assertEqual(rolled_back.current_unit_id, "AA")
+        # 幂等：不产生第二个超前单元，磁盘状态仍过 validator
+        state = json.loads(
+            (self.docx / "StudyState.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            len([u for u in state["days"]["1"]["units"] if u.get("ahead")]), 1)
+        self._validate()
+
+    def test_next_content_hint_in_split_state(self):
+        """G12 审查 🔴：分裂态（磁盘只剩超前单元开着、session 定位已完成
+        单元）下发 [下一内容]，曾把 completed 改回 in_progress 撞 validator
+        报「指令执行失败」——应引导恢复路径且不碰磁盘。"""
+        handler = NextContentHandler()
+        handler.run(self.deps, SessionContext(
+            current_unit_id="A", day_phase="studying"), "", mode="ahead")
+        rolled_back = SessionContext(current_unit_id="A", day_phase="studying")
+        result = handler.run(self.deps, rolled_back, "")
+        self.assertIn("[恢复学习]", "\n".join(result.messages))
+        self.assertIsNone(result.llm_instruction)
+        self._validate()
+
+    def test_next_content_normal_flow_after_ahead_unaffected(self):
+        """护栏不得误伤正常流程：超前成功后 session 定位在超前单元，
+        [下一内容] 常规分支照常进入 quiz_r1。"""
+        handler = NextContentHandler()
+        session = SessionContext(current_unit_id="A", day_phase="studying")
+        handler.run(self.deps, session, "", mode="ahead")
+        self.assertEqual(session.current_unit_id, "AA")
+        result = handler.run(self.deps, session, "")
+        self.assertNotIn("[恢复学习]", "\n".join(result.messages))
+        self.assertIsNotNone(result.llm_instruction)
+        self.assertEqual(session.current_stage, "quiz_r1")
+        self._validate()
+
 
 class TestJumpDayFix(ArchFixBase):
     def _state(self):
