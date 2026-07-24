@@ -147,7 +147,12 @@ def parse_md(md_path):
 
 
 def check_day_consistency(state, current_day, docx_dir):
-    day_data = state.get("days", {}).get(str(current_day))
+    days = state.get("days", {})
+    if not days:
+        # 全新工作区（初始化完成、尚未 [开始今日学习]）：days 为空是合法
+        # 初始状态（单元数据由 start_day 注册），无一致性问题可核对。
+        return
+    day_data = days.get(str(current_day))
     if not day_data:
         err(f"Day {current_day} data not found in StudyState.json")
         return

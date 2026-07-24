@@ -6,7 +6,7 @@
 实战工坊（模式落盘/demo 脚手架/编辑保存/进程起停/面板显隐）/模拟面试/
 先修诊断（9i）/指令族 E2E（9j：超前学习/跳转天数骨架+链路/恢复学习/
 code 模式 guard，学习数据存在性感知备份还原）/UI 交互（9k：补全键盘导航/
-章节精确链接/进程清理按钮）。
+章节精确链接/进程清理按钮）。渠道归一 Mock（开头切换+结尾还原），不依赖真实 LLM。
 """
 import sys
 import time
@@ -47,6 +47,11 @@ def main():
         api("/api/workspaces/switch", {"slug": "ragent"})
     # 会话模式归一化：残留 code 模式会让侧栏隐藏/指令走 guard（走查前提自愈）
     api("/api/session/mode", {"mode": "study"})
+    # 渠道归一 Mock：走查不依赖真实 LLM（余额/风控不可控——402/401 已踩），
+    # 结束后还原用户原渠道
+    orig_llm = api("/api/llm-config")
+    api("/api/llm-config", {"provider": "mock",
+                            "fallback_provider": orig_llm.get("fallback_provider", "")})
 
     with sync_playwright() as p:
         b = p.chromium.launch(headless=True)
@@ -361,7 +366,7 @@ def main():
                     pass
 
         mark("9 聊天")
-        # ---- 9. 聊天（真实 LLM，短请求） ----
+        # ---- 9. 聊天（Mock 渠道：走查开头已归一，不依赖真实 LLM） ----
         before = page.locator("#messages .bubble").count()
         page.fill("#input", "回复OK即可")
         page.locator("#input-form button").click()
@@ -966,6 +971,12 @@ def main():
             api("/api/workspaces/switch", {"slug": orig_ws})
         except Exception:
             pass
+    # 还原用户原 LLM 渠道
+    try:
+        api("/api/llm-config", {"provider": orig_llm.get("provider", "mock"),
+                                "fallback_provider": orig_llm.get("fallback_provider", "")})
+    except Exception:
+        pass
 
     print()
     if ISSUES:

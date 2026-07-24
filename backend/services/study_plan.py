@@ -43,6 +43,43 @@ def check_unit_docs(units: list[dict], project_dir) -> list[str]:
     return errors
 
 
+_DOC_LINE_RE = re.compile(r"^(\s*-\s*文档[:：])(.*)$", re.MULTILINE)
+
+
+def strip_project_doc_prefix(text: str, project_name: str,
+                             exists=None) -> str:
+    """剥掉 LLM 生成单元「文档」路径误带的项目目录名前缀。
+
+    项目画像的目录树根行带项目目录名（如 `temp_tinyrag/`），LLM 抄路径时
+    常带上该前缀，而 check_unit_docs 以 project_dir 为根校验，带前缀必失败。
+    落盘前规范化（`temp_tinyrag/pom.xml` → `pom.xml`），保下游
+    （备课预取/材料挂接）消费干净数据。只触碰「文档：」行，其余内容零改动。
+
+    exists: 可选谓词（token -> bool，通常判 project_dir 内存在性）。传入时
+    **仅当原 token 在项目内不存在才剥**——同名包布局（仓库 `foo/` 内含顶层
+    包 `foo/`，`foo/core.py` 是合法内部路径）不会被误剥坏；None 时无条件剥
+    （纯文本场景）。
+    """
+    if not project_name:
+        return text
+    prefix = project_name.rstrip("/") + "/"
+
+    def _fix(m: re.Match) -> str:
+        head, body = m.group(1), m.group(2)
+        tokens = []
+        for t in re.split(r"[、，,；;]+", body):
+            core = t.strip().strip("`").strip().replace("\\", "/")
+            while core.startswith(prefix):
+                stripped = core[len(prefix):].strip()
+                if exists is not None and exists(core):
+                    break  # 原 token 是合法内部路径（如同名包布局），保原样
+                core = stripped
+            tokens.append(core)
+        return head + ", ".join(tokens)
+
+    return _DOC_LINE_RE.sub(_fix, text)
+
+
 def parse_day_text(text: str, day: int, replica_name: str = "replica") -> dict:
     """解析文本中 `## Day N | ...` 小节。返回 {date, goal, units, code_goal, paper, qa_goal}。
 

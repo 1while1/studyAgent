@@ -1,7 +1,7 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-23（**UI 全面优化交付**——评审驱动（24 截图基线）：P0 pair 顶栏挤压/弹窗滚动模式/笔记默认视图 + 12 快赢 + P2 族（键盘导航/ws SVG/clear-stopped/章节精确切片/设计令牌）+ 复核收编；434 单测/152 走查全绿。此前架构审计修复批与 v3 M1-M7 收官）
+> 最近更新：2026-07-24（**完成度验收 G1 交付**——工作区与初始化 6 项实测 ✅（1.4 生成路径环境阻塞标注）；修复批 fix/g1-doc-prefix：🔴 LLM 文档路径项目名前缀（strip_project_doc_prefix 条件剥离+双链路接线+prompt 契约）/ 🟡 validator 空 days 误报 / 🔴 rescan·create LLM 异常裸 500 包装 InitError / 🟡 走查渠道归一 Mock；451 单测/走查全绿）
 
 ## 当前运行状态
 
@@ -19,6 +19,21 @@
 v1 Roadmap 与 v3 分期（M1 资料库 → M2 可观测 → M3 学习者模型 → M4 笔记管理 → M5a 工具骨架 → M5b 上下文+路由 → M5c planner → M6 实战工坊 → **M7 课程本体 ✅**）全部收官；架构审计修复批 ✅、UI 全面优化 ✅、全功能浏览器测试（152 项）✅。
 
 **当前阶段 = 完成度验收**：按 `docs/AcceptanceChecklist.md` 逐项检查学习 Agent 的完成度（功能项逐条实测打勾，发现问题开修复批，流程同旧例：分支 + 三件套全绿 + 双子审查 + 合并 push）。mark_wrong 工具（§9）仍留档另立。
+
+## G1 验收修复批（2026-07-24，fix/g1-doc-prefix，双子审查驱动）
+
+验收 G1（工作区与初始化）实测发现，三路问题一批修：
+
+| 发现 | 修复 |
+|------|------|
+| 🔴 新建工作区初始化必失败：LLM 生成 Study.md「文档」字段带项目目录名前缀（`temp_tinyrag/pom.xml`），`check_unit_docs` 以 project_dir 为根校验必报「文档路径不存在」（画像树根行带项目名，LLM 照抄；tinyrag 重建真实命中） | `study_plan.strip_project_doc_prefix`：只动「文档：」行，token 统一分隔符/剥反引号/反斜杠归一后循环剥前缀；**exists 谓词条件剥离**（原 token 在 project_dir 内存在则保原样——双子审查 🔴：同名包布局 `foo/foo/core.py` 防误剥）；doc_initializer._generate 加 normalize 钩子（剥围栏后校验前）+ end_day._detail_next_day 同款接线；prompt×2 契约加固（内部相对路径禁前缀/项目外资料用绝对路径） |
+| 🟡 validator 误报全新工作区：骨架 `days:{}`（单元由 start_day 注册）撞「Day N data not found」，初始化完成态自检不过 | `check_day_consistency`：days 整体为空（合法初始态）跳过；非空但缺当天仍报错；+2 用例 |
+| 🔴 rescan/create 裸 500：LLM 调用异常（402 余额/401 风控/网络）不在路由 except（WorkspaceError/InitError/FileNotFoundError）内（1.4 重扫真实命中 DeepSeek 402 → HTTP 500） | `_generate` LLM 调用包装 InitError「{label} LLM 调用失败：{e}」→ 路由契约 ok=False 友好错误（实测 HTTP 200 + 原因文本）；零文件落盘 |
+| 🟡 走查依赖真实 LLM：9 聊天/7b 片段段用当前渠道，DeepSeek 402 后 150/153（3 项连带失败） | 走查开头渠道归一 Mock + 结尾还原（原 9c/9i 段内切换保持幂等）；走查不再依赖渠道可用性 |
+
+测试 +17（test_doc_prefix 15：纯函数 9 含同名包回归锁/反斜杠/多文档行/分隔符锁定 + 初始化集成 2 含反向锁定 + LLM 异常包装 + end_day 接线；validate_schemas +2 空 days/缺当天）；**451 单测全绿**；validate 双工作区绿；走查全绿（Mock 归一）。
+
+⚠️ 环境备注：验收期间 DeepSeek 402 余额不足 + opencode 401 风控双渠道全灭——真实 LLM 依赖项（1.4 生成路径、G2/G3 内容质量项）标「环境阻塞待充值」，流程项以 Mock 渠道驱动验收。
 
 ## 架构审计修复批 · A 包（2026-07-24，engine/api/resources 族，fix/arch-review）
 

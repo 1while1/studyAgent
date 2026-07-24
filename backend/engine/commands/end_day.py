@@ -13,7 +13,7 @@ from ...domain.enums import DayPhase
 from ...domain.models import SessionContext
 from ...services.config_service import PROMPTS_DIR
 from ...services.study_plan import (StudyPlanError, check_unit_docs,
-                                    parse_day_text)
+                                    parse_day_text, strip_project_doc_prefix)
 from .base import CommandHandler, CommandResult, Deps
 
 
@@ -105,6 +105,11 @@ class EndDayHandler(CommandHandler):
                                  max_tokens=max_tokens).strip()
             if text.startswith("```") and text.endswith("```"):
                 text = "\n".join(text.splitlines()[1:-1]).strip()
+            # 规范化：剥掉 LLM 误带的项目目录名前缀（画像树根行带前缀，校验必失败；
+            # exists 谓词防同名包布局误剥——原 token 在项目内存在时保原样）
+            text = strip_project_doc_prefix(
+                text, ws.project_dir.name,
+                exists=lambda tok: (ws.project_dir / tok).exists())
             try:
                 parsed = parse_day_text(text, day + 1, ws.replica_name)
                 if parsed["units"]:
