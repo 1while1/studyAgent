@@ -51,7 +51,10 @@ function renderMarkdownInto(el, text, isFinal = true) {
     btn.className = "copy-btn";
     btn.textContent = "复制";
     btn.onclick = () => {
-      navigator.clipboard.writeText(pre.innerText.replace(/复制$/, "").trim());
+      // 克隆后剔除所有按钮再取文本，避免「复制/放大」等按钮文字混入（M10 审查修复）
+      const clone = pre.cloneNode(true);
+      clone.querySelectorAll("button").forEach(b => b.remove());
+      navigator.clipboard.writeText(clone.innerText.trim());
       btn.textContent = "已复制";
       setTimeout(() => (btn.textContent = "复制"), 1500);
     };
@@ -59,6 +62,7 @@ function renderMarkdownInto(el, text, isFinal = true) {
   });
   if (isFinal) renderMermaidBlocks(el);
   linkifyCodeRefs(el);
+  if (window.injectZoomButtons) injectZoomButtons(el);  // M10 放大查看
 }
 
 // ---------- 代码引用芯片（AI 回答中的路径 → 可点击跳转） ----------
@@ -2998,6 +3002,9 @@ document.getElementById("notes-merge-btn").onclick = async () => {
 refreshState();
 refreshLlmStatus();
 refreshCtxStatus();
+if (window.bindContentViewer) {  // M10 内容放大查看器（绑 body，覆盖文档/话术库/笔记预览等所有 markdown 渲染面）
+  bindContentViewer(document.body);
+}
 loadCommands();
 loadHistory();
 loadWorkspaces();
