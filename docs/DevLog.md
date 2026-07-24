@@ -1,7 +1,7 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-24（**完成度验收 G1 交付**——工作区与初始化 6 项实测 ✅（1.4 生成路径环境阻塞标注）；修复批 fix/g1-doc-prefix：🔴 LLM 文档路径项目名前缀（strip_project_doc_prefix 条件剥离+双链路接线+prompt 契约）/ 🟡 validator 空 days 误报 / 🔴 rescan·create LLM 异常裸 500 包装 InitError / 🟡 走查渠道归一 Mock；451 单测/走查全绿）
+> 最近更新：2026-07-24（**完成度验收 G2 交付**——学习流程 14 项实测 ✅（2.11 题量/2.12 字数真实 LLM 环境阻塞标注）；两个修复批：fix/g2-extras-overwrite（🔴 快流 extras 覆盖 LLM 泡）+ fix/g2-review-persist（🔴 复盘评分落盘 overall 不同步/REVIEWING 矩阵拦截/jump_day 清完成标记/atomic_persist 写失败回滚）；459 单测/155 走查全绿）
 
 ## 当前运行状态
 
@@ -11,14 +11,27 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 434 个全绿；UI 走查 152 项全绿
+- 测试：`python -m unittest discover -s tests` → 459 个全绿；UI 走查 155 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步
 
 v1 Roadmap 与 v3 分期（M1 资料库 → M2 可观测 → M3 学习者模型 → M4 笔记管理 → M5a 工具骨架 → M5b 上下文+路由 → M5c planner → M6 实战工坊 → **M7 课程本体 ✅**）全部收官；架构审计修复批 ✅、UI 全面优化 ✅、全功能浏览器测试（152 项）✅。
 
-**当前阶段 = 完成度验收**：按 `docs/AcceptanceChecklist.md` 逐项检查学习 Agent 的完成度（功能项逐条实测打勾，发现问题开修复批，流程同旧例：分支 + 三件套全绿 + 双子审查 + 合并 push）。mark_wrong 工具（§9）仍留档另立。
+**当前阶段 = 完成度验收**：G1 ✅ / G2 ✅（均含修复批合并 push）；G3-G12 待办。按 `docs/AcceptanceChecklist.md` 逐项检查（实测打勾，发现问题开修复批：分支 + 三件套全绿 + 双子审查 + 合并 push）。mark_wrong 工具（§9）与「command 失败外部落盘不回滚」修复批仍留档另立。
+
+## G2 复盘修复批（2026-07-24，fix/g2-review-persist，双子审查收编）
+
+验收 G2c（复盘/结束日流程）实测发现：
+
+| 发现 | 修复 |
+|------|------|
+| 🔴 复盘评分落盘不同步 overall：REVIEWING 分支评分写 StudyMemory/StudyState 但不重算 overall_percentage，Study.md 表头不更新——复盘全流程"全废"（数据落但汇总错位） | orchestrator REVIEWING 分支复用 `recompute_percentage` 同步 overall + Study.md update_header 同原子落盘；plan.read() 异常降级只落 StudyState |
+| 🔴 REVIEWING 状态下 next_content/day_review/jump_day/code_mode 未被拦截（阶段矩阵缺口） | 四指令 REVIEWING 拦截补齐 |
+| 🟡 jump_day 跳回已结束天无法重学：`active_day_completed` 标记未清 | jump_day 重置时清 `active_day_completed`（审查 🔴-1 收编） |
+| 🟡 backup_service.atomic_persist 写入期失败不回滚 | 写入 try/except 失败即回滚备份 |
+
+测试：test_flows.py TestReviewScore（7 用例）+ test_review_batch.py TestAtomicPersistRollback；459 单测/validate/155 走查全绿。G2c 实测：复盘五项 ✅ + end_day ✅（StudyReview 生成/次日滚动/阶段复位）；真实 LLM 内容质量（题量/字数/反喂质量）标环境阻塞（DeepSeek 402 + opencode 401）。
 
 ## G2 验收修复批（2026-07-24，fix/g2-extras-overwrite，双子审查驱动）
 
