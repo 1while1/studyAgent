@@ -1,7 +1,8 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-24（**LLM 输出截断修复**（fix/llm-length-continue）——用户反馈长回复「讲着讲着断了」：openai_compat 流式循环从未读 finish_reason，输出撞 max_tokens=4096 时流干净结束、半截回答被当成完整回复渲染（v4-pro 思考链也吃输出预算，更容易撞）。修：拆 _stream_once 捕获 finish_reason，length 时携带已生成内容自动续写（1+4 轮，SSE 无缝拼接）；显式小预算调用（warmup=1/压缩摘要）不续写；仍超限末尾明示可手动「继续」；多轮 usage 累加记账。回归 test_openai_compat_continue 4 测试（自动续写/不续写/显式预算豁免/超限明示）。另：DeepSeek 官方渠道模型名 deepseek-chat 已下线，配置页改为 deepseek-v4-pro 后真实渠道恢复）
+> 最近更新：2026-07-24（**M8 上下文占用仪表**（feat/context-meter）——账本式：每轮 SSE done 后把 API 实测 prompt/completion 落 session（ctx_prompt_tokens/ctx_completion_tokens/ctx_measured），降级轮（网关不认 stream_options/mock）标 measured=False 保留旧实测值；GET /api/context-status 实测锚定：total=实测总量，三层（钉住/归档/窗口）本地估算按占比等比缩放；顶栏 #ctx-pill 水位条（绿/amber/红，悬停看三层分解+压缩阈值），pair 布局保持可见，SSE done + 15s 轮询双刷新。**连带修出预存 bug**：DeepSeek 把 usage 挂在带 finish_reason 的内容块上（choices 非空），openai_compat 原只在空 choices 块读 usage → 官方渠道全程漏记账；改为与 choices 无关先查 chunk.usage（OpenAI 独立末块/DeepSeek finish 块两形态均覆盖）。双子审查收编：ObservedLLM/FallbackClient 每轮重置+镜像 last_usage（否则主渠道降级轮会锚定 fallback 陈旧值永不自愈）、extract_usage 改实例级权威判定、command 流账本补测试、前端 404 垃圾值防御。回归 test_context_meter 9 + TestUsageCapture 2，全量 483 绿）
+> 前次：2026-07-24（**LLM 输出截断修复**（fix/llm-length-continue）——用户反馈长回复「讲着讲着断了」：openai_compat 流式循环从未读 finish_reason，输出撞 max_tokens=4096 时流干净结束、半截回答被当成完整回复渲染（v4-pro 思考链也吃输出预算，更容易撞）。修：拆 _stream_once 捕获 finish_reason，length 时携带已生成内容自动续写（1+4 轮，SSE 无缝拼接）；显式小预算调用（warmup=1/压缩摘要）不续写；仍超限末尾明示可手动「继续」；多轮 usage 累加记账。回归 test_openai_compat_continue 4 测试（自动续写/不续写/显式预算豁免/超限明示）。另：DeepSeek 官方渠道模型名 deepseek-chat 已下线，配置页改为 deepseek-v4-pro 后真实渠道恢复）
 > 前次：2026-07-24（**面试相位出口提示修复**（fix/interview-exit-hint）——用户反馈「卡在模拟面试」：相位锁是有意设计（防状态分裂），[恢复学习] 本就可放弃面试，但 9 处拦截文案从不告知出口，清空历史后产生「卡死」感。修：base.py 统一 INTERVIEW_EXIT_HINT 常量，9 处 fail_fast 拦截文案全部追加「（想放弃本场面试可 [恢复学习] 退出，不留成绩）」；回归 test_interview.TestInterviewExitHint（9 handler 逐一断言文案含出口））
 > 前次：2026-07-24（**完成度验收 G12 交付——工程质量 5 项 ✅ 含修复批**：command 回滚快照补测试引出的 [超前学习] 死胡同修复（幂等续学+分裂态护栏）+ 测试变异防护/动态 Day；详见「G12 验收修复批」）
 > 前次：2026-07-24（**完成度验收 G11 交付**——UI/UX 8 项 ✅ 无修复批：_accept_g11.py 截图复核双主题无串色（tutor 暖纸/pair 深色）+ 五弹窗主按钮钉底视口内 + toast 位置 CSS 校验；11.1/11.3/11.5/11.6/11.7 走查引用打勾）
@@ -16,7 +17,7 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-chat，已充值，**当前实际工作渠道**）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 461 个全绿；UI 走查 155 项全绿
+- 测试：`python -m unittest discover -s tests` → 483 个全绿；UI 走查 155 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 
 ## 下一步

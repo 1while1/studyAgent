@@ -475,6 +475,7 @@ async function streamPost(url, text) {
           if (rawText && bubble.classList.contains("md")) {
             renderMarkdownInto(bubble, rawText);
           }
+          refreshCtxStatus();  // M8：每轮结束后刷新上下文仪表
         }
         scrollToBottom();
       }
@@ -1603,6 +1604,33 @@ async function refreshLlmStatus() {
       llmStatusEl.textContent = r.provider;
       llmStatusEl.title = `主渠道 ${r.provider}（服务启动后尚未调用 LLM）`;
     }
+  } catch (e) { /* 服务未就绪时静默 */ }
+}
+
+// ---- 上下文仪表（M8）----
+
+const ctxPill = document.getElementById("ctx-pill");
+const ctxBar = document.getElementById("ctx-bar");
+const ctxText = document.getElementById("ctx-text");
+function fmtK(n) {
+  return n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "K" : String(n);
+}
+async function refreshCtxStatus() {
+  try {
+    const r = await (await fetch("/api/context-status")).json();
+    if (!r || typeof r.total !== "number") return;  // 旧后端/异常 JSON 时保持隐藏
+    ctxPill.classList.remove("hidden", "warn", "hot");
+    const pct = Math.round((r.ratio || 0) * 100);
+    ctxText.textContent = `上下文 ${fmtK(r.total)}/${fmtK(r.budget)}`;
+    ctxBar.style.width = Math.min(100, pct) + "%";
+    const L = r.layers || {};
+    const tag = r.source === "measured" ? "实测" : "估算";
+    ctxPill.title =
+      `上下文占用 ${fmtK(r.total)} / ${fmtK(r.budget)}（${pct}%）· ${tag}\n` +
+      `钉住 ${fmtK(L.pinned || 0)} · 归档摘要 ${fmtK(L.archive || 0)} · 对话窗口 ${fmtK(L.window || 0)}\n` +
+      `已归档 ${r.archived_turns} 条 / 共 ${r.turns} 条消息 · 超过 ${Math.round((r.trigger_ratio || 0.8) * 100)}% 将自动压缩历史`;
+    if (r.ratio >= (r.trigger_ratio || 0.8)) ctxPill.classList.add("hot");
+    else if (r.ratio >= (r.trigger_ratio || 0.8) * 0.75) ctxPill.classList.add("warn");
   } catch (e) { /* 服务未就绪时静默 */ }
 }
 
@@ -2980,11 +3008,13 @@ document.getElementById("notes-merge-btn").onclick = async () => {
 })();
 refreshState();
 refreshLlmStatus();
+refreshCtxStatus();
 loadCommands();
 loadHistory();
 loadWorkspaces();
 setInterval(refreshState, 10000);
 setInterval(refreshLlmStatus, 15000);
+setInterval(refreshCtxStatus, 15000);
 
 // ---------- M6 实战工坊：新建 demo 弹窗 ----------
 

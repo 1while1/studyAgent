@@ -478,6 +478,13 @@ body[data-layout="pair"] #input-form { margin: 2px 12px 12px; }
 /* ---------- 可观测性与密码门（M2） ---------- */
 #llm-pill { font-size: 12px; font-family: var(--font-mono); color: var(--text-dim); background: var(--inline-code-bg); border-radius: 999px; padding: 5px 11px; white-space: nowrap; }
 #llm-pill.err { color:var(--weak); background: rgba(229, 83, 75, .12); }
+/* 上下文仪表（M8）：实测/估算占用 + 水位条，悬停看三层分解 */
+#ctx-pill { position: relative; overflow: hidden; font-size: 12px; font-family: var(--font-mono); color: var(--text-dim); background: var(--inline-code-bg); border-radius: 999px; padding: 5px 11px; white-space: nowrap; cursor: default; }
+#ctx-pill em { font-style: normal; position: relative; z-index: 1; }
+#ctx-pill #ctx-bar { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgba(34, 197, 94, .22); transition: width .4s ease; }
+#ctx-pill.warn #ctx-bar { background: rgba(245, 158, 11, .28); }
+#ctx-pill.hot #ctx-bar { background: rgba(229, 83, 75, .30); }
+#ctx-pill.warn em, #ctx-pill.hot em { color: var(--text); }
 #usage-summary { font-size: 13px; color: var(--text-dim); margin-bottom: 12px; }
 #usage-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 #usage-table th, #usage-table td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); }

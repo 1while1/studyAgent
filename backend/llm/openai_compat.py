@@ -67,13 +67,15 @@ class OpenAICompatClient(LLMClient):
                     kwargs["stream_options"] = {"include_usage": True}
                 stream = self._client.chat.completions.create(**kwargs)
                 for chunk in stream:
+                    # usage 与 choices 无关地检查：OpenAI 走独立空 choices 末块，
+                    # DeepSeek 把 usage 挂在带 finish_reason 的内容块上
+                    usage = getattr(chunk, "usage", None)
+                    if usage is not None:
+                        self.last_usage = {
+                            "prompt_tokens": usage.prompt_tokens,
+                            "completion_tokens": usage.completion_tokens,
+                        }
                     if not chunk.choices:
-                        usage = getattr(chunk, "usage", None)
-                        if usage is not None:
-                            self.last_usage = {
-                                "prompt_tokens": usage.prompt_tokens,
-                                "completion_tokens": usage.completion_tokens,
-                            }
                         continue
                     fr = getattr(chunk.choices[0], "finish_reason", None)
                     if fr:

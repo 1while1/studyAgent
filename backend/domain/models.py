@@ -38,6 +38,10 @@ class SessionContext:
     prereq_targets: list | None = None   # 先修诊断目标 [{cid,title,question}]（M7；空/None=非诊断中）
     prereq_retry: int = 0                # 诊断评分机械校验已重试次数
     chat_history: list[dict] = field(default_factory=list)  # [{role, content}]
+    # ---- 上下文账本（M8 上下文仪表）：最近一轮 API 实测 usage ----
+    ctx_prompt_tokens: int = 0        # 最近实测轮 prompt_tokens（system+历史+用户消息）
+    ctx_completion_tokens: int = 0    # 最近实测轮 completion_tokens（回复已入历史）
+    ctx_measured: bool = False        # 最近一轮是否有真实 usage（网关降级轮=False→估算）
 
     def to_dict(self) -> dict:
         return asdict(self)
