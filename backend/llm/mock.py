@@ -24,6 +24,17 @@ class MockLLM(LLMClient):
     def _canned(self, messages: list[Message]) -> str:
         system = messages[0]["content"] if messages else ""
         last_user = messages[-1]["content"] if messages else ""
+        # 上下文压缩（M5b/M11）：回显全部概念 id + 0 条未决问题，
+        # 必过机械校验，使 Mock 渠道下压缩链路（自动与 /compact）可走通
+        if "学习上下文压缩器" in system:
+            ids = []
+            for cid in re.findall(
+                    r"Day\d+-(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]+", system):
+                if cid not in ids:
+                    ids.append(cid)
+            return ("【概念】" + ("、".join(ids) or "（无）") + "\n"
+                    "【未决问题】（共 0 条）\n"
+                    "【要点】Mock 压缩摘要：早前对话已归档为要点缓存。")
         # 先修诊断（M7）：出题（单 user 消息带出题卡）与评分（system 含诊断评分指令）
         if "先修诊断出题卡" in system:
             cids = re.findall(r"- (Day\d+-[^：\n]+)：", system)

@@ -304,9 +304,13 @@ const CMD_DESC = {
 };
 
 let COMMANDS = [];
+let SLASH_COMMANDS = [];  // 系统指令（/compact 等），与 [学习指令] 并存
 async function loadCommands() {
   const res = await fetch("/api/commands");
   COMMANDS = await res.json();
+  try {
+    SLASH_COMMANDS = await (await fetch("/api/slash/commands")).json();
+  } catch (e) { SLASH_COMMANDS = []; }  // 旧后端无此端点时静默降级
   const box = document.getElementById("command-chips");
   box.innerHTML = "";
   for (const c of COMMANDS) {
@@ -329,34 +333,59 @@ function closeCmdMenu() {
   cmdMenuOpen = false;
 }
 
+function _cmdMenuHeader(text) {
+  const h = document.createElement("div");
+  h.className = "cmd-group";
+  h.textContent = text;
+  cmdMenu.appendChild(h);
+}
+
+function _cmdMenuItem(name, desc, fill) {
+  const item = document.createElement("button");
+  item.type = "button";
+  const n = document.createElement("span");
+  n.className = "cmd-name";
+  n.textContent = name;
+  item.appendChild(n);
+  if (desc) {
+    const d = document.createElement("span");
+    d.className = "cmd-desc";
+    d.textContent = desc;
+    item.appendChild(d);
+  }
+  item.onclick = () => {
+    inputEl.value = fill;
+    closeCmdMenu();
+    autosizeInput();
+    inputEl.focus();
+  };
+  cmdMenu.appendChild(item);
+}
+
 function updateCmdMenu() {
+  // 「/」系统指令补全（即发即执行，与 [学习指令] 并存）
+  const sm = inputEl.value.match(/^\/([a-z]*)$/i);
+  if (sm) {
+    const kw = sm[1].toLowerCase();
+    const hits = SLASH_COMMANDS.filter(c => !kw || c.name.startsWith(kw));
+    if (!hits.length) { closeCmdMenu(); return; }
+    cmdMenu.innerHTML = "";
+    _cmdMenuHeader("系统指令");
+    for (const c of hits) _cmdMenuItem(`/${c.name}`, c.desc, `/${c.name}`);
+    cmdMenu.classList.remove("hidden");
+    cmdMenuOpen = true;
+    return;
+  }
+  // 「[」学习流程指令补全
   const m = inputEl.value.match(/^\[([^\]\n]*)$/);
   if (!m) { closeCmdMenu(); return; }
   const kw = m[1];
   const hits = COMMANDS.filter(c => !kw || c.trigger.includes(kw));
   if (!hits.length) { closeCmdMenu(); return; }
   cmdMenu.innerHTML = "";
+  _cmdMenuHeader("学习指令");
   for (const c of hits) {
-    const item = document.createElement("button");
-    item.type = "button";
-    const name = document.createElement("span");
-    name.className = "cmd-name";
-    name.textContent = `[${c.trigger}]`;
-    item.appendChild(name);
-    const desc = CMD_DESC[c.trigger];
-    if (desc) {
-      const d = document.createElement("span");
-      d.className = "cmd-desc";
-      d.textContent = desc;
-      item.appendChild(d);
-    }
-    item.onclick = () => {
-      inputEl.value = `[${c.trigger}]`;
-      closeCmdMenu();
-      autosizeInput();
-      inputEl.focus();
-    };
-    cmdMenu.appendChild(item);
+    _cmdMenuItem(`[${c.trigger}]`, CMD_DESC[c.trigger], `[${c.trigger}]`);
   }
   cmdMenu.classList.remove("hidden");
   cmdMenuOpen = true;
@@ -514,9 +543,10 @@ form.addEventListener("submit", (e) => {
   inputEl.value = "";
   autosizeInput();
   closeCmdMenu();
-  const isCommand = /^\[.+\]/.test(text) ||
-    ["重新开始今日学习", "重新开始", "恢复学习"].includes(text);
-  streamPost(isCommand ? "/api/command" : "/api/chat", text);
+  const isSlash = /^\/\S/.test(text);
+  const isCommand = !isSlash && (/^\[.+\]/.test(text) ||
+    ["重新开始今日学习", "重新开始", "恢复学习"].includes(text));
+  streamPost(isSlash ? "/api/slash" : (isCommand ? "/api/command" : "/api/chat"), text);
 });
 
 // 多行输入：Enter 发送（输入法组词中除外），Shift+Enter 换行；随内容自动增高

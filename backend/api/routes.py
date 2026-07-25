@@ -336,6 +336,44 @@ def commands():
     return CommandRegistry(_deps.config).info_list()
 
 
+@router.get("/api/slash/commands")
+def slash_commands():
+    from ..engine.commands.slash import info_list
+    return info_list()
+
+
+@router.post("/api/slash")
+def slash(body: TextIn):
+    """Slash 系统指令（/compact 等）：即发即执行，一轮 SSE 返回报告。
+
+    与 [指令] 路由互不干扰；不写入 chat_history（系统操作不污染教学
+    上下文），会话仅在状态变化（如压缩落档）时落盘。"""
+    deps = _deps
+
+    def _flow():
+        from ..engine.commands.slash import execute
+        session = deps.session_store.load()
+        before = (session.archive_upto, session.compress_cooldown,
+                  session.archive_summary)
+        try:
+            report = execute(deps, session, body.text)
+        except Exception as e:
+            yield sse({"type": "error", "content": f"指令执行失败：{e}"})
+            return
+        yield sse({"type": "message", "content": report})
+        yield sse({"type": "done"})
+        after = (session.archive_upto, session.compress_cooldown,
+                 session.archive_summary)
+        if after != before:
+            deps.session_store.save(session)
+
+    def gen():
+        with deps.session_store.locked():  # 同 chat/command 流：全程流程锁
+            yield from _flow()
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
 @router.get("/api/history")
 def history():
     """聊天历史（页面加载时回填）。"""

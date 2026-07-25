@@ -40,6 +40,15 @@ def main():
             method="POST" if payload is not None else "GET")
         return _json.loads(urllib.request.urlopen(req).read())
 
+    def post_sse(path, payload):
+        """POST 并吞掉整个 SSE 流（造历史等不需要逐事件断言的场景）。"""
+        req = urllib.request.Request(
+            BASE + path, data=_json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"}, method="POST")
+        raw = urllib.request.urlopen(req).read().decode()
+        return [_json.loads(ev[6:]) for ev in raw.split("\n\n")
+                if ev.startswith("data: ")]
+
     # 走查固定 ragent 工作区（依赖其单元数与代码根），结束后还原
     ws_list = api("/api/workspaces")
     orig_ws = next((w["slug"] for w in ws_list["workspaces"] if w["active"]), None)
@@ -1027,6 +1036,54 @@ def main():
                 if p_["status"] == "running":
                     api("/api/processes/stop", {"id": p_["id"]})
             api("/api/processes/clear-stopped", {})
+
+        # ---- 9l. Slash 系统指令：/compact（M11，菜单 + 手动压缩 + 胶囊回落） ----
+        mark("9l slash 指令")
+        # 造 6 轮历史（Mock 渠道秒回），保证未归档消息超过 4 条保留线
+        for i in range(6):
+            post_sse("/api/chat", {"text": f"走查造历史第{i}轮，随便聊聊"})
+        st0 = api("/api/context-status")
+        page.goto(BASE, wait_until="networkidle")
+        page.wait_for_timeout(1500)
+        # 1) 「/」补全菜单（系统指令分组）
+        page.fill("#input", "/")
+        page.wait_for_timeout(400)
+        check("slash 补全菜单打开", page.locator("#cmd-menu").is_visible())
+        check("slash 菜单分组标题", "系统指令" in
+              (page.locator("#cmd-menu .cmd-group").first.text_content() or ""))
+        check("slash 菜单含 /compact",
+              page.locator("#cmd-menu button", has_text="/compact").count() == 1)
+        # 2) 「[」菜单分组标题（学习指令）
+        page.fill("#input", "[")
+        page.wait_for_timeout(300)
+        check("[ 菜单分组标题", "学习指令" in
+              (page.locator("#cmd-menu .cmd-group").first.text_content() or ""))
+        page.fill("#input", "")
+        # 3) 选中 /compact 并发送 → 报告气泡
+        page.fill("#input", "/")
+        page.wait_for_timeout(300)
+        page.locator("#cmd-menu button", has_text="/compact").click()
+        page.wait_for_timeout(200)
+        check("slash 回填输入框",
+              page.locator("#input").input_value() == "/compact")
+        page.locator("#input").press("Enter")
+        ok = False
+        for _ in range(15):
+            page.wait_for_timeout(1000)
+            texts = page.locator("#messages .bubble").all_text_contents()
+            if any("压缩完成" in t or "压缩失败" in t or "无需压缩" in t
+                   for t in texts):
+                ok = True
+                break
+        check("/compact 报告气泡", ok)
+        check("/compact 压缩成功", any("压缩完成" in t for t in
+              page.locator("#messages .bubble").all_text_contents()))
+        # 4) 归档落盘（上下文占比回落由胶囊 tooltip 的 archived_turns 佐证）
+        st1 = api("/api/context-status")
+        check("/compact 归档生效",
+              st1.get("archived_turns", 0) > st0.get("archived_turns", 0),
+              f"{st0.get('archived_turns')} → {st1.get('archived_turns')}")
+        check("/compact 无错误泡", page.locator(".msg.error").count() == 0)
 
         # ---- 汇总 ----
         check("全程零 JS 错误", len(errors) == 0, "; ".join(errors[:3]))
