@@ -1629,12 +1629,14 @@ async function refreshCtxStatus() {
     ctxText.textContent = `上下文 ${fmtK(r.total)}/${fmtK(r.budget)}`;
     ctxBar.style.width = Math.min(100, pct) + "%";
     const L = r.layers || {};
-    const tag = r.source === "measured" ? "实测" : "估算";
+    const tag = r.source === "calibrated" ? "实测校准"
+      : (r.source === "measured" ? "实测" : "估算");
     const td = r.today || {};
     ctxPill.title =
       `上下文占用 ${fmtK(r.total)} / ${fmtK(r.budget)}（${pct}%）· ${tag}\n` +
       `钉住 ${fmtK(L.pinned || 0)} · 归档摘要 ${fmtK(L.archive || 0)} · 对话窗口 ${fmtK(L.window || 0)}\n` +
       `已归档 ${r.archived_turns} 条 / 共 ${r.turns} 条消息 · 超过 ${Math.round((r.trigger_ratio || 0.8) * 100)}% 将自动压缩历史\n` +
+      (r.last_measured != null ? `最近一轮实测 ${fmtK(r.last_measured)}（含当轮注入内容，供参考）\n` : "") +
       `今日消耗 ${td.calls || 0} 次 · 输入 ${fmtK(td.in_tokens || 0)} · 输出 ${fmtK(td.out_tokens || 0)}`;
     if (r.ratio >= (r.trigger_ratio || 0.8)) ctxPill.classList.add("hot");
     else if (r.ratio >= (r.trigger_ratio || 0.8) * 0.75) ctxPill.classList.add("warn");
