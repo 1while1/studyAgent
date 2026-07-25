@@ -357,6 +357,10 @@ body[data-layout="pair"] #command-chips { padding: 2px 12px 6px; }
 #cmd-menu button:hover, #cmd-menu button.active { background: var(--accent-soft); color: var(--accent); }
 #cmd-menu .cmd-name { flex: none; }
 #cmd-menu .cmd-desc { margin-left: auto; padding-left: 12px; font-size: var(--text-xs); color: var(--text-dim); white-space: nowrap; }
+#cmd-menu .cmd-group {
+  padding: 6px 12px 2px; font-size: var(--text-xs); color: var(--text-dim);
+  letter-spacing: .05em; user-select: none;
+}
 
 /* ---------- 输入条 ---------- */
 #input-form {
