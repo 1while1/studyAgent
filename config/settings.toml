@@ -54,6 +54,12 @@ currency = "CNY"
 multiplier = 2
 hours = [[9, 12], [14, 18]]
 
+# Agnes 限时免费（2026-07 官网刊例 $0；恢复收费后在此改回标准价 $0.03/$0.15）
+[pricing."agnes-2.0-flash"]
+input_per_million = 0
+output_per_million = 0
+currency = "USD"
+
 # evidence 固定 delta 表（LLM 只选类型，数值只允许这里改）
 [evidence_delta]
 quiz_right = 0.10
@@ -83,9 +89,10 @@ default = 32768
 deepseek-chat = 65536
 deepseek-v4-pro = 1048576
 deepseek-v4-flash = 1048576
+"agnes-2.0-flash" = 524288
 
 [llm]
-provider = "deepseek_official"
+provider = "agnes"
 warmup_on_start = true
 [llm.openai_compat]
 model = "deepseek-v4-pro"
@@ -99,6 +106,12 @@ max_tokens = 4096
 temperature = 0.7
 base_url = "https://api.deepseek.com/v1"
 api_key_env = "LLM_API_KEY_DEEPSEEK"
+[llm.agnes]
+model = "agnes-2.0-flash"
+max_tokens = 4096
+temperature = 0.7
+base_url = "https://apihub.agnes-ai.com/v1"
+api_key_env = "LLM_API_KEY_AGNES"
 [[stages]]
 name = "teaching"
 next = "coding"

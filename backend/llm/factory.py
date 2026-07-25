@@ -15,6 +15,7 @@ _BUILDERS = {
     "mock": lambda config, **kw: MockLLM(**kw),
     "openai_compat": lambda config, **kw: OpenAICompatClient(config, "openai_compat"),
     "deepseek_official": lambda config, **kw: OpenAICompatClient(config, "deepseek_official"),
+    "agnes": lambda config, **kw: OpenAICompatClient(config, "agnes"),
 }
 
 

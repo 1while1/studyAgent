@@ -1122,6 +1122,8 @@ _PROVIDER_META = {
                       "api_key_env": "LLM_API_KEY"},
     "deepseek_official": {"label": "DeepSeek 官方",
                           "api_key_env": "LLM_API_KEY_DEEPSEEK"},
+    "agnes": {"label": "Agnes（OpenAI 兼容，当前免费）",
+              "api_key_env": "LLM_API_KEY_AGNES"},
     "mock": {"label": "Mock（离线假模型）"},
 }
 
@@ -1300,12 +1302,18 @@ def save_llm_config(body: LlmConfigIn):
     if env_updates:
         update_env_file(ENV_PATH, env_updates)
 
-    # 3. 热生效：重载配置 + 重建 LLM 客户端
+    # 3. 热生效：重载配置 + 重建 LLM 客户端。构建失败（典型：新渠道缺 key）
+    # 不炸 500——配置已落盘，如实返回 warning，运行态保留旧客户端，
+    # 补齐 key 或重启后生效（铁律：LLM 失败状态一致）
     _deps.config.reload()
-    _deps.llm = create_llm(_deps.config)
-    _deps.llm_cheap = create_llm_cheap(_deps.config) or _deps.llm
-    _deps.quiz.set_llm(_deps.llm)
-    return {"ok": True, "config": get_llm_config()}
+    warn = ""
+    try:
+        _deps.llm = create_llm(_deps.config)
+        _deps.llm_cheap = create_llm_cheap(_deps.config) or _deps.llm
+        _deps.quiz.set_llm(_deps.llm)
+    except Exception as e:
+        warn = f"配置已保存，但新渠道构建失败（{e}）；运行态暂保留旧渠道"
+    return {"ok": True, "config": get_llm_config(), "warning": warn}
 
 
 @router.post("/api/llm-config/test")
