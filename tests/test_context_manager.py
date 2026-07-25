@@ -161,6 +161,28 @@ class TestAssemble(Base):
         self.assertEqual(len(messages), 1 + 2)  # 钳 0 后全量
         self.assertFalse(plan["needs_compression"])
 
+    def test_calib_scales_estimates_no_premature_compression(self):
+        """实测校准（Agnes 类网关估算失真防护）：同一份历史，
+        calib=0.25（实测只有估算的 1/4）时不得触发压缩；
+        calib=0（未实测，保守口径）时按原估算该压还得压。"""
+        cm = ContextManager(self._deps())
+        history = _msgs(3, 200)  # 未校准口径（est≈1860 > 预算线）会收缩
+        s_uncal = SessionContext(chat_history=history)
+        _, plan_uncal = cm.assemble(s_uncal, "SYS")
+        self.assertTrue(plan_uncal["needs_compression"])  # 前提：原口径确实压
+        s_cal = SessionContext(chat_history=history)
+        s_cal.ctx_calib = 0.25  # 实测只有估算的 1/4 → est×0.25≈465 < 预算线
+        messages, plan_cal = cm.assemble(s_cal, "SYS")
+        self.assertFalse(plan_cal["needs_compression"])  # 校准后不早压
+        self.assertEqual(len(messages), 1 + 6)  # 全量历史保留
+
+    def test_calib_one_keeps_legacy_behavior(self):
+        cm = ContextManager(self._deps())
+        session = SessionContext(chat_history=_msgs(10, 300))
+        session.ctx_calib = 1.0
+        _, plan = cm.assemble(session, "SYS")
+        self.assertTrue(plan["needs_compression"])  # cal=1 ≡ 旧行为
+
 
 class TestEffectiveBudget(Base):
     def test_user_budget_governs_when_below_limit(self):

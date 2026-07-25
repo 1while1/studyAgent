@@ -165,13 +165,17 @@ class ContextManager:
             upto = 0  # 防御：越界（旧会话/手动改库）时从全量重算
         candidates = history[upto:]
         budget = effective_budget(self._config)
+        # 实测校准（M8 calib）： Agnes 等网关有固定计数开销，未校准估算
+        # 会高估上下文数倍 → 过早压缩丢历史。有 calib 的会话按 calib
+        # 缩放全部估算，压缩触发回到真实水位；无 calib 时保守用原估算
+        cal = session.ctx_calib if session.ctx_calib > 0 else 1.0
         # R3：预扣钉住层（system + 归档摘要），防小上下文模型被打挂
-        pinned_est = self._est_text(system)
+        pinned_est = self._est_text(system) * cal
         if session.archive_summary:
-            pinned_est += self._est_text(session.archive_summary)
+            pinned_est += self._est_text(session.archive_summary) * cal
         usable = max(_MIN_USABLE, budget - pinned_est)
         trigger = _safe_float(self._ctx().get("trigger_ratio"), 0.8)
-        if self._est_messages(candidates, cap=usable * trigger) \
+        if self._est_messages(candidates, cap=usable * trigger / cal) * cal \
                 <= usable * trigger:
             window = list(candidates)
         else:
@@ -182,7 +186,7 @@ class ContextManager:
             for msg in reversed(candidates):
                 if len(window) >= max_msgs:
                     break
-                t = self._est_text(msg.get("content", ""))
+                t = self._est_text(msg.get("content", "")) * cal
                 if window and total + t > target:
                     break
                 window.append(msg)  # 最新一条即使自身超目标也保留
