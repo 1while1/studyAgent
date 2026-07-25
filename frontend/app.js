@@ -596,13 +596,14 @@ inputEl.addEventListener("input", autosizeInput);
 document.getElementById("toggle-sidebar").onclick = () => {
   const sb = document.getElementById("sidebar");
   sb.classList.toggle("collapsed");
-  document.getElementById("toggle-sidebar").textContent =
-    sb.classList.contains("collapsed") ? "⇥" : "⇤";
-  document.getElementById("expand-sidebar").classList.toggle(
-    "hidden", !sb.classList.contains("collapsed"));
+  const collapsed = sb.classList.contains("collapsed");
+  document.body.classList.toggle("sidebar-collapsed", collapsed);  // 顶栏让位悬浮钮
+  document.getElementById("toggle-sidebar").textContent = collapsed ? "⇥" : "⇤";
+  document.getElementById("expand-sidebar").classList.toggle("hidden", !collapsed);
 };
 document.getElementById("expand-sidebar").onclick = () => {
   document.getElementById("sidebar").classList.remove("collapsed");
+  document.body.classList.remove("sidebar-collapsed");
   document.getElementById("expand-sidebar").classList.add("hidden");
   document.getElementById("toggle-sidebar").textContent = "⇤";
 };
@@ -2525,6 +2526,7 @@ const notesState = {
 
 document.getElementById("open-notes").onclick = openNotes;
 document.getElementById("notes-close").onclick = closeNotes;
+document.getElementById("notes-back").onclick = closeNotes;  // 显眼返回入口（同 ×）
 
 async function notesApi(url, body) {
   const r = await fetch(url, {

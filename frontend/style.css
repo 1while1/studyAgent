@@ -187,8 +187,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
   background: var(--topbar-bg); border-bottom: 1px solid var(--border);
   flex-shrink: 0; transition: background .3s;
 }
+.topbar-left { display: flex; align-items: center; gap: 8px; min-width: 0; flex: none; }
 .mode-switch {
   display: flex; background: var(--inline-code-bg); border-radius: 999px; padding: 3px; gap: 2px;
+  flex: none;  /* 顶栏最右元素：右缘=顶栏右缘，两种布局位置零漂移 */
 }
 .mode-switch button {
   border: none; background: transparent; color: var(--text-dim);
@@ -201,17 +203,33 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
   box-shadow: 0 2px 8px rgba(120,80,30,.3);
 }
 body[data-layout="pair"] .mode-switch button.active { box-shadow: 0 2px 8px rgba(14,134,216,.4); }
-/* pair 窄栏（400px）：顶栏允许换行，隐藏 LLM 胶囊，防止图标被挤出屏外 */
-body[data-layout="pair"] #chat-topbar { flex-wrap: wrap; height: auto; min-height: 47px; row-gap: 4px; padding-top: 6px; padding-bottom: 6px; }
+/* pair 窄栏（400px）：顶栏允许换行——左组（工作区+胶囊）一行，
+   右组（图标按钮+模式切换）一行；模式切换恒为顶栏最右元素，
+   右缘=顶栏右缘，与 tutor 布局位置零漂移。图标收窄+隐藏「笔记」
+   文字+切换按钮紧 padding，确保右组 366px 内单行放下 */
+body[data-layout="pair"] #chat-topbar { flex-wrap: wrap; height: auto; min-height: 47px; row-gap: 4px; padding: 6px 10px; }
 body[data-layout="pair"] #llm-pill { display: none; }
-body[data-layout="pair"] #ws-current { max-width: 140px; }
-.topbar-actions { display: flex; gap: 4px; flex: none; }
+body[data-layout="pair"] #ws-current { max-width: 140px; }  /* 左组一行内放下 */
+body[data-layout="pair"] .topbar-actions button { width: 30px; }
+body[data-layout="pair"] .topbar-actions button.labeled { width: 30px; padding: 0; }
+body[data-layout="pair"] .topbar-actions button.labeled span { display: none; }
+body[data-layout="pair"] .mode-switch button { padding: 5px 8px; }
+.topbar-actions { display: flex; gap: 4px; flex: none; margin-left: auto; }
 .topbar-actions button {
   background: transparent; border: none; border-radius: 8px;
   width: 32px; height: 32px; font-size: 16px; cursor: pointer; color: var(--text-dim);
   display: flex; align-items: center; justify-content: center;
 }
 .topbar-actions button:hover { background: var(--accent-soft); color: var(--accent); }
+/* 带文字标签的顶栏按钮（学习笔记入口，图标-only 太隐蔽） */
+.topbar-actions button.labeled {
+  width: auto; padding: 0 12px; gap: 6px;
+  font-size: 12.5px; font-weight: 600;
+  color: var(--accent); background: var(--accent-soft);
+}
+.topbar-actions button.labeled:hover { filter: brightness(1.05); }
+/* 侧栏收起时悬浮 ☰ 按钮占住左上 52px，顶栏让位防重叠 */
+body.sidebar-collapsed #chat-topbar { padding-left: 64px; }
 
 /* ---------- 工作区切换器 ---------- */
 .ws-switch { position: relative; }
@@ -319,12 +337,22 @@ body[data-layout="pair"] .bubble { max-width: 92%; }
 #scroll-bottom.hidden { display: none; }
 
 /* ---------- 指令胶囊条 ---------- */
+#chips-row { display: flex; align-items: center; flex-shrink: 0; padding-right: 20px; }
+body[data-layout="pair"] #chips-row { padding-right: 12px; }
 #command-chips {
-  display: flex; gap: 6px; padding: 2px 20px 8px;
-  overflow-x: auto; flex-shrink: 0; scrollbar-width: none;
+  display: flex; gap: 6px; padding: 2px 20px 8px; flex: 1; min-width: 0;
+  overflow-x: auto; flex-shrink: 1; scrollbar-width: none;
   -webkit-mask-image: linear-gradient(90deg, #000 92%, transparent);
   mask-image: linear-gradient(90deg, #000 92%, transparent);
 }
+/* 清空历史：从顶栏搬到指令胶囊行右端（聊天域操作贴近输入区，导航栏只留面板入口） */
+#chips-row #reset-history {
+  flex: none; margin-bottom: 6px; background: transparent;
+  border: 1px solid var(--border); border-radius: 10px;
+  width: 32px; height: 32px; cursor: pointer; color: var(--text-dim);
+  display: flex; align-items: center; justify-content: center;
+}
+#chips-row #reset-history:hover { color: #c94f4f; border-color: #c94f4f; background: rgba(201,79,79,.08); }
 #command-chips::-webkit-scrollbar { display: none; }
 #command-chips .chip {
   flex-shrink: 0; background: var(--panel); color: var(--text);
@@ -749,6 +777,15 @@ body[data-layout="pair"] #code-panel { order: 1; }
 .page-overlay.hidden { display: none; }
 .page-frame { display: flex; flex-direction: column; width: 100%; height: 100%; }
 .page-topbar { height: 58px; flex: none; display: flex; align-items: center; gap: 14px; padding: 0 20px; border-bottom: 1px solid var(--border); background: var(--panel); }
+/* 整页覆盖层的显眼返回入口（右上角小 × 不足以被发现） */
+#notes-back {
+  flex: none; display: inline-flex; align-items: center; gap: 6px;
+  background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent);
+  border-radius: var(--r-pill, 999px); padding: 7px 16px; font-size: 13px; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+}
+#notes-back:hover { filter: brightness(1.05); }
+#notes-back .ic { width: 15px; height: 15px; }
 .page-title { font-size: 16px; font-weight: 700; letter-spacing: 1px; white-space: nowrap; display: flex; align-items: center; gap: 8px; }
 .page-title .ic { color: var(--accent); }
 .page-sub { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

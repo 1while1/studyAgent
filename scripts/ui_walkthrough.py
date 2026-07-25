@@ -1085,6 +1085,49 @@ def main():
               f"{st0.get('archived_turns')} → {st1.get('archived_turns')}")
         check("/compact 无错误泡", page.locator(".msg.error").count() == 0)
 
+        # ---- 9m. 顶栏布局修复（重叠/切换位置/清空按钮/笔记入口） ----
+        mark("9m 顶栏布局")
+        page.goto(BASE, wait_until="networkidle")
+        page.wait_for_timeout(1500)
+        # 1) 清空历史搬出顶栏 → 指令胶囊行右端
+        check("清空历史移出顶栏", page.evaluate(
+            "!document.querySelector('#chat-topbar #reset-history')"
+            " && !!document.querySelector('#chips-row #reset-history')"))
+        # 2) 笔记入口带文字标签（图标-only 太隐蔽）
+        check("笔记入口带文字标签", "笔记" in
+              (page.locator("#open-notes").text_content() or ""))
+        # 3) 侧栏收起后悬浮 ☰ 与顶栏让位不重叠
+        page.locator("#toggle-sidebar").click()
+        page.wait_for_timeout(400)
+        check("悬浮钮与顶栏不重叠", page.evaluate("""(() => {
+          const a = document.getElementById('expand-sidebar').getBoundingClientRect();
+          const b = document.getElementById('ws-current').getBoundingClientRect();
+          return a.right <= b.left || b.right <= a.left;
+        })()"""))
+        page.locator("#expand-sidebar").click()
+        page.wait_for_timeout(400)
+        # 4) 模式切换按钮右缘距窗口右缘距离两布局恒定（右锚定）
+        off_t = page.evaluate(
+            "innerWidth - document.querySelector('.mode-switch')"
+            ".getBoundingClientRect().right")
+        page.locator("#mode-pair").click()
+        page.wait_for_timeout(1200)
+        off_p = page.evaluate(
+            "innerWidth - document.querySelector('.mode-switch')"
+            ".getBoundingClientRect().right")
+        check("模式切换位置两布局恒定", abs(off_t - off_p) <= 24,
+              f"tutor={off_t:.0f} pair={off_p:.0f}")
+        page.locator("#mode-tutor").click()
+        page.wait_for_timeout(1200)
+        # 5) 笔记页显眼返回入口
+        page.locator("#open-notes").click()
+        page.wait_for_timeout(800)
+        check("笔记页返回按钮可见", page.locator("#notes-back").is_visible())
+        page.locator("#notes-back").click()
+        page.wait_for_timeout(400)
+        check("返回主界面", page.locator("#notes-page").evaluate(
+            "el => el.classList.contains('hidden')"))
+
         # ---- 汇总 ----
         check("全程零 JS 错误", len(errors) == 0, "; ".join(errors[:3]))
         page.screenshot(path="/tmp/walkthrough_final.png")
