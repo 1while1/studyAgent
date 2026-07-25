@@ -42,6 +42,9 @@ class SessionContext:
     ctx_prompt_tokens: int = 0        # 最近实测轮 prompt_tokens（system+历史+用户消息）
     ctx_completion_tokens: int = 0    # 最近实测轮 completion_tokens（回复已入历史）
     ctx_measured: bool = False        # 最近一轮是否有真实 usage（网关降级轮=False→估算）
+    # 校准系数（实测 prompt / 本地估算 prompt）：仪表显示 = 当前装配估算 × 系数。
+    # 同一会话状态下刷新/重启显示稳定；0 = 从未实测过（纯估算口径）
+    ctx_calib: float = 0.0
 
     def to_dict(self) -> dict:
         return asdict(self)

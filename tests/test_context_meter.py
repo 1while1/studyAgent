@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
-"""M8 上下文仪表测试：usage 链式提取 / 账本落盘 / context-status 实测锚定。
+"""M8 上下文仪表测试：usage 链式提取 / 账本落盘 / context-status 校准口径。
 
-设计约定（账本式）：
-- 每轮 done 后 session 记录 API 实测 prompt/completion（精确，自我纠正）
-- 网关降级轮（无 usage）→ measured=False 保留旧实测值，仪表降级估算
-- 分层分解只能本地估算；实测模式按估算占比等比缩放锚定实测总量
+设计约定（校准系数制）：
+- 每轮 done 后 session 记录 API 实测 prompt/completion + 校准系数
+  calib = 实测 prompt / 本地估算 prompt（随实测自动修正，持久化）
+- 网关降级轮（无 usage）→ measured=False 保留旧实测值与 calib
+- 仪表显示 = 当前会话装配估算 × calib：同一会话状态刷新/重启显示稳定，
+  不锚定「最后一轮调用的 prompt」（指令轮含 SOP 卡/教材注入，差异巨大）
+- 分层分解只能本地估算，按 calib 缩放
 """
 import asyncio
 import json
@@ -161,16 +164,21 @@ class TestCtxLedger(_Base):
         self.assertEqual(s["ctx_prompt_tokens"], 1234)
         self.assertEqual(s["ctx_completion_tokens"], 56)
         self.assertTrue(s["ctx_measured"])
+        # 校准系数随实测轮落盘（实测 prompt / 本地估算 prompt）
+        self.assertGreater(s["ctx_calib"], 0)
+        self.assertLess(s["ctx_calib"], 5)
 
     def test_degraded_turn_keeps_old_measured_values(self):
         self._init_routes(_UsageLLM(1234, 56))
         _consume(routes.chat(routes.TextIn(text="第一轮")))
+        calib_after_m1 = self._load_session()["ctx_calib"]
         self._init_routes(MockLLM())  # 降级轮：无 usage
         _consume(routes.chat(routes.TextIn(text="第二轮")))
         s = self._load_session()
         self.assertFalse(s["ctx_measured"])
         self.assertEqual(s["ctx_prompt_tokens"], 1234)  # 旧实测值保留
         self.assertEqual(s["ctx_completion_tokens"], 56)
+        self.assertEqual(s["ctx_calib"], calib_after_m1)  # 校准系数不被降级轮破坏
 
     def test_command_stream_records_ledger(self):
         """command 流（声明式指令走 LLM 回合）同样落上下文账本。"""
@@ -183,24 +191,45 @@ class TestCtxLedger(_Base):
 
 
 class TestContextStatus(_Base):
-    def test_measured_anchors_total_and_scales_layers(self):
+    def test_calibrated_total_scales_with_estimate(self):
+        """校准口径：total = 当前装配估算 × calib，只随会话内容变化。"""
         self._init_routes(MockLLM())
         seeded = SessionContext()
         seeded.chat_history.append({"role": "user", "content": "历史消息" * 50})
-        seeded.ctx_prompt_tokens = 6000
-        seeded.ctx_completion_tokens = 1000
+        self.deps.session_store.save(seeded)
+        est_total = routes.context_status()["total"]  # calib=0 → 纯估算基准
+        seeded.ctx_calib = 1.5
+        seeded.ctx_prompt_tokens = 999999  # 旧实测原始值不得参与总量
+        seeded.ctx_completion_tokens = 1
         seeded.ctx_measured = True
         self.deps.session_store.save(seeded)
         r = routes.context_status()
-        self.assertEqual(r["source"], "measured")
-        self.assertEqual(r["total"], 7000)
+        self.assertEqual(r["source"], "calibrated")
+        self.assertEqual(r["total"], round(est_total * 1.5))
+        self.assertEqual(r["last_measured"], 1000000)  # 仅作参考透出
         layers = r["layers"]
         self.assertGreater(layers["pinned"], 0)
-        # 分层按占比缩放锚定：各层之和 ≈ 实测总量（±取整误差）
+        # 分层按 calib 缩放：各层之和 ≈ 总量（±取整误差）
         self.assertAlmostEqual(
             layers["pinned"] + layers["archive"] + layers["window"],
-            7000, delta=3)
-        self.assertEqual(r["ratio"], round(7000 / r["budget"], 4))
+            round(est_total * 1.5), delta=3)
+        self.assertEqual(r["ratio"], round(round(est_total * 1.5) / r["budget"], 4))
+
+    def test_display_stable_across_reads_and_restart(self):
+        """稳定性契约：同一会话状态，重复读/重载 session 后显示完全一致。"""
+        self._init_routes(MockLLM())
+        seeded = SessionContext()
+        seeded.chat_history.append({"role": "user", "content": "一些历史"})
+        seeded.ctx_calib = 1.2
+        self.deps.session_store.save(seeded)
+        r1 = routes.context_status()
+        r2 = routes.context_status()  # 刷新页面 = 再读一次
+        self.assertEqual(r1["total"], r2["total"])
+        # 模拟服务重启：从磁盘重载 session（calib 持久化不丢）
+        reloaded = self.deps.session_store.load()
+        self.assertEqual(reloaded.ctx_calib, 1.2)
+        r3 = routes.context_status()
+        self.assertEqual(r1["total"], r3["total"])
 
     def test_estimated_when_never_measured(self):
         self._init_routes(MockLLM())

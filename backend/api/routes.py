@@ -69,6 +69,7 @@ class LLMStreamer:
         self.full: list[str] = []
         self.ctx_plan: dict = {}  # M5b：assemble 产出的压缩计划（chat/command 回合边界用）
         self.usage: dict | None = None  # M8：本轮实测 usage（上下文账本）
+        self.est_prompt: int = 0        # M8：本轮实际发送消息的本地估算（校准系数分母）
 
     @property
     def text(self) -> str:
@@ -145,6 +146,8 @@ class LLMStreamer:
                            tool_context=ctx, allow_actions=allow_actions)
         if event:
             yield sse(event)
+        # 校准系数分母：对实际发送的消息列表做本地估算（含 prefetch 注入）
+        self.est_prompt = cm._est_messages(messages)
         with task_scope("chat"):
             for ev in loop.run(messages):
                 if ev["type"] == "delta":
@@ -155,11 +158,18 @@ class LLMStreamer:
 
 def _record_ctx_ledger(session, streamer: "LLMStreamer") -> None:
     """M8 上下文账本：本轮实测 usage 落 session；网关降级轮（无 usage）
-    标 measured=False 并保留上一轮实测值（仪表降级为估算显示）。"""
+    标 measured=False 并保留上一轮实测值。
+
+    校准系数（calib = 实测 prompt / 本地估算 prompt）随实测轮更新：
+    仪表显示口径 = 当前会话装配估算 × calib——只随会话内容变化，
+    不随「最后一轮是什么类型的调用」跳动，刷新/重启显示稳定。"""
     if streamer.usage:
         session.ctx_prompt_tokens = streamer.usage["prompt_tokens"]
         session.ctx_completion_tokens = streamer.usage["completion_tokens"]
         session.ctx_measured = True
+        if streamer.est_prompt > 0 and session.ctx_prompt_tokens > 0:
+            session.ctx_calib = round(
+                session.ctx_prompt_tokens / streamer.est_prompt, 4)
     else:
         session.ctx_measured = False
 
@@ -1163,13 +1173,14 @@ def _context_view() -> dict:
 
 @router.get("/api/context-status")
 def context_status():
-    """M8 上下文仪表：当前会话上下文占用。
+    """M8 上下文仪表：当前会话上下文占用（校准估算口径）。
 
-    总量：最近一轮 API 实测 prompt+completion（账本，measured）优先；
-    降级轮/未调用过 → 校准估算（estimated）。三层分解只能本地估算
-    （API 只给总量），实测模式下按估算占比等比缩放锚定实测总量。
-    口径说明：实测 prompt 含 tool-use 回合的注入内容（不进 chat_history），
-    故三层是「按占比摊派」的近似，总和锚定实测、单层不保证精确。
+    总量 = 当前会话装配（钉住+归档+窗口）的本地估算 × 校准系数 calib
+    （最近实测轮的 实测 prompt / 本地估算 prompt，随每次实测自动修正）。
+    同一会话状态下刷新/重启显示完全一致；只有会话内容变化（新消息/
+    压缩/清空）才变——不锚定「最后一轮调用的 prompt」（指令轮含 SOP 卡/
+    教材注入，与日常轮差异巨大，锚定它会导致显示乱跳）。
+    三层分解为本地估算按 calib 缩放（API 只给总量，单层不保证精确）。
     """
     from ..engine.context_manager import _safe_float, effective_budget
     deps = _deps
@@ -1187,10 +1198,9 @@ def context_status():
     est_archive = sum(cm._est_text(m["content"]) for m in pinned[1:])
     est_window = cm._est_messages(window)
     est_total = est_pinned + est_archive + est_window
-    if session.ctx_measured and session.ctx_prompt_tokens:
-        total = session.ctx_prompt_tokens + session.ctx_completion_tokens
-        source = "measured"
-        scale = total / est_total if est_total > 0 else 1.0
+    calib = session.ctx_calib or 0.0
+    if calib > 0:
+        total, source, scale = round(est_total * calib), "calibrated", calib
     else:
         total, source, scale = est_total, "estimated", 1.0
     return {
@@ -1203,6 +1213,10 @@ def context_status():
         "turns": len(session.chat_history),
         "archived_turns": max(0, min(session.archive_upto,
                                      len(session.chat_history))),
+        # 最近一轮实测原始值（参考；未实测过/降级轮为 None）
+        "last_measured": (session.ctx_prompt_tokens
+                          + session.ctx_completion_tokens)
+                         if session.ctx_measured else None,
         # M9：今日 LLM 消耗速览（observer 内存计数，启动时已从日志回填）
         "today": get_observer(deps.config).status()["today"],
     }
