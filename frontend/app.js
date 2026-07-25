@@ -1354,10 +1354,11 @@ async function saveLlmConfig(silent) {
   const r = await res.json();
   const status = document.getElementById("llm-status");
   if (r.ok) {
-    status.textContent = "已保存并热生效（无需重启）。"
+    status.textContent = (r.warning ? r.warning + "（旧渠道仍在线）"
+      : "已保存并热生效（无需重启）。")
       + (ctxInvalid ? " 注意：上下文项输入无效，该项未保存。" : "");
-    status.className = "ok";
-    if (!silent) setTimeout(() => llmModal.classList.add("hidden"), 800);
+    status.className = r.warning ? "fail" : "ok";
+    if (!silent && !r.warning) setTimeout(() => llmModal.classList.add("hidden"), 800);
   } else {
     status.textContent = `保存失败: ${r.error}`;
     status.className = "fail";

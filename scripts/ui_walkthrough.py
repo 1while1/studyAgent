@@ -128,7 +128,8 @@ def main():
         page.locator("#open-llm-config").click()
         page.wait_for_timeout(1200)
         check("配置弹窗可见", page.locator("#llm-modal").is_visible())
-        check("配置弹窗-渠道数", page.locator(".provider-fieldset").count() == 2)
+        check("配置弹窗-渠道数", page.locator(".provider-fieldset").count()
+              == len(orig_llm.get("sections", {})))  # 动态：非 mock 渠道数（agnes 接入后不再写死 2）
         check("配置弹窗-上下文窗口区", page.locator("#context-section").is_visible())
         page.locator("#ctx-budget").fill("128000")
         page.wait_for_timeout(200)

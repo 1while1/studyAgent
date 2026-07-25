@@ -1,5 +1,7 @@
 # ---- 密钥与本地私密配置（绝不入库） ----
 .env
+.env.*
+!.env.example
 opencode.txt
 
 # ---- Python ----
