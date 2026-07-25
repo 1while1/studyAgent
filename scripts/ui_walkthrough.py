@@ -578,6 +578,13 @@ def main():
         check("查看器图表模式打开",
               page.locator("#viewer-overlay").is_visible() and
               page.locator("#viewer-overlay .viewer-content svg").count() == 1)
+        # 钉尺寸回归：克隆 svg 必须按 viewBox/原图钉出非零宽高（曾渲染 0×0）
+        _cw = page.evaluate("""() => {
+          const c = document.querySelector('#viewer-overlay .viewer-content svg');
+          const r = c.getBoundingClientRect();
+          return r.width * r.height;
+        }""")
+        check("查看器克隆图非零尺寸", _cw > 2500, f"area={_cw}")
         page.keyboard.press("Escape")
         page.wait_for_timeout(300)
         check("查看器 Esc 关闭",

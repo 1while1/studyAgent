@@ -138,10 +138,20 @@
       // Mermaid 图 / 图片：点击本体放大
       const mer = e.target.closest(".mermaid");
       if (mer && mer.querySelector("svg")) {
-        const svg = mer.querySelector("svg").cloneNode(true);
+        const orig = mer.querySelector("svg");
+        const svg = orig.cloneNode(true);
         svg.removeAttribute("style");
-        svg.removeAttribute("width");   // width="100%" 会让 fit 测量失真，靠 viewBox 自适应
+        svg.removeAttribute("width");   // width="100%" 在缩容容器里会算成 0×0
         svg.removeAttribute("height");
+        const r = orig.getBoundingClientRect();
+        const vb = (orig.getAttribute("viewBox") || "").trim().split(/[ ,]+/).map(Number);
+        // 1:1 基准优先取 viewBox 设计尺寸（矢量细节上限），没有才回退上屏像素
+        const bw = (vb.length === 4 && vb[2] > 0) ? vb[2] : r.width;
+        const bh = (vb.length === 4 && vb[3] > 0) ? vb[3] : r.height;
+        if (bw > 0 && bh > 0) {
+          svg.setAttribute("width", Math.round(bw));
+          svg.setAttribute("height", Math.round(bh));
+        }
         svg.style.maxWidth = "none";
         open(svg, "graph");
         return;
@@ -151,6 +161,10 @@
         const pic = document.createElement("img");
         pic.src = img.src;
         pic.alt = img.alt || "";
+        if (img.naturalWidth > 0) {  // 钉自然尺寸，fit 测量才准
+          pic.width = img.naturalWidth;
+          pic.height = img.naturalHeight;
+        }
         open(pic, "graph");
         if (!pic.complete) pic.addEventListener("load", fit, { once: true });  // 未加载完时加载后重新 fit
         return;
