@@ -47,7 +47,7 @@ class TestEstTokens(ObserverTestBase):
 class TestLogLlm(ObserverTestBase):
     def test_usage_preferred_over_estimate(self):
         self.obs.log_llm("deepseek_official", "deepseek-chat", 1200,
-                         "输入文本" * 50, "输出文本" * 10,
+                         "输入文本" * 150, "输出文本" * 30,
                          {"prompt_tokens": 500, "completion_tokens": 100},
                          ok=True)
         recs = self._records()
@@ -56,8 +56,31 @@ class TestLogLlm(ObserverTestBase):
         self.assertEqual((r["in_tokens"], r["out_tokens"]), (500, 100))
         self.assertFalse(r["tokens_est"])
         self.assertTrue(r["ok"])
-        # usage 到达后应写校准文件
+        # usage 到达后应写校准文件（样本需达下限，见下限测试）
         self.assertTrue(self.obs._calib_path.exists())
+
+    def test_small_samples_rejected_from_calib(self):
+        """Agnes 类网关固定开销会主导小样本比率（"Say OK"报 254 prompt），
+        est 低于下限的样本不得参与 ratio 学习（防 EWMA 失真）。"""
+        tiny = "你好"  # est ≪ 400
+        self.obs.log_llm("agnes", "agnes-2.0-flash", 500, tiny, "好",
+                         {"prompt_tokens": 254, "completion_tokens": 2},
+                         ok=True)
+        self.assertEqual(self.obs._load_calib(), {})  # 什么都没学
+        # 但记账本身不受影响
+        r = self._records()[0]
+        self.assertEqual(r["in_tokens"], 254)
+        self.assertFalse(r["tokens_est"])
+
+    def test_large_sample_still_learns(self):
+        big = "中文输入" * 200  # est ≥ 400
+        base = est_tokens(big)
+        self.assertGreaterEqual(base, 400)
+        self.obs.log_llm("agnes", "agnes-2.0-flash", 500, big, "",
+                         {"prompt_tokens": int(base * 2), "completion_tokens": 0},
+                         ok=True)
+        ratio = self.obs._load_calib()["agnes/agnes-2.0-flash"]["ratio"]
+        self.assertAlmostEqual(ratio, 2.0, delta=0.01)
 
     def test_estimate_when_no_usage_and_calibrated(self):
         in_text = "中文输入" * 100

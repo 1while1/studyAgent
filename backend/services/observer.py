@@ -158,6 +158,12 @@ class Observer:
         except Exception:
             pass  # 日志绝不影响主流程
 
+    # 校准样本下限（估算 token）：Agnes 等网关有每请求固定计数开销
+    # （"Say OK" 也报 ~254 prompt），小样本的 实测/估算 比率被固定开销
+    # 主导（实测可达 25×），EWMA 会被拉到失真——低于下限的样本不参与学习
+    _CALIB_MIN_EST_IN = 400
+    _CALIB_MIN_EST_OUT = 100
+
     def log_llm(self, provider: str, model: str, latency_ms: int,
                 in_text: str, out_text: str, usage: dict | None,
                 ok: bool, error: str = "", workspace: str = "") -> None:
@@ -169,9 +175,9 @@ class Observer:
             out_t = int(usage.get("completion_tokens") or 0)
             cache_hit = int(usage.get("cache_hit_tokens") or 0)
             base_in, base_out = est_tokens(in_text), est_tokens(out_text)
-            if base_in > 0:
+            if base_in >= self._CALIB_MIN_EST_IN:
                 self._update_calib(key, in_t / base_in)
-            if base_out > 0 and out_t > 0:
+            if base_out >= self._CALIB_MIN_EST_OUT and out_t > 0:
                 self._update_calib(key + ":out", out_t / base_out)
         else:
             in_t = round(est_tokens(in_text) * self._calib_ratio(key))
