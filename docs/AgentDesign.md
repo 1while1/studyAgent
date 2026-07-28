@@ -116,7 +116,7 @@
 ## 5. 资料库（materials）
 
 - **注册**：`materials.json`（`schema_version`）——{id, path, type(md/docx/pdf/code_dir/video_link), status, indexed_at}
-- **解析**：docx → python-docx；pdf → pypdf（新增依赖限纯 Python 无重传递，进 requirements.txt pin 版本）；代码 → code_browser
+- **解析**：docx → python-docx；pdf → pypdf（新增依赖限纯 Python 无重传递，进 requirements.txt 声明版本约束（核心框架 >= 区间，其余 == pin））；代码 → code_browser
 - **索引**：`_cache/<id>.txt` 按标题层级切段挂 concept；mtime 变化重解析
 - **video_link**：登记 + 内嵌播放 + 笔记挂时间戳；**可关联转写文本**（.md/.txt 走标准解析管线）——视频的学习价值在其可检索文本；不做订阅/转播
 - **备课代码强制**：讲解回合前由后端按单元 concept 挂接**确定性预取 chunk 注入**（复用 READ_DOC 管线），不依赖 LLM 自觉——"幻觉机制性防线"名副其实

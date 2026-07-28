@@ -264,6 +264,9 @@ def command(body: TextIn):
         try:
             result = handler.run(deps, session, args, entry["mode"])
         except Exception as e:
+            # handler 异常：与 LLM 失败分支对称——handler 可能已部分推进并
+            # 落盘 session，整体回滚到指令前快照防状态分裂
+            deps.session_store.save(snapshot)
             yield sse({"type": "error", "content": f"指令执行失败：{e}"})
             return
         for msg in result.messages:
