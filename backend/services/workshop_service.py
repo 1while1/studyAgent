@@ -227,17 +227,30 @@ def _scaffold_description(src: Path) -> str:
     return ""
 
 
+# 复制时跳过的缓存/构建产物目录（曾被 .gradle/build 二进制缓存读炸，2026-07-29）
+_SKIP_DIRS = {".git", ".gradle", ".idea", "node_modules", "__pycache__",
+              "build", "target", "out"}
+
+
 def _copy_scaffold(src: Path, target: Path, name: str) -> int:
-    """复制脚手架树并做 {{name}} 文本替换。返回文件数。"""
+    """复制脚手架树并做 {{name}} 文本替换。返回文件数。
+
+    跳过构建/缓存产物目录；非 UTF-8 文件（jar/图片等）按字节原样拷贝。"""
     count = 0
     for item in sorted(src.rglob("*")):
         rel = item.relative_to(src)
+        if any(part in _SKIP_DIRS for part in rel.parts):
+            continue
         dest = target / rel
         if item.is_dir():
             dest.mkdir(parents=True, exist_ok=True)
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
-        text = item.read_text(encoding="utf-8")
-        dest.write_text(text.replace("{{name}}", name), encoding="utf-8")
+        try:
+            text = item.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            dest.write_bytes(item.read_bytes())  # 二进制模板文件原样拷贝
+        else:
+            dest.write_text(text.replace("{{name}}", name), encoding="utf-8")
         count += 1
     return count

@@ -22,6 +22,7 @@ from backend.engine.commands.prereq import PrereqHandler
 from backend.engine.orchestrator import ChatOrchestrator
 from backend.llm.mock import MockLLM
 from backend.services.config_service import ConfigService
+from tests.datefix import pin_today
 from tests.test_flows import make_deps
 
 TODAY = "2026-07-23"
@@ -29,6 +30,7 @@ TODAY = "2026-07-23"
 
 class TestPrereq(unittest.TestCase):
     def setUp(self):
+        pin_today(self, TODAY)  # 衰减基准对齐夹具时间戳（防时间漂移假红）
         self.tmp = Path(tempfile.mkdtemp(prefix="prereq_"))
         self.docx = self.tmp / "docx"
         (self.docx / "StudyMemory").mkdir(parents=True)
