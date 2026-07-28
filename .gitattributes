@@ -1,0 +1,22 @@
+# 自动换行符转换
+* text=auto
+
+# Python
+*.py text diff=python
+*.toml text
+
+# 前端
+*.js text
+*.html text
+*.css text
+
+# 文档
+*.md text
+
+# 二进制/特殊
+*.png binary
+*.jpg binary
+*.gif binary
+
+# 构建产物（永不提交）
+resources/scaffolds/gradle/.gradle/** -text
