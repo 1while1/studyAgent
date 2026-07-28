@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.services.config_service import ConfigService, WEB_ROOT
 from backend.engine.commands.start_day import StartDayHandler
+from tests.datefix import pin_today
 from tests.test_flows import make_deps
 
 
@@ -57,6 +58,9 @@ def _make_tmp_docx(prefix: str):
 
 class TestRelevanceReview(unittest.TestCase):
     def setUp(self):
+        # 衰减基准对齐夹具时间戳（防时间漂移假红；
+        # 仅 test_no_relevance 的 0.8 达标夹具敏感，其余用例钉住后行为不变）
+        pin_today(self, "2026-07-23")
         self.tmp, self.config = _make_tmp_docx("relrev_")
         self.deps = make_deps(self.config, self.tmp / "session.json")
 

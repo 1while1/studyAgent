@@ -207,6 +207,35 @@ class TestWorkshop(unittest.TestCase):
         self.assertTrue((self.demo / "retry-demo" / "package.json").is_file())
 
 
+class TestCopyScaffold(unittest.TestCase):
+    """_copy_scaffold：跳过构建/缓存产物目录 + 二进制文件原样拷贝（2026-07-29
+    假红修复——.gradle/build 二进制缓存曾把 UTF-8 读取读炸）。"""
+
+    def test_skip_cache_dirs_and_binary_passthrough(self):
+        from backend.services.workshop_service import _copy_scaffold
+        tmp = Path(tempfile.mkdtemp(prefix="copyscaf_"))
+        try:
+            src = tmp / "src"
+            (src / "pkg").mkdir(parents=True)
+            (src / "pkg" / "app.txt").write_text(
+                "hello {{name}}", encoding="utf-8")
+            (src / "logo.bin").write_bytes(b"\xbc\x00\xff\xfe")  # 非 UTF-8
+            (src / ".gradle" / "cache").mkdir(parents=True)
+            (src / ".gradle" / "cache" / "x.bin").write_bytes(b"\xbc\x00")
+            (src / "build" / "classes").mkdir(parents=True)
+            (src / "build" / "classes" / "A.class").write_bytes(b"\xca\xfe")
+            n = _copy_scaffold(src, tmp / "out", "demo")
+            self.assertEqual(n, 2)  # 文本 + 二进制，缓存目录跳过
+            self.assertEqual((tmp / "out" / "pkg" / "app.txt")
+                             .read_text(encoding="utf-8"), "hello demo")
+            self.assertEqual((tmp / "out" / "logo.bin").read_bytes(),
+                             b"\xbc\x00\xff\xfe")
+            self.assertFalse((tmp / "out" / ".gradle").exists())
+            self.assertFalse((tmp / "out" / "build").exists())
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 class TestWorkshopRoutes(unittest.TestCase):
     """路由级（routes.py 直接调用）：写路径 API 的 ok/error 契约。"""
 

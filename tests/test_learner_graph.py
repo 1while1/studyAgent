@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.domain.learner import topo_order, upstream_closure
 from backend.services.config_service import ConfigService
 from backend.services.learner_service import LearnerService
+from tests.datefix import pin_today
 
 # Day1-A ← Day1-B ← Day1-C ← Day2-A（跨天链，与 ensure_concepts 生成同构）
 PMAP = {
@@ -54,6 +55,7 @@ class TestDomainGraph(unittest.TestCase):
 
 class TestServiceGraph(unittest.TestCase):
     def setUp(self):
+        pin_today(self, "2026-07-23")  # 衰减基准对齐夹具时间戳（防时间漂移假红）
         self.tmp = Path(tempfile.mkdtemp(prefix="lgraph_"))
         self.docx = self.tmp / "docx"
         self.docx.mkdir()
