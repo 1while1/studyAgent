@@ -1085,6 +1085,46 @@ def main():
               f"{st0.get('archived_turns')} → {st1.get('archived_turns')}")
         check("/compact 无错误泡", page.locator(".msg.error").count() == 0)
 
+        # ---- 9n. Slash 扩展指令（/usage /model /clear） ----
+        mark("9n slash 扩展")
+        page.goto(BASE, wait_until="networkidle")
+        page.wait_for_timeout(1500)
+
+        def _slash(text, wait_ms=2500):
+            """键入 slash 指令并发送（Esc 先关掉可能弹出的补全菜单）。"""
+            page.fill("#input", text)
+            page.wait_for_timeout(300)
+            page.locator("#input").press("Escape")
+            page.wait_for_timeout(150)
+            page.locator("#input").press("Enter")
+            page.wait_for_timeout(wait_ms)
+
+        # 1) /usage：客户端指令，本地打开用量面板（不发请求不留气泡）
+        bubbles_before = page.locator("#messages .msg").count()
+        _slash("/usage", 1200)
+        check("/usage 打开用量面板", page.locator("#usage-modal").is_visible())
+        check("/usage 客户端指令无气泡",
+              page.locator("#messages .msg").count() == bubbles_before)
+        page.locator("#usage-close").click()
+        page.wait_for_timeout(300)
+        # 2) /model：报告当前渠道（走查渠道已归一 Mock）
+        _slash("/model")
+        texts = page.locator("#messages .bubble").all_text_contents()
+        check("/model 报告当前渠道",
+              any("主渠道" in t and "mock" in t for t in texts))
+        # 3) /model mock：已是当前渠道 → 无需切换
+        _slash("/model mock")
+        texts = page.locator("#messages .bubble").all_text_contents()
+        check("/model 同渠道无需切换", any("无需切换" in t for t in texts))
+        # 4) /clear：清屏 + 报告 + 后端历史归零
+        _slash("/clear")
+        check("/clear 清屏仅剩报告泡",
+              page.locator("#messages .msg").count() == 1)
+        check("/clear 报告气泡", "已清空" in
+              (page.locator("#messages .bubble").last.text_content() or ""))
+        check("/clear 后端历史归零",
+              api("/api/history")["messages"] == [])
+
         # ---- 9m. 顶栏布局修复（重叠/切换位置/清空按钮/笔记入口） ----
         mark("9m 顶栏布局")
         page.goto(BASE, wait_until="networkidle")

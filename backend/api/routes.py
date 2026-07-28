@@ -353,19 +353,16 @@ def slash(body: TextIn):
     def _flow():
         from ..engine.commands.slash import execute
         session = deps.session_store.load()
-        before = (session.archive_upto, session.compress_cooldown,
-                  session.archive_summary)
         try:
-            report = execute(deps, session, body.text)
+            result = execute(deps, session, body.text)
         except Exception as e:
             yield sse({"type": "error", "content": f"指令执行失败：{e}"})
             return
-        yield sse({"type": "message", "content": report})
+        if result.get("clear_screen"):
+            yield sse({"type": "clear"})  # /clear：先清屏再给报告
+        yield sse({"type": "message", "content": result["report"]})
         yield sse({"type": "done"})
-        after = (session.archive_upto, session.compress_cooldown,
-                 session.archive_summary)
-        if after != before:
-            deps.session_store.save(session)
+        deps.session_store.save(session)
 
     def gen():
         with deps.session_store.locked():  # 同 chat/command 流：全程流程锁

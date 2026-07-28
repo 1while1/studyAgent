@@ -468,6 +468,13 @@ async function streamPost(url, text) {
           }
           rawText += payload.content;
           throttledRender(bubble, rawText);
+        } else if (payload.type === "clear") {
+          // /clear：先清屏（含占位泡与用户指令泡），再开新泡等报告
+          clearInterval(timer);
+          cancelThrottledRender();
+          document.getElementById("messages").innerHTML = "";
+          rawText = "";
+          bubble = addMessage("assistant", "");
         } else if (payload.type === "message") {
           clearInterval(timer);
           cancelThrottledRender();  // 防止旧气泡的迟到节流渲染覆盖模板
@@ -535,6 +542,9 @@ async function streamPost(url, text) {
 
 function sendCommand(text) { streamPost("/api/command", text); }
 
+// 客户端 slash 指令动作表（registry 里 client=true 的指令在此落地）
+const SLASH_LOCAL = { usage: () => openUsage() };
+
 form.addEventListener("submit", (e) => {
   e.preventDefault();
   if (streaming) { showToast("上一条回复生成中，请稍候…"); return; }
@@ -543,6 +553,12 @@ form.addEventListener("submit", (e) => {
   inputEl.value = "";
   autosizeInput();
   closeCmdMenu();
+  // 客户端 slash 指令（/usage 等）：本地打开面板，不发请求不留气泡
+  const cm = text.match(/^\/([a-z]+)$/i);
+  if (cm) {
+    const cmd = SLASH_COMMANDS.find(c => c.client && c.name === cm[1].toLowerCase());
+    if (cmd && SLASH_LOCAL[cmd.name]) { SLASH_LOCAL[cmd.name](); return; }
+  }
   const isSlash = /^\/\S/.test(text);
   const isCommand = !isSlash && (/^\[.+\]/.test(text) ||
     ["重新开始今日学习", "重新开始", "恢复学习"].includes(text));
