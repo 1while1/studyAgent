@@ -36,6 +36,7 @@ class AuthService:
         self._secret_path = runtime_dir(config) / "auth_secret"
         self._fails: dict[str, list[float]] = {}
         self._lock = threading.Lock()
+        self._secret_warned = threading.Event()
 
     # ---- 密码 ----
 
@@ -50,7 +51,10 @@ class AuthService:
             import bcrypt
             return bcrypt.checkpw(password.encode("utf-8"),
                                   hashed.encode("utf-8"))
-        except Exception:
+        except Exception as e:
+            from .observer import get_observer
+            get_observer(self._config).log_tool(
+                "auth_verify", False, repr(e)[:200])
             return False
 
     def set_password(self, password: str) -> None:
@@ -74,8 +78,11 @@ class AuthService:
         try:
             self._secret_path.parent.mkdir(parents=True, exist_ok=True)
             atomic_write(self._secret_path, secret)
-        except Exception:
-            pass
+        except Exception as e:
+            if not self._secret_warned.is_set():
+                self._secret_warned.set()
+                import sys
+                print(f"[auth] auth_secret 写入失败: {e}", file=sys.stderr)
         return secret.encode()
 
     def make_token(self) -> str:

@@ -18,6 +18,7 @@ from ..services.memory_store import MemoryStore
 from ..services.state_store import StateStore
 from ..services.template_service import TemplateService
 from ..services.config_service import ConfigService
+from ..services.observer import get_observer
 
 
 class ChatOrchestrator(TurnEngine):
@@ -123,7 +124,9 @@ class ChatOrchestrator(TurnEngine):
                         tcid, etype, ref, day)
                     note = ("已置初始掌握度" if written
                             else "今日已记录过（幂等跳过）")
-                except Exception:
+                except Exception as e:
+                    get_observer(self._config).log_tool(
+                        "silent_orch_prereq", False, repr(e)[:200])
                     note = "落盘失败（已跳过）"  # 模型写入失败不阻断（铁律 15）
                 mark = "✅" if passed else "❌"
                 lines.append(f"- {mark} {tcid} {q['title']}：{score} 分，{note}")
@@ -176,8 +179,9 @@ class ChatOrchestrator(TurnEngine):
                     files[self._config.docx_dir / "Study.md"] = plan.update_header(
                         plan.read(), state["current_day"],
                         state["overall_completion_percentage"])
-                except Exception:
-                    pass
+                except Exception as e:
+                    get_observer(self._config).log_tool(
+                        "silent_orch_plan", False, repr(e)[:200])
                 from ..engine.hooks.validate_hook import make_validator
                 from ..services.backup_service import BackupService
                 BackupService(self._config).atomic_persist(
@@ -188,8 +192,9 @@ class ChatOrchestrator(TurnEngine):
                     svc.ensure_concepts(state)
                     svc.record_review(state["current_day"],
                                       day_data.get("units", []), score)
-                except Exception:
-                    pass  # 学习者模型写入失败不阻断复盘流程
+                except Exception as e:
+                    get_observer(self._config).log_tool(
+                        "silent_orch_review", False, repr(e)[:200])
                 session.day_phase = DayPhase.STUDYING.value
                 session.pending_qa_capture = True  # M4：触发拷打反喂话术（chat 路由执行）
                 extra.append(f"复盘评分已落盘：{score} 分。")
@@ -239,8 +244,9 @@ class ChatOrchestrator(TurnEngine):
                     extra.append(render_mastery_check(
                         self._state_store, self._stages, self._templates,
                         session, preselect=None))
-                except Exception:
-                    pass  # 渲染失败不阻断回合（提示行兜底）
+                except Exception as e:
+                    get_observer(self._config).log_tool(
+                        "silent_orch_round", False, repr(e)[:200])
                 extra.append("（系统：已到回合复习点，请按上方检查自评；"
                              "确认后可说 [下一内容] 正式推进，或继续当前讲解）")
         return extra
@@ -250,7 +256,9 @@ class ChatOrchestrator(TurnEngine):
             state = self._state_store.load()
             unit = self._state_store.set_unit(state, session.current_unit_id)
             return unit["title"]
-        except Exception:
+        except Exception as e:
+            get_observer(self._config).log_tool(
+                "silent_orch_unittitle", False, repr(e)[:200])
             return session.current_unit_id or ""
 
     def _interview_title(self, session: SessionContext) -> str:
@@ -261,8 +269,9 @@ class ChatOrchestrator(TurnEngine):
             for c in LearnerService(self._config).get_model(day)["concepts"]:
                 if c["id"] == session.interview_cid:
                     return c.get("title", session.interview_cid)
-        except Exception:
-            pass
+        except Exception as e:
+            get_observer(self._config).log_tool(
+                "silent_orch_interviewtitle", False, repr(e)[:200])
         return session.interview_cid or "当前知识点"
 
     def _record_teach_back(self, session: SessionContext, score: float,
@@ -290,8 +299,9 @@ class ChatOrchestrator(TurnEngine):
                     ev.get("source_ref") == ref
                     for c in model["concepts"] if c["id"] == cid
                     for ev in c.get("evidence", []))
-        except Exception:
-            pass
+        except Exception as e:
+            get_observer(self._config).log_tool(
+                "silent_orch_teachback", False, repr(e)[:200])
         if written:
             note = "teach_back 证据已落盘"
         elif idempotent:

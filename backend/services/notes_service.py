@@ -44,13 +44,36 @@ class NotesService:
     # ---- 读写 ----
 
     def _load(self) -> dict:
+        default = {"schema_version": SCHEMA_VERSION, "notes": []}
         try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
+            raw = self.path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return default
+        except Exception as e:
+            self._backup_and_log(e)
+            return default
+        try:
+            data = json.loads(raw)
             if isinstance(data, dict) and isinstance(data.get("notes"), list):
                 return data
+        except Exception as e:
+            self._backup_and_log(e)
+            return default
+        # 合法 JSON 但结构不符
+        self._backup_and_log(ValueError("structure mismatch"))
+        return default
+
+    def _backup_and_log(self, exc) -> None:
+        try:
+            import shutil
+            bak = self.path.with_suffix(self.path.suffix + ".corrupt.bak")
+            shutil.copy2(self.path, bak)
         except Exception:
             pass
-        return {"schema_version": SCHEMA_VERSION, "notes": []}
+        from .observer import get_observer
+        get_observer(self._config).log_tool(
+            "silent_notes_load", False,
+            f"notes.json: {repr(exc)[:200]}")
 
     def _save(self, data: dict, validator=None) -> None:
         data["schema_version"] = SCHEMA_VERSION

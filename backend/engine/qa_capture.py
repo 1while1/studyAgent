@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from ..services.config_service import PROMPTS_DIR
 from ..services.qa_service import QaService, render_entry, validate_capture
+from ..services.observer import get_observer
 
 
 def run_capture(deps, session) -> list[str]:
@@ -55,7 +56,9 @@ def run_capture(deps, session) -> list[str]:
         return ["🎙 拷打反喂：已沉淀 "
                 f"{len(added)} 条话术到 InterviewQA.md（话术页可查看/编辑）：\n"
                 + "\n".join(f"- {t}" for t in added)]
-    except Exception:
+    except Exception as e:
+        get_observer(config).log_tool(
+            "silent_qa_capture", False, repr(e)[:200])
         return []
 
 

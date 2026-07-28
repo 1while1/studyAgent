@@ -163,5 +163,29 @@ class TestTriggerWiring(CaptureTestBase):
         self.assertEqual(session.day_phase, DayPhase.REVIEWING.value)
 
 
+class _BoomLLM:
+    """chat 始终抛异常的假 LLM。"""
+    def chat(self, *args, **kwargs):
+        raise RuntimeError("LLM 爆炸")
+
+
+class TestCaptureException(CaptureTestBase):
+    """W2：qa_capture 异常记账——LLM 抛异常时静默返回 [] + observer 记账。"""
+
+    def test_qa_capture_exception_logged(self):
+        from tests.test_flows import make_deps
+        deps = make_deps(self.config, self.tmp / "session.json")
+        deps.llm = _BoomLLM()
+        session = self._session_with_transcript()
+        result = run_capture(deps, session)
+        self.assertEqual(result, [])
+        # observer 有 silent_qa_capture 记录
+        log_path = self.tmp / "runtime" / "agent.log"
+        self.assertTrue(log_path.exists())
+        content = log_path.read_text(encoding="utf-8")
+        self.assertIn("silent_qa_capture", content)
+        self.assertIn("LLM 爆炸", content)
+
+
 if __name__ == "__main__":
     unittest.main()

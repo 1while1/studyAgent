@@ -10,6 +10,7 @@ import json
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 from datetime import date
 from pathlib import Path
@@ -608,6 +609,27 @@ class TestLlmConfigContext(Base):
         self.assertTrue(result["ok"], result.get("error"))
         saved = (self.tmp / "settings.toml").read_text(encoding="utf-8")
         self.assertIn("# 模型上限表见下节", saved)  # 注释未被吞
+
+
+class TestConfigReloadProtection(Base):
+    """W2：config_service 热重载保护——坏 toml 保持旧值。"""
+
+    def test_reload_bad_toml_keeps_old(self):
+        # 初始合法配置
+        self.assertEqual(self.config.get("active_workspace"), "t")
+        # 写坏 toml
+        (self.tmp / "settings.toml").write_text("invalid = [[[", encoding="utf-8")
+        result = self.config.reload_if_changed()
+        self.assertFalse(result)
+        # 旧值仍可用
+        self.assertEqual(self.config.get("active_workspace"), "t")
+        # 重写好 toml + 新值（sleep 保证 mtime 变化）
+        time.sleep(0.05)
+        (self.tmp / "settings.toml").write_text(
+            'active_workspace = "new"\n', encoding="utf-8")
+        result = self.config.reload_if_changed()
+        self.assertTrue(result)
+        self.assertEqual(self.config.get("active_workspace"), "new")
 
 
 if __name__ == "__main__":

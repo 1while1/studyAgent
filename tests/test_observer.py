@@ -1,11 +1,13 @@
 """可观测性（services/observer + llm/observed）测试。"""
 
+import io
 import json
 import shutil
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -267,6 +269,25 @@ class TestUsageM9(ObserverTestBase):
         self.assertEqual(bt["warmup"]["calls"], 1)
         self.assertIn("today", s)
         self.assertIn("kpi", s)
+
+
+class TestWriteFailure(ObserverTestBase):
+    """W2：observer._write 首次失败 stderr 一次性 warning。"""
+
+    def test_observer_write_failure_stderr_once(self):
+        # 让 log_path 的父级是一个文件（而非目录），强制 mkdir 失败
+        blocker = self.tmp / "blocker"
+        blocker.write_text("x", encoding="utf-8")
+        self.obs._log_path = blocker / "sub" / "agent.log"
+        self.obs._calib_path = self.obs._log_path.parent / "token_calibration.json"
+
+        stderr_capture = io.StringIO()
+        with patch("sys.stderr", stderr_capture):
+            self.obs.log_tool("test_tool", True, "detail")
+            self.obs.log_tool("test_tool", True, "detail")
+            self.obs.log_tool("test_tool", True, "detail")
+        output = stderr_capture.getvalue()
+        self.assertEqual(output.count("agent.log 写入失败"), 1)
 
 
 if __name__ == "__main__":
