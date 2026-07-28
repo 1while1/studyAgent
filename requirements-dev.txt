@@ -1,0 +1,4 @@
+# 开发环境额外依赖（测试走查 / CI）
+# 主运行时依赖见 requirements.txt
+# 安装：pip install -r requirements-dev.txt
+playwright>=1.40
