@@ -15,14 +15,19 @@ def make_validator(config: ConfigService):
     script: Path = HOOKS_DIR / "validate_study.py"
 
     def validator() -> tuple[bool, str]:
-        spec = importlib.util.spec_from_file_location("validate_study", script)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        ws = config.workspace
-        buf_out, buf_err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
-            rc = module.main(str(config.docx_dir), ws.total_days, ws.replica_name)
-        output = (buf_out.getvalue() + buf_err.getvalue()).strip()
-        return rc == 0, output
+        try:
+            spec = importlib.util.spec_from_file_location("validate_study", script)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            ws = config.workspace
+            buf_out, buf_err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
+                rc = module.main(str(config.docx_dir), ws.total_days, ws.replica_name)
+            output = (buf_out.getvalue() + buf_err.getvalue()).strip()
+            return rc == 0, output
+        except Exception as e:
+            # validator 自身异常（脚本损坏/版本不兼容）视为校验失败：
+            # 走 atomic_persist 既有 not-ok 路径回滚，而非穿透留下半成品
+            return False, f"validator 自身异常：{e}"
 
     return validator

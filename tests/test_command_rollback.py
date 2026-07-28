@@ -144,6 +144,54 @@ class TestCommandRollback(unittest.TestCase):
         before, events, saves = self._run_failing_command(_MidFailLLM())
         self._assert_rolled_back(before, events, saves)
 
+    def test_handler_exception_rolls_back_session_snapshot(self):
+        """handler.run 抛异常：与 LLM 失败分支对称，回滚到指令前快照（W1 修复）。"""
+        from tests.test_flows import make_deps
+        from backend.engine.commands.sync import SyncHandler
+        from backend.engine.session_store import SessionContext, SessionStore
+
+        seeded = SessionContext()
+        seeded.chat_history.append({"role": "user", "content": "指令前历史"})
+        SessionStore(self.session_path).save(seeded)
+
+        deps = make_deps(self.config, self.session_path)
+        orch = ChatOrchestrator(self.config, deps.stages, deps.quiz,
+                                deps.state_store, deps.memory, deps.templates)
+        routes.init(deps, orch)
+
+        saves = []
+        orig_save = deps.session_store.save
+        def _spy(session):
+            saves.append(session.to_dict())
+            return orig_save(session)
+        deps.session_store.save = _spy
+
+        orig_run = SyncHandler.run
+        def _boom(self, deps, session, args, mode):
+            # 先推进并落盘一份脏 session 再抛错：无修复时磁盘内容断言
+            # （after == before）也能独立变红，不只靠 spy 计数
+            session.chat_history.append({"role": "user", "content": "脏写入"})
+            deps.session_store.save(session)
+            raise RuntimeError("模拟 handler 崩溃")
+        SyncHandler.run = _boom
+        try:
+            before = json.loads(self.session_path.read_text(encoding="utf-8"))
+            events = _consume(routes.command(
+                routes.TextIn(text="[同步] 卡壳 回滚测试内容")))
+        finally:
+            SyncHandler.run = orig_run
+
+        errors = [e.get("content", "") for e in events if e.get("type") == "error"]
+        self.assertTrue(any("指令执行失败" in c for c in errors),
+                        f"应报指令执行失败，实际事件: {events}")
+        self.assertEqual(len(saves), 2,
+                         f"应恰为脏 save + 回滚 save 共 2 次，实际 {len(saves)} 次")
+        self.assertEqual(saves[-1], before,
+                         "回滚 save 的内容必须是指令前快照")
+        after = json.loads(self.session_path.read_text(encoding="utf-8"))
+        self.assertEqual(before, after,
+                         "handler 异常后磁盘 session 必须等于指令前快照")
+
     def test_external_persist_not_rolled_back(self):
         """已知边界锁定：handler 的外部落盘（StudyMemory sync 记录）不回滚。"""
         self._run_failing_command(_FailLLM())

@@ -11,14 +11,14 @@
 ```bash
 cd study-web
 python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765   # 启动
-python -m unittest discover -s tests                                  # 全部测试（434 个，stdlib unittest）
+python -m unittest discover -s tests                                  # 全部测试（528 个，stdlib unittest）
 python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name]  # 改学习数据后必跑
-python scripts/ui_walkthrough.py                                      # UI 走查 152 项（需服务运行中；会清测试工作区聊天历史）
+python scripts/ui_walkthrough.py                                      # UI 走查 187 项（需服务运行中；会清测试工作区聊天历史）
 ```
 
 - 无前端构建步骤；前端库本地 vendor 在 `frontend/vendor/`（marked / DOMPurify / highlight.js / mermaid / monaco-editor），**不要用 CDN 替换**；monaco 版本号登记 `frontend/vendor/README.md`（仅 pair 布局动态加载）
-- 测试不依赖第三方包、不调真实 LLM（MockLLM）；`test_flows.py` 在 docx 临时副本上跑全流程
-- **前端功能交付前必须 Playwright 真实点击验证**（用户定的规矩），接口级测试不能替代 UI 走查
+- 测试不引入 requirements.txt 之外的第三方包（psutil 等运行时依赖已 pin 在 requirements.txt）、不调真实 LLM（MockLLM）；`test_flows.py` 在 docx 临时副本上跑全流程
+- **前端功能交付前必须 Playwright 真实点击验证**（用户定的规矩），接口级测试不能替代 UI 走查；Playwright 为开发环境工具（走查脚本 `scripts/ui_walkthrough.py` 专用），不随 requirements.txt 安装
 
 ## 工作区机制（多项目通用化）
 

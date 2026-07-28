@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from .. import __version__
 from ..engine.commands.base import Deps
 from ..engine.hooks.pipeline import HookPipeline
 from ..engine.hooks.validate_hook import make_validator
@@ -110,7 +111,7 @@ def create_app() -> FastAPI:
         _warmup_llm_cache(deps)
         yield
 
-    app = FastAPI(title=deps.config.workspace.title, version="0.2.0", lifespan=lifespan)
+    app = FastAPI(title=deps.config.workspace.title, version=__version__, lifespan=lifespan)
 
     @app.middleware("http")
     async def auth_gate(request, call_next):
