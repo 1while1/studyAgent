@@ -42,7 +42,18 @@ class LearnerService:
     def _load_json(self, path, default):
         try:
             return json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
+        except FileNotFoundError:
+            return default
+        except Exception as e:
+            try:
+                import shutil
+                bak = path.with_suffix(path.suffix + ".corrupt.bak")
+                shutil.copy2(path, bak)
+            except Exception:
+                pass
+            from .observer import get_observer
+            get_observer(self._config).log_tool(
+                "silent_learner_load", False, f"{path.name}: {repr(e)[:200]}")
             return default
 
     def _save(self, files: dict) -> None:

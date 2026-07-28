@@ -1,5 +1,6 @@
 """访问密码门（services/auth_service + api/middleware）测试。"""
 
+import io
 import os
 import shutil
 import sys
@@ -7,6 +8,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -144,6 +146,39 @@ class TestMiddleware(AuthTestBase):
         c = self._client()
         self.assertEqual(c.get("/api/auth/status").status_code, 200)  # 豁免
         self.assertEqual(c.get("/static.js").status_code, 200)  # 非 /api
+
+
+class TestErrorObservability(AuthTestBase):
+    """W2：异常记账与一次性 warning。"""
+
+    def test_verify_password_exception_logged(self):
+        self.auth.set_password("secret123")
+        with patch("bcrypt.checkpw", side_effect=RuntimeError("bcrypt爆炸")):
+            result = self.auth.verify_password("secret123")
+        self.assertFalse(result)
+        # observer 有 auth_verify 记录
+        log_path = self.tmp / "runtime" / "agent.log"
+        self.assertTrue(log_path.exists())
+        content = log_path.read_text(encoding="utf-8")
+        self.assertIn("auth_verify", content)
+        self.assertIn("bcrypt爆炸", content)
+
+    def test_secret_write_failure_stderr_once(self):
+        # 确保 secret 文件不存在，强制走写入路径
+        if self.auth._secret_path.exists():
+            self.auth._secret_path.unlink()
+        with patch("backend.services.auth_service.atomic_write",
+                   side_effect=OSError("磁盘满")):
+            stderr_capture = io.StringIO()
+            with patch("sys.stderr", stderr_capture):
+                secret1 = self.auth._secret()
+                secret2 = self.auth._secret()
+                secret3 = self.auth._secret()
+            self.assertTrue(len(secret1) > 0)
+            self.assertTrue(len(secret2) > 0)
+            self.assertTrue(len(secret3) > 0)
+        output = stderr_capture.getvalue()
+        self.assertEqual(output.count("auth_secret 写入失败"), 1)
 
 
 if __name__ == "__main__":

@@ -114,7 +114,10 @@ class LLMStreamer:
             event = {"type": "tool_read", "kind": "doc", "prefetch": True,
                      "ok": True, "sources": pre["sources"]}
             return injection, event
-        except Exception:
+        except Exception as e:
+            from ..services.observer import get_observer
+            get_observer(deps.config).log_tool(
+                "prefetch", False, repr(e)[:200])
             return None, None  # 预取是增强不是闸门：任何异常静默降级
 
     def stream(self, session, instruction: str, sop_card: str = "",

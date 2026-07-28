@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import threading
 import time
 from contextlib import contextmanager
@@ -86,6 +87,7 @@ class Observer:
         self._today = {"date": time.strftime("%Y-%m-%d"), "calls": 0,
                        "in_tokens": 0, "out_tokens": 0}
         self._seed_today()
+        self._write_warned = threading.Event()
 
     def _seed_today(self) -> None:
         """启动时从日志尾部回填今日累计（重启不归零，顶栏速览可信）。"""
@@ -155,8 +157,11 @@ class Observer:
                     pass
                 with open(self._log_path, "a", encoding="utf-8") as f:
                     f.write(json.dumps(record, ensure_ascii=False) + "\n")
-        except Exception:
-            pass  # 日志绝不影响主流程
+        except Exception as e:
+            if not self._write_warned.is_set():
+                self._write_warned.set()
+                print(f"[observer] agent.log 写入失败: {e}", file=sys.stderr)
+            # 日志绝不影响主流程
 
     # 校准样本下限（估算 token）：Agnes 等网关有每请求固定计数开销
     # （"Say OK" 也报 ~254 prompt），小样本的 实测/估算 比率被固定开销

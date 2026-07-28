@@ -265,5 +265,26 @@ class TestSyncWiring(NotesTestBase):
         self.assertEqual(entries[0]["source"], "Day 2 [同步] 面试话术")
 
 
+class TestCorruptBackup(NotesTestBase):
+    """W2：损坏 JSON 备份 + observer 记账。"""
+
+    def test_notes_load_corrupt_json_backs_up(self):
+        self.svc.path.write_text("not json at all!!!", encoding="utf-8")
+        data = self.svc._load()
+        self.assertEqual(data["notes"], [])
+        bak = self.svc.path.with_suffix(self.svc.path.suffix + ".corrupt.bak")
+        self.assertTrue(bak.exists())
+        self.assertEqual(bak.read_text(encoding="utf-8"), "not json at all!!!")
+
+    def test_notes_load_structure_mismatch_backs_up(self):
+        # 合法 JSON 但结构不符
+        self.svc.path.write_text('{"wrong_key": []}', encoding="utf-8")
+        data = self.svc._load()
+        self.assertEqual(data["notes"], [])
+        bak = self.svc.path.with_suffix(self.svc.path.suffix + ".corrupt.bak")
+        self.assertTrue(bak.exists())
+        self.assertEqual(bak.read_text(encoding="utf-8"), '{"wrong_key": []}')
+
+
 if __name__ == "__main__":
     unittest.main()

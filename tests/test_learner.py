@@ -279,5 +279,22 @@ class TestWritePathWiring(LearnerTestBase):
         self.assertEqual(ev["source_ref"], "Day2-A:quiz")
 
 
+class TestCorruptBackup(LearnerTestBase):
+    """W2：损坏 JSON 备份 + observer 记账。"""
+
+    def test_learner_load_corrupt_json_backs_up(self):
+        # 写坏 learner_model.json
+        model_path = self.svc.model_path
+        model_path.write_text("{bad json!!!", encoding="utf-8")
+        model = self.svc.get_model(current_day=1)
+        # 返回默认结构（concepts 为空列表）
+        self.assertEqual(model["concepts"], [])
+        # .corrupt.bak 存在且内容为原始坏数据
+        bak = model_path.with_suffix(
+            model_path.suffix + ".corrupt.bak")
+        self.assertTrue(bak.exists())
+        self.assertEqual(bak.read_text(encoding="utf-8"), "{bad json!!!")
+
+
 if __name__ == "__main__":
     unittest.main()

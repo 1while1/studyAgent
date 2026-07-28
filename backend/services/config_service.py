@@ -43,6 +43,7 @@ class ConfigService:
         self._mtime: float = 0.0
         self._data: dict = {}
         self.reload()
+        self._last_bad_mtime: float = 0.0
 
     @property
     def path(self) -> Path:
@@ -56,10 +57,22 @@ class ConfigService:
 
     def reload_if_changed(self) -> bool:
         """热重载：mtime 变化才重新解析。返回是否发生了重载。"""
-        mtime = self._path.stat().st_mtime
+        try:
+            mtime = self._path.stat().st_mtime
+        except OSError:
+            return False
         if mtime != self._mtime:
-            self.reload()
-            return True
+            try:
+                self.reload()
+                self._last_bad_mtime = 0.0
+                return True
+            except (OSError, tomllib.TOMLDecodeError) as e:
+                if mtime != self._last_bad_mtime:
+                    self._last_bad_mtime = mtime
+                    import sys
+                    print(f"[config] settings.toml 热重载失败: {e}",
+                          file=sys.stderr)
+                return False
         return False
 
     # ---- 基础取值 ----

@@ -12,6 +12,7 @@ import re
 
 from ..services.config_service import ConfigService
 from ..services.state_store import StateStore
+from ..services.observer import get_observer
 
 # StudyMemory [同步] 疑问条目的固定后缀（sync handler 追加时同款字面量）
 _PENDING_SUFFIX = "（待解答）"
@@ -57,8 +58,9 @@ def _clear_pending_suffix(config: ConfigService, note: dict, day: int,
             BackupService(config).atomic_persist(
                 {memory.path_for(mem_day): "\n".join(out)},
                 validator=validator)
-    except Exception:
-        pass  # 后缀摘除失败不阻断销账
+    except Exception as e:
+        get_observer(config).log_tool(
+            "silent_note_suffix", False, repr(e)[:200])
 
 
 def resolve_note(config: ConfigService, state_store: StateStore, nid: str,
@@ -85,6 +87,7 @@ def resolve_note(config: ConfigService, state_store: StateStore, nid: str,
         try:
             evidence = LearnerService(config).add_evidence(
                 cid, "note_distilled", f"note:{nid}", day)
-        except Exception:
-            pass  # 学习者模型写入失败不阻断销账（铁律 15）
+        except Exception as e:
+            get_observer(config).log_tool(
+                "silent_note_evidence", False, repr(e)[:200])
     return {"ok": True, "note": note, "evidence": evidence}
