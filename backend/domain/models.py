@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
+from typing import Optional
 from .enums import DayPhase
 
 
@@ -45,6 +46,8 @@ class SessionContext:
     # 校准系数（实测 prompt / 本地估算 prompt）：仪表显示 = 当前装配估算 × 系数。
     # 同一会话状态下刷新/重启显示稳定；0 = 从未实测过（纯估算口径）
     ctx_calib: float = 0.0
+    # ---- M1.2 教学行动策略 ----
+    pending_teaching_suggestion: Optional[dict] = None  # 教学建议（to_dict 序列化）
 
     def to_dict(self) -> dict:
         return asdict(self)

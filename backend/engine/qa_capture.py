@@ -13,6 +13,7 @@ from __future__ import annotations
 from ..services.config_service import PROMPTS_DIR
 from ..services.qa_service import QaService, render_entry, validate_capture
 from ..services.observer import get_observer
+from ..domain.error_pattern import extract_error_pattern
 
 
 def run_capture(deps, session) -> list[str]:
@@ -38,7 +39,7 @@ def run_capture(deps, session) -> list[str]:
         prompt = ((PROMPTS_DIR / "qa_capture.md").read_text(encoding="utf-8")
                   .replace("<条数>", str(max_entries))
                   .replace("<转录>", text))
-        entries = _generate(deps, prompt)
+        entries, raw_output = _generate(deps, prompt)
         if not entries:
             return []
         qa = QaService(config)
@@ -53,6 +54,11 @@ def run_capture(deps, session) -> list[str]:
             added.append(e["title"])
         if not added:
             return []
+        # M1.1：尝试从 LLM 原始输出提取错误分类，写入 evidence（静默失败）
+        try:
+            _write_error_patterns(deps, session, raw_output, day)
+        except Exception:
+            pass
         return ["🎙 拷打反喂：已沉淀 "
                 f"{len(added)} 条话术到 InterviewQA.md（话术页可查看/编辑）：\n"
                 + "\n".join(f"- {t}" for t in added)]
@@ -62,18 +68,48 @@ def run_capture(deps, session) -> list[str]:
         return []
 
 
-def _generate(deps, prompt: str) -> list[dict] | None:
-    """LLM 提炼 + 机械校验；失败带原因重试一次，再失败返回 None。"""
+def _generate(deps, prompt: str) -> tuple[list[dict] | None, str]:
+    """LLM 提炼 + 机械校验；失败带原因重试一次，再失败返回 (None, last_output)。"""
     messages = [{"role": "user", "content": prompt}]
+    out = ""
     for _ in range(2):
         out = deps.llm.chat(messages, max_tokens=2000)
         entries = validate_capture(out)
         if entries:
-            return entries
+            return entries, out
         messages = [
             messages[0],
             {"role": "assistant", "content": out},
             {"role": "user", "content":
              "格式校验失败：每条必须含 标签/关联代码/精简版/展开版/追问预案（≥3 组 "
              "Q/A）/产出来源 全部字段。请严格按模板重新输出，只输出条目。"}]
-    return None
+    return None, out
+
+
+def _write_error_patterns(deps, session, raw_output: str, day: int) -> None:
+    """从 LLM 原始输出提取错误分类，写入当前复盘单元的 evidence（静默失败）。"""
+    if not raw_output:
+        return
+    major, minor = extract_error_pattern(raw_output)
+    if major is None:
+        return
+    # 尝试获取当前复盘单元信息并写入 evidence
+    try:
+        from ..services.learner_service import LearnerService
+        from ..domain.learner import concept_id
+        state = deps.state_store.load()
+        review_units = state.get("days", {}).get(
+            str(day), {}).get("units", [])
+        if not review_units:
+            return
+        ls = LearnerService(deps.config)
+        for unit in review_units:
+            cid = concept_id(day, unit["id"])
+            ls.add_evidence(
+                cid, "quiz_wrong",
+                f"Day{day}-{unit['id']}:qa_capture",
+                day,
+                error_pattern_major=major,
+                error_pattern_minor=minor)
+    except Exception:
+        pass

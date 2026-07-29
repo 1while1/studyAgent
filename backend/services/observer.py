@@ -222,6 +222,23 @@ class Observer:
                      "reason": (reason or "")[:200], "ok": ok,
                      "detail": detail[:200]})
 
+    def log_learning_metrics(self, concept_id: str,
+                             indicator_a: float, indicator_b: float,
+                             indicator_c: float, mastery_score: float,
+                             bkt_prob: float = 0.0,
+                             fsrs_interval: int = 0) -> None:
+        """学习效果指标落盘（M1.3）：三指标 + BKT + FSRS 间隔。"""
+        self._write({
+            "kind": "metrics",
+            "concept_id": concept_id,
+            "indicator_a": round(indicator_a, 4),
+            "indicator_b": round(indicator_b, 4),
+            "indicator_c": round(indicator_c, 4),
+            "mastery_score": round(mastery_score, 4),
+            "bkt_prob": round(bkt_prob, 4),
+            "fsrs_interval": fsrs_interval,
+        })
+
     # ---- 聚合 ----
 
     def status(self) -> dict:

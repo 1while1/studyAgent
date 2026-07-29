@@ -201,6 +201,15 @@ def chat(body: TextIn):
             extras = []
         for extra in extras:
             yield sse({"type": "message", "content": extra})
+        # M1.2：教学行动建议（STUDYING 阶段每回合生成）
+        try:
+            suggestion = engine.generate_teaching_suggestion(session)
+            if suggestion:
+                yield sse({"type": "teaching_suggestion", **suggestion})
+        except AttributeError:
+            pass  # engine 无此方法（如 PlannerEngine）则跳过
+        except Exception:
+            pass  # 铁律 13：观测不阻断
         if getattr(session, "pending_qa_capture", False):
             session.pending_qa_capture = False
             try:

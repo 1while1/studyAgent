@@ -3,6 +3,7 @@
 职责：
 - 根据 session 当前阶段生成 LLM 附加指令
 - LLM 回复后处理：quiz 阶段评分提取、阶段流转、回合计数
+- M1.2：教学行动建议生成
 """
 
 from __future__ import annotations
@@ -80,3 +81,26 @@ class ChatOrchestrator(TurnEngine):
             extra.append("（系统：已到回合复习点，请按上方检查自评；"
                          "确认后可说 [下一内容] 正式推进，或继续当前讲解）")
         return extra
+
+    def generate_teaching_suggestion(self, session: SessionContext
+                                     ) -> dict | None:
+        """M1.2：生成教学行动建议并存入 session。
+
+        在 STUDYING 阶段每回合结束时调用，返回建议 dict（可序列化）或 None。
+        异常静默吞掉（铁律 13：观测不阻断）。
+        """
+        if session.day_phase != DayPhase.STUDYING.value:
+            return None
+        try:
+            from .teaching_strategy import suggest_action, build_context_from_session
+            from ..services.learner_service import LearnerService
+            learner_svc = LearnerService(self._config)
+            ctx = build_context_from_session(self._state_store, session, learner_svc)
+            suggestion = suggest_action(ctx)
+            result = suggestion.to_dict()
+            session.pending_teaching_suggestion = result
+            return result
+        except Exception as e:
+            get_observer(self._config).log_tool(
+                "silent_teaching_suggest", False, repr(e)[:200])
+            return None

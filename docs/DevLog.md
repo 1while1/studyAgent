@@ -34,6 +34,14 @@
 3. 服务若在跑（8765）：`python scripts/ui_walkthrough.py` 全量 UI 走查
 4. 前端改动后必须 Playwright 点击走查再交付；提交走分支 + 三件套全绿
 
+## M1 教学大脑 MVP 交付（2026-07-29）
+
+- **M1.1 错误模式库**：`backend/domain/error_pattern.py`（5枚举 + extract_error_pattern）、quiz_engine 评分 prompt 加错误分类、qa_capture 反喂写入、learner_service evidence 扩展。测试 +12。
+- **M1.2 教学行动策略库**：`backend/engine/teaching_strategy.py`（7个行动 + suggest_action 规则引擎 + build_context_from_session）、orchestrator 集成、routes SSE teaching_suggestion 事件。测试 +53。
+- **M1.3 学习效果度量**：`backend/engine/learning_metrics.py`（三指标组合 + BKT + FSRS）、learner_service compute_bkt_mastery/compute_concept_metrics/compute_fsrs_interval、review_scheduler FSRS 增强、observer 落盘。测试 +38。
+- **测试基线**：583 → 686（+103）
+- **调研报告**：`docs/M1_Research_Report.md`（25篇论文 + 5个系统分析，2108行）
+
 ## 当前运行状态
 
 - **Git**：`study-web/.git`（main）→ GitHub <https://github.com/1while1/studyAgent>。密钥 `.env`/`opencode.txt` 与数据 `runtime/`、`workspaces/` 已 gitignore。提交流程：分支 + 三件套验证（单测/validate/走查）全绿才 commit

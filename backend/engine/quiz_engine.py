@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 
 from ..domain.enums import QuizMode
+from ..domain.error_pattern import extract_error_pattern
 from ..llm.base import LLMClient, Message
 from ..services.config_service import ConfigService
 
@@ -55,21 +56,31 @@ class QuizEngine:
         return out
 
     def ask_and_score(self, messages: list[Message], max_retries: int = 1
-                      ) -> tuple[str, float | None]:
-        """请求 LLM 评价并提取【评分：X.X】。无标记则追加提醒重试，仍无 → None（不推进）。"""
+                      ) -> tuple[str, float | None, str | None, str | None]:
+        """请求 LLM 评价并提取【评分：X.X】与错误分类。
+
+        返回 (response_text, score, error_major, error_minor)。
+        无标记则追加提醒重试，仍无 → score=None（不推进）。
+        """
         attempts = max_retries + 1
         history = list(messages)
+        response = ""
         for attempt in range(attempts):
             response = self._llm.chat(history)
             score = self.extract_score(response)
             if score is not None:
-                return response, score
+                major, minor = extract_error_pattern(response)
+                return response, score, major, minor
             history = history + [
                 {"role": "assistant", "content": response},
                 {"role": "user", "content":
-                    "你的回复缺少评分标记。请补充输出终期评分，格式严格为【评分：X.X】（1.0-5.0）。"},
+                    "你的回复缺少评分标记。请补充输出终期评分，格式严格为【评分：X.X】（1.0-5.0）。"
+                    "\n同时请判断错误类型，输出 JSON："
+                    '{"error_major": "CONCEPT_CONFUSION|DETAIL_ERROR|LOGIC_BREAK|CANNOT_APPLY|FORGOTTEN", '
+                    '"error_minor": "具体描述"}。回答完全正确则 error_major 为 null。'},
             ]
-        return response, None
+        major, minor = extract_error_pattern(response)
+        return response, None, major, minor
 
     def is_pass(self, score: float, mode: QuizMode = QuizMode.UNIT_GATE) -> bool:
         return score >= self._pass_score

@@ -21,6 +21,10 @@ from .backup_service import BackupService
 from .config_service import ConfigService
 from ..domain.learner import (compute_mastery, concept_id, is_due,
                               review_interval, topo_order, upstream_closure)
+from ..engine.learning_metrics import (
+    bkt_mastery, fsrs_interval_from_evidence, compute_learning_metrics,
+    LearningMetrics, BKT_DEFAULT_PARAMS,
+)
 
 SCHEMA_VERSION = 1
 
@@ -118,8 +122,13 @@ class LearnerService:
     # ---- evidence 写入 ----
 
     def add_evidence(self, cid: str, etype: str, source_ref: str,
-                     day: int, latency_s: float | None = None) -> bool:
-        """写入证据（source_ref 幂等）。返回是否真正写入。"""
+                     day: int, latency_s: float | None = None,
+                     error_pattern_major: str | None = None,
+                     error_pattern_minor: str | None = None) -> bool:
+        """写入证据（source_ref 幂等）。返回是否真正写入。
+
+        error_pattern_major / error_pattern_minor 为可选错误分类（M1.1）。
+        """
         delta = self._deltas().get(etype)
         if delta is None:
             return False
@@ -133,6 +142,10 @@ class LearnerService:
               "ts": date.today().isoformat()}
         if latency_s is not None:
             ev["latency_s"] = latency_s
+        if error_pattern_major is not None:
+            ev["error_pattern_major"] = error_pattern_major
+        if error_pattern_minor is not None:
+            ev["error_pattern_minor"] = error_pattern_minor
         entry["evidence"].append(ev)
         mastery, _, _ = compute_mastery(
             entry["evidence"], date.today(), self._half_life(), self._cap())
@@ -178,6 +191,89 @@ class LearnerService:
         etype = "code_verify_pass" if passed else "code_verify_fail"
         ref = f"Day{day}-{unit_id}:verify:{date.today().isoformat()}"
         return self.add_evidence(concept_id(day, unit_id), etype, ref, day)
+
+    # ---- BKT / FSRS / 学习效果度量（M1.3） ----
+
+    def _bkt_params(self) -> dict:
+        """从 settings.toml 读取 BKT 参数，缺失则用默认值。"""
+        cfg = self._config.get("bkt_params", {}) or {}
+        return {**BKT_DEFAULT_PARAMS, **cfg}
+
+    def compute_bkt_mastery(self, cid: str) -> float:
+        """计算指定 concept 的 BKT 掌握概率（纯读取，不写盘）。"""
+        model = self._load_json(self.model_path, _empty_model())["concepts"]
+        entry = model.get(cid, {})
+        evidence = entry.get("evidence", [])
+        return bkt_mastery(evidence, self._bkt_params())
+
+    def compute_concept_metrics(self, cid: str, current_day: int) -> LearningMetrics:
+        """计算指定 concept 的三指标学习效果度量。"""
+        concepts = self._load_json(self.concepts_path,
+                                   {"schema_version": SCHEMA_VERSION,
+                                    "concepts": {}})["concepts"]
+        model = self._load_json(self.model_path, _empty_model())["concepts"]
+        entry = model.get(cid, {})
+        evidence = entry.get("evidence", [])
+
+        # 总天数：从 concept id 解析或取 1
+        m = re.match(r"Day(\d+)-", cid)
+        start_day = int(m.group(1)) if m else current_day
+        total_days = max(1, current_day - start_day + 1)
+
+        # quiz 结果
+        quiz_results = [
+            {"date": ev.get("ts", ""), "score": ev.get("delta", 0) * 5}
+            for ev in evidence
+            if ev.get("type") in ("quiz_right", "quiz_wrong", "quiz_score")
+        ]
+        has_code = any(ev.get("type") in ("code_verify_pass", "code_verify_fail")
+                       for ev in evidence)
+        code_pass = any(ev.get("type") == "code_verify_pass" for ev in evidence)
+
+        weights_cfg = self._config.get("metrics_weights", (0.3, 0.3, 0.4))
+        weights = tuple(weights_cfg) if len(weights_cfg) == 3 else (0.3, 0.3, 0.4)
+        return compute_learning_metrics(
+            concept_id=cid,
+            evidence_list=evidence,
+            total_days=total_days,
+            quiz_results=quiz_results,
+            code_verify_pass=code_pass,
+            has_code_concept=has_code,
+            weights=weights,
+        )
+
+    def compute_fsrs_interval(self, cid: str) -> dict:
+        """计算指定 concept 的 FSRS 下次复习间隔。"""
+        model = self._load_json(self.model_path, _empty_model())["concepts"]
+        entry = model.get(cid, {})
+        evidence = entry.get("evidence", [])
+        return fsrs_interval_from_evidence(evidence)
+
+    def get_consecutive_errors(self, concept_id: str) -> list[str]:
+        """获取最近连续错误的错误模式列表（M1.2 教学行动策略输入）。
+
+        从 evidence 列表末尾向前扫描，收集连续 quiz_wrong / quiz_score 负分
+        证据的 error_pattern_major 值。遇到非错误证据即停止。
+
+        Returns:
+            错误模式 major 值列表（时间倒序），无连续错误返回 []
+        """
+        model = self._load_json(self.model_path, _empty_model())["concepts"]
+        entry = model.get(concept_id, {})
+        evidence = entry.get("evidence", [])
+        patterns: list[str] = []
+        # 从末尾向前扫描
+        for ev in reversed(evidence):
+            etype = ev.get("type", "")
+            # quiz_wrong 一定是错误；quiz_score 负分也算错误
+            is_error = (etype == "quiz_wrong"
+                        or (etype == "quiz_score" and ev.get("delta", 0) < 0))
+            if not is_error:
+                break
+            major = ev.get("error_pattern_major")
+            if major:
+                patterns.append(major)
+        return patterns
 
     # ---- 读取 ----
 

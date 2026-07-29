@@ -90,12 +90,12 @@ M0 ──→ M1.1 ──→ M1.2 ──→ M1.3 ──→ M2.1 ──→ M2.2 �
 
 **决策**：两级结构（5 固定大类 + LLM 自由子类）
 
-- [ ] 1.1.1 `backend/domain/error_pattern.py`：5 枚举
+- [x] 1.1.1 `backend/domain/error_pattern.py`：5 枚举
   - `CONCEPT_CONFUSION` / `DETAIL_ERROR` / `LOGIC_BREAK` / `CANNOT_APPLY` / `FORGOTTEN`
-- [ ] 1.1.2 evidence schema 加 `error_pattern_major` + `error_pattern_minor`
-- [ ] 1.1.3 quiz_engine 评分 prompt 加错误分类指令
-- [ ] 1.1.4 qa_capture 反喂时写入错误分类
-- [ ] 1.1.5 `tests/test_error_pattern.py`
+- [x] 1.1.2 evidence schema 加 `error_pattern_major` + `error_pattern_minor`
+- [x] 1.1.3 quiz_engine 评分 prompt 加错误分类指令
+- [x] 1.1.4 qa_capture 反喂时写入错误分类
+- [x] 1.1.5 `tests/test_error_pattern.py`
 
 **验收**：evidence 落盘含新字段；quiz 评分含错误分类；原测试无回归
 
@@ -103,13 +103,13 @@ M0 ──→ M1.1 ──→ M1.2 ──→ M1.3 ──→ M2.1 ──→ M2.2 �
 
 **决策**：推荐 + 用户确认制
 
-- [ ] 1.2.1 `backend/engine/teaching_strategy.py`
-- [ ] 1.2.2 实现 5-7 个教学行动：
+- [x] 1.2.1 `backend/engine/teaching_strategy.py`
+- [x] 1.2.2 实现 5-7 个教学行动：
   - `REVIEW_PREREQ` / `RETELL_CORE` / `VARIANT_QUIZ` / `ADVANCE_NEXT` / `REST` / `CHANGE_ANGLE` / `PRACTICE_PROJECT`
-- [ ] 1.2.3 行动选择逻辑：根据 mastery / error_pattern / 连续错误数 / 上次学习时间
-- [ ] 1.2.4 每回合 orchestrator 调用 `suggest(context)` 生成 `teaching_action_suggestion`
-- [ ] 1.2.5 前端"建议卡片 + 确认/跳过按钮"
-- [ ] 1.2.6 `tests/test_teaching_strategy.py`
+- [x] 1.2.3 行动选择逻辑：根据 mastery / error_pattern / 连续错误数 / 上次学习时间
+- [x] 1.2.4 每回合 orchestrator 调用 `suggest(context)` 生成 `teaching_action_suggestion`
+- [x] 1.2.5 前端“建议卡片 + 确认/跳过按钮”
+- [x] 1.2.6 `tests/test_teaching_strategy.py`
 
 **验收**：每回合生成建议；前端渲染正常；确认/跳过流程跑通
 
@@ -117,20 +117,20 @@ M0 ──→ M1.1 ──→ M1.2 ──→ M1.3 ──→ M2.1 ──→ M2.2 �
 
 **决策**：三指标组合
 
-- [ ] 1.3.1 指标 A：掌握进度（evidence 数 + 天数）
-- [ ] 1.3.2 指标 B：知识保持度（3 天后 quiz 正确率）
-- [ ] 1.3.3 指标 C：迁移应用能力（期末项目题 LLM 评完成度）
-- [ ] 1.3.4 组合公式：`mastery_score = w1*A + w2*B + w3*C`（默认 0.3/0.3/0.4，可配）
-- [ ] 1.3.5 落盘到 agent.log
-- [ ] 1.3.6 掌握度面板展示个人进步曲线
-- [ ] 1.3.7 `tests/test_learning_metrics.py`
+- [x] 1.3.1 指标 A：掌握进度（evidence 数 + 天数）
+- [x] 1.3.2 指标 B：知识保持度（3 天后 quiz 正确率）
+- [x] 1.3.3 指标 C：迁移应用能力（期末项目题 LLM 评完成度）
+- [x] 1.3.4 组合公式：`mastery_score = w1*A + w2*B + w3*C`（默认 0.3/0.3/0.4，可配）
+- [x] 1.3.5 落盘到 agent.log
+- [x] 1.3.6 掌握度面板展示个人进步曲线
+- [x] 1.3.7 `tests/test_learning_metrics.py`
 
 **验收**：三指标计算 + 组合公式 + 落盘 + 面板展示
 
 #### 1.4 mark_wrong 前端按钮
 
-- [ ] 1.4.1 消息气泡添加"这讲错了"按钮
-- [ ] 1.4.2 点击后调用已注册的 mark_wrong 工具
+- [x] 1.4.1 消息气泡添加“这讲错了”按钮
+- [x] 1.4.2 点击后调用已注册的 mark_wrong 工具
 
 **验收**：按钮可点击；证据写入成功
 

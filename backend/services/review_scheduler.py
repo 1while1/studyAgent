@@ -7,7 +7,9 @@
 
 仅当 (当日 - 来源天) ∈ review_intervals（默认 [1,3,7]）时到期；
 总量封顶 review_max_items（默认 6），优先级：回滚 > 卡壳 > 疑问。
-v1 不回写"已复习"标记——间隔到期后条目自然消失。
+v1 不回写“已复习”标记——间隔到期后条目自然消失。
+
+M1.3 增强：FSRS 自适应间隔调度（不影响原有 collect_due 逻辑）。
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from __future__ import annotations
 from .config_service import ConfigService
 from .memory_store import MemoryStore
 from .state_store import StateStore
+from ..engine.learning_metrics import fsrs_schedule, FSRS_DEFAULT_PARAMS
 
 _PRIORITY = {"回滚": 0, "卡壳": 1, "疑问": 2}
 
@@ -55,3 +58,25 @@ def collect_due(config: ConfigService, state_store: StateStore,
 
     items.sort(key=lambda x: (_PRIORITY.get(x["type"], 9), x["from_day"]))
     return items[:max_items]
+
+
+# ---------------------------------------------------------------------------
+# FSRS 自适应调度（M1.3 增强，不影响原 collect_due）
+# ---------------------------------------------------------------------------
+
+def fsrs_review_params(config: ConfigService) -> dict:
+    """从 settings.toml 读取 FSRS 参数，缺失则用默认值。"""
+    cfg = config.get("fsrs_params", {}) or {}
+    return {**FSRS_DEFAULT_PARAMS, **cfg}
+
+
+def fsrs_next_interval(review_history: list[dict],
+                       config: ConfigService) -> dict:
+    """基于复习历史计算下次间隔。
+
+    review_history: [{"date": "2026-01-01", "rating": 3}, ...]
+    rating: 1(忘记) / 2(困难) / 3(良好) / 4(简单)
+    返回 {"interval_days": N, "stability": S, "difficulty": D}
+    """
+    params = fsrs_review_params(config)
+    return fsrs_schedule(review_history, params)
