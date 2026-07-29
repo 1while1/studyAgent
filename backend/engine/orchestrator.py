@@ -87,11 +87,20 @@ class ChatOrchestrator(TurnEngine):
         """M1.2：生成教学行动建议并存入 session。
 
         在 STUDYING 阶段每回合结束时调用，返回建议 dict（可序列化）或 None。
+        冷却机制：上次建议弹出后，等待 cooldown_rounds 回合才再次评估。
         异常静默吞掉（铁律 13：观测不阻断）。
         """
         if session.day_phase != DayPhase.STUDYING.value:
             return None
         try:
+            # 冷却检查：距上次建议弹出是否已过冷却期
+            rounds_since = getattr(session, "teaching_suggest_rounds_since", 0)
+            cooldown = getattr(session, "teaching_suggest_cooldown", 0)
+            if rounds_since < cooldown:
+                session.teaching_suggest_rounds_since = rounds_since + 1
+                return None
+            session.teaching_suggest_rounds_since = 0
+
             from .teaching_strategy import suggest_action, build_context_from_session
             from ..services.learner_service import LearnerService
             learner_svc = LearnerService(self._config)
@@ -100,10 +109,8 @@ class ChatOrchestrator(TurnEngine):
             if suggestion is None:
                 return None
             result = suggestion.to_dict()
-            # 与上次建议对比，相同则不重复弹出
-            prev = getattr(session, "pending_teaching_suggestion", None)
-            if prev and prev.get("action") == result.get("action") and prev.get("concept_id") == result.get("concept_id"):
-                return None
+            # 记录冷却回合数
+            session.teaching_suggest_cooldown = result.get("cooldown_rounds", 3)
             session.pending_teaching_suggestion = result
             return result
         except Exception as e:

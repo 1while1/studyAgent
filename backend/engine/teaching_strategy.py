@@ -35,11 +35,15 @@ class TeachingSuggestion:
 
     安全约束：reason 字段必须为模板拼接（f-string），
     禁止包含 LLM 原始输出或用户输入，防止前端 XSS。
+
+    cooldown_rounds：建议弹出后冷却回合数，期间不再弹出新建议。
+    让教学策略自己决定"多久后再建议"，避免循环弹窗。
     """
     action: TeachingAction
     reason: str               # 仅允许模板拼接，禁止 LLM 原始文本
     confidence: float         # 0.0-1.0
     concept_id: Optional[str] = None  # 关联的概念
+    cooldown_rounds: int = 3  # 冷却回合数（默认 3 回合后再评估）
 
     def to_dict(self) -> dict:
         return {
@@ -47,6 +51,7 @@ class TeachingSuggestion:
             "reason": self.reason,
             "confidence": self.confidence,
             "concept_id": self.concept_id,
+            "cooldown_rounds": self.cooldown_rounds,
         }
 
 
@@ -83,6 +88,7 @@ def suggest_action(context: dict) -> TeachingSuggestion | None:
             action=TeachingAction.REST,
             reason=f"已连续学习 {session_minutes} 分钟，建议休息",
             confidence=0.9,
+            cooldown_rounds=10,  # 休息后 10 回合不再打扰
         )
 
     # 2. 补先修（有先修缺口，不需要 mastery 精确值）
@@ -92,6 +98,7 @@ def suggest_action(context: dict) -> TeachingSuggestion | None:
             reason=f"先修概念 {prereq_concept_id} 存在缺口",
             confidence=0.85,
             concept_id=prereq_concept_id,
+            cooldown_rounds=5,  # 补先修需要时间，5 回合后再评估
         )
 
     # 3. 换角度（错误模式多样，不需要 mastery）
@@ -100,6 +107,7 @@ def suggest_action(context: dict) -> TeachingSuggestion | None:
             action=TeachingAction.CHANGE_ANGLE,
             reason=f"检测到 {len(set(error_patterns))} 种不同错误模式",
             confidence=0.8,
+            cooldown_rounds=3,
         )
 
     # 4. 重讲核心（连续错误，不需要 mastery）
@@ -108,6 +116,7 @@ def suggest_action(context: dict) -> TeachingSuggestion | None:
             action=TeachingAction.RETELL_CORE,
             reason=f"连续 {consecutive_errors} 次错误，需要重新讲解核心概念",
             confidence=0.8,
+            cooldown_rounds=3,  # 重讲后给 3 回合消化
         )
 
     # 以下规则需要 mastery，信息不足时返回 None
@@ -120,6 +129,7 @@ def suggest_action(context: dict) -> TeachingSuggestion | None:
             action=TeachingAction.PRACTICE_PROJECT,
             reason="掌握度中等，建议通过项目实践巩固",
             confidence=0.75,
+            cooldown_rounds=5,  # 项目实践需要时间
         )
 
     # 6. 出变体题（掌握度低-中）
@@ -128,6 +138,7 @@ def suggest_action(context: dict) -> TeachingSuggestion | None:
             action=TeachingAction.VARIANT_QUIZ,
             reason=f"掌握度 {mastery:.0%}，通过变体题加强理解",
             confidence=0.7,
+            cooldown_rounds=2,  # quiz 后快速评估
         )
 
     # 7. 推进下一概念（掌握度高）
@@ -135,6 +146,7 @@ def suggest_action(context: dict) -> TeachingSuggestion | None:
         action=TeachingAction.ADVANCE_NEXT,
         reason=f"掌握度 {mastery:.0%}，可以推进下一概念",
         confidence=0.85,
+        cooldown_rounds=3,  # 推进后给 3 回合适应新概念
     )
 
 
