@@ -297,17 +297,19 @@ async function streamPost(url, text) {
   if (streaming) { showToast("上一条回复生成中，请稍候…"); return; }
   streaming = true;
   setSendEnabled(false);
-  addUserMessage(text);
-  let bubble = addMessage("assistant", "思考中…");
-  bubble.classList.add("thinking");
-  const started = Date.now();
-  const timer = setInterval(() => {
-    if (bubble.classList.contains("thinking")) {
-      bubble.textContent = `思考中… ${Math.floor((Date.now() - started) / 1000)}s（长提示词首包较慢，请稍候）`;
-    }
-  }, 1000);
-  let rawText = "";
+  let bubble = null;
+  let timer = null;
   try {
+    addUserMessage(text);
+    bubble = addMessage("assistant", "思考中…");
+    bubble.classList.add("thinking");
+    const started = Date.now();
+    timer = setInterval(() => {
+      if (bubble.classList.contains("thinking")) {
+        bubble.textContent = `思考中… ${Math.floor((Date.now() - started) / 1000)}s（长提示词首包较慢，请稍候）`;
+      }
+    }, 1000);
+    let rawText = "";
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1068,7 +1070,7 @@ function renderTeachingSuggestion(container, ev) {
         <div style="font-weight:600;margin-bottom:6px">${labels[data.action] || data.action}</div>
         <div style="font-size:0.9em;color:#666;margin-bottom:8px">${escapeHtml(data.reason || '')}</div>
         <div style="display:flex;gap:8px">
-            <button onclick="streamPost('/api/command',{command:'${data.action}'})" style="padding:4px 12px;border-radius:4px;border:none;background:var(--primary,#4a90d9);color:#fff;cursor:pointer">采纳</button>
+            <button onclick="streamPost('/api/command','${data.action}')" style="padding:4px 12px;border-radius:4px;border:none;background:var(--primary,#4a90d9);color:#fff;cursor:pointer">采纳</button>
             <button onclick="this.parentElement.parentElement.style.opacity='0.4'" style="padding:4px 12px;border-radius:4px;border:1px solid #ccc;background:transparent;cursor:pointer">跳过</button>
         </div>
     `;
