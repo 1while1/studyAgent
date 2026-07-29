@@ -13,6 +13,7 @@
 cd studyAgent
 pip install -r requirements.txt
 cp .env.example .env        # 填入 LLM_API_KEY 等（也可启动后在「模型配置」页面填）
+# config/settings.toml 已含默认配置，如需自定义可参考 settings.example.toml
 python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 # 浏览器打开 http://127.0.0.1:8765
 ```

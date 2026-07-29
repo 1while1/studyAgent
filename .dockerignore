@@ -8,3 +8,6 @@ workspaces/
 *.egg-info
 .venv
 node_modules
+.env
+.env.*
+!.env.example

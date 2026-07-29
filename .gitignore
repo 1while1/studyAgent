@@ -20,6 +20,10 @@ config/settings.local.toml
 resources/scaffolds/gradle/.gradle/
 resources/scaffolds/gradle/build/
 
+# ---- 临时工作文件 ----
+w*_diff.txt
+w*_result*.txt
+
 # ---- IDE / 系统 ----
 .idea/
 .vscode/

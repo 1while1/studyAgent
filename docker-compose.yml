@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   studyagent:
     build: .
@@ -7,8 +5,8 @@ services:
     ports:
       - "8765:8765"
     volumes:
-      # 持久化运行时数据
-      - ./runtime:/app/runtime
+      # 持久化运行时数据（named volume 避免权限问题）
+      - runtime_data:/app/runtime
       - ./workspaces:/app/workspaces
       - ./config:/app/config:ro
     env_file:
@@ -19,3 +17,6 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+volumes:
+  runtime_data:
