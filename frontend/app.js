@@ -1069,7 +1069,7 @@ function adoptTeachingSuggestion(action) {
     const mapped = actionCommands.hasOwnProperty(action) ? actionCommands[action] : null;
     // 隐藏卡片
     const card = event.target.closest('.teaching-suggestion-card');
-    if (card) card.style.opacity = '0.4';
+    if (card) card.remove();
     if (mapped === null || mapped === undefined) return;  // REST：仅视觉弱化
     if (mapped.startsWith('[')) {
         // 现有 SOP 指令 → /api/command
@@ -1098,7 +1098,7 @@ function renderTeachingSuggestion(container, ev) {
         <div style="font-size:0.9em;color:#666;margin-bottom:8px">${escapeHtml(data.reason || '')}</div>
         <div style="display:flex;gap:8px">
             <button onclick="adoptTeachingSuggestion('${data.action}')" style="padding:4px 12px;border-radius:4px;border:none;background:var(--primary,#4a90d9);color:#fff;cursor:pointer">采纳</button>
-            <button onclick="this.parentElement.parentElement.style.opacity='0.4'" style="padding:4px 12px;border-radius:4px;border:1px solid #ccc;background:transparent;cursor:pointer">跳过</button>
+            <button onclick="this.parentElement.parentElement.remove()" style="padding:4px 12px;border-radius:4px;border:1px solid #ccc;background:transparent;cursor:pointer">跳过</button>
         </div>
     `;
     container.appendChild(card);
