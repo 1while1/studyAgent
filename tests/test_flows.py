@@ -35,6 +35,192 @@ from backend.services.study_plan import StudyPlanStore
 from backend.services.template_service import TemplateService
 
 
+def build_minimal_docx(docx_dir: Path):
+    """构建最小 docx 夹具（自建临时数据，消除对外部 docx/ 目录的依赖）。
+
+    包含：Day 1 五单元全 completed + Day 2 三单元（A=in_progress, B/C=not_started）。
+    """
+    docx_dir.mkdir(parents=True, exist_ok=True)
+    (docx_dir / "StudyMemory").mkdir(exist_ok=True)
+    (docx_dir / "StudyReview").mkdir(exist_ok=True)
+
+    # StudyState.json
+    (docx_dir / "StudyState.json").write_text(json.dumps({
+        "current_day": 2,
+        "overall_completion_percentage": 4,
+        "last_active_date": "2026-05-24",
+        "days": {
+            "1": {
+                "date": "2026-05-24",
+                "units": [
+                    {"id": "A", "title": "大模型核心概念（参数量、Token、上下文窗口、Temperature、MoE）",
+                     "status": "completed", "rating": 3.5},
+                    {"id": "B", "title": "Chat模型 vs 基座模型、量化、深度思考",
+                     "status": "completed", "rating": 4},
+                    {"id": "C", "title": "OpenAI接口协议详解",
+                     "status": "completed", "rating": 3.5},
+                    {"id": "D", "title": "非流式调用实战",
+                     "status": "completed", "rating": 4},
+                    {"id": "E", "title": "流式调用与SSE协议",
+                     "status": "completed", "rating": 4.5},
+                ],
+                "sync_records": {"mastered": [], "stuck": [], "questions": [], "code_completed": []},
+                "review_completed": True,
+                "review_score": 4.0,
+            },
+            "2": {
+                "date": "2026-05-25",
+                "units": [
+                    {"id": "A", "title": "Prompt 工程入门与核心技巧",
+                     "status": "in_progress", "rating": 0},
+                    {"id": "B", "title": "RAG 概念扫盲与流程全貌",
+                     "status": "not_started", "rating": 0},
+                    {"id": "C", "title": "ChatClient 接口设计与多渠道对齐",
+                     "status": "not_started", "rating": 0},
+                ],
+                "sync_records": {"mastered": [], "stuck": [], "questions": [], "code_completed": []},
+                "review_completed": False,
+                "review_score": 0.0,
+            },
+        }
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # Study.md
+    (docx_dir / "Study.md").write_text("\n".join([
+        "# Ragent AI 面试冲刺学习计划",
+        "",
+        "## 总进度",
+        "- 当前天数：Day 2 / Day 25",
+        "- 整体完成度：4%",
+        "",
+        "## Day 1 | 2026-05-24（周日） ✅",
+        "**目标**：认识大模型 + API调用 + 项目初始化",
+        "1. [x] 单元A：大模型核心概念（预计40min）",
+        "2. [x] 单元B：Chat模型 vs 基座模型（预计30min）",
+        "3. [x] 单元C：OpenAI接口协议详解（预计30min）",
+        "4. [x] 单元D：非流式调用实战（预计25min）",
+        "5. [x] 单元E：流式调用与SSE协议（预计25min）",
+        "**编码目标**：ragent-replica 项目骨架",
+        "**面试话术目标**：产出话术",
+        "## Day 2 | 2026-05-25（周一）",
+        "**目标**：Prompt 工程 + RAG 基础",
+        "1. [ ] 单元A：Prompt 工程入门与核心技巧（预计 40min）",
+        "2. [ ] 单元B：RAG 概念扫盲与流程全貌（预计 40min）",
+        "3. [ ] 单元C：ChatClient 接口设计与多渠道对齐（预计 40min）",
+        "**编码目标**：ragent-replica 完成 ChatClient 接口",
+        "**面试话术目标**：产出话术",
+        "- Day 3 | 文档解析 + 分块 + 元数据",
+        "  - 文档：基础扫盲 5-7",
+        "  - 编码：TikaDocumentParser + ChunkingStrategy",
+        ""]), encoding="utf-8")
+
+    # StudyMemory/Day_01.md
+    (docx_dir / "StudyMemory" / "Day_01.md").write_text("\n".join([
+        "## 2026-05-24",
+        "",
+        "### 今日导学单元",
+        "- [x] 单元A：大模型核心概念（参数量、Token、上下文窗口、Temperature、MoE）",
+        "- [x] 单元B：Chat模型 vs 基座模型、量化、深度思考",
+        "- [x] 单元C：OpenAI接口协议详解",
+        "- [x] 单元D：非流式调用实战",
+        "- [x] 单元E：流式调用与SSE协议",
+        "",
+        "### [同步] 记录",
+        "- 已掌握：",
+        "- 卡壳：",
+        "- 疑问：",
+        "- 代码完成：",
+        "",
+        "### 掌握度评分（1-5分）",
+        "- 单元A：3.5分",
+        "- 单元B：4分",
+        "- 单元C：3.5分",
+        "- 单元D：4分",
+        "- 单元E：4.5分",
+        "",
+        "### ragent-replica 进度",
+        "- 已完成模块：",
+        "- 今日新增代码：",
+        "- 待完成：",
+        "",
+        "### AI 拷打评语",
+        "- 强项：",
+        "- 风险点：",
+        "- 建议：",
+        ""]), encoding="utf-8")
+
+    # StudyMemory/Day_02.md
+    (docx_dir / "StudyMemory" / "Day_02.md").write_text("\n".join([
+        "## 2026-05-25",
+        "",
+        "### 今日导学单元",
+        "- [ ] 单元A：Prompt 工程入门与核心技巧",
+        "- [ ] 单元B：RAG 概念扫盲与流程全貌",
+        "- [ ] 单元C：ChatClient 接口设计与多渠道对齐",
+        "",
+        "### [同步] 记录",
+        "- 已掌握：",
+        "- 卡壳：",
+        "- 疑问：",
+        "- 代码完成：",
+        "",
+        "### 掌握度评分（1-5分）",
+        "- 单元A：",
+        "- 单元B：",
+        "- 单元C：",
+        "",
+        "### ragent-replica 进度",
+        "- 已完成模块：",
+        "- 今日新增代码：",
+        "- 待完成：",
+        "",
+        "### AI 拷打评语",
+        "- 强项：",
+        "- 风险点：",
+        "- 建议：",
+        ""]), encoding="utf-8")
+
+    # concepts.json
+    (docx_dir / "concepts.json").write_text(json.dumps({
+        "schema_version": 1,
+        "concepts": {
+            "Day1-A": {"id": "Day1-A", "title": "大模型核心概念",
+                       "prerequisites": [], "materials": [], "code_refs": []},
+            "Day1-B": {"id": "Day1-B", "title": "Chat模型 vs 基座模型",
+                       "prerequisites": ["Day1-A"], "materials": [], "code_refs": []},
+            "Day1-C": {"id": "Day1-C", "title": "OpenAI接口协议详解",
+                       "prerequisites": ["Day1-B"], "materials": [], "code_refs": []},
+            "Day1-D": {"id": "Day1-D", "title": "非流式调用实战",
+                       "prerequisites": ["Day1-C"], "materials": [], "code_refs": []},
+            "Day1-E": {"id": "Day1-E", "title": "流式调用与SSE协议",
+                       "prerequisites": ["Day1-D"], "materials": [], "code_refs": []},
+            "Day2-A": {"id": "Day2-A", "title": "Prompt 工程入门与核心技巧",
+                       "prerequisites": ["Day1-E", "Day1-D"], "materials": [], "code_refs": []},
+            "Day2-B": {"id": "Day2-B", "title": "RAG 概念扫盲与流程全貌",
+                       "prerequisites": ["Day2-A"], "materials": [], "code_refs": []},
+            "Day2-C": {"id": "Day2-C", "title": "ChatClient 接口设计与多渠道对齐",
+                       "prerequisites": ["Day2-B"], "materials": [], "code_refs": []},
+        }
+    }, ensure_ascii=False), encoding="utf-8")
+
+    # Project.md
+    (docx_dir / "Project.md").write_text(
+        "# Ragent AI 项目架构文档\n\n"
+        "## 模块结构\n"
+        "x\n", encoding="utf-8")
+
+    # InterviewQA.md
+    (docx_dir / "InterviewQA.md").write_text(
+        "# Ragent AI 面试话术库\n\n"
+        "## 已累积话术\n\n（学习开始后自动累积）\n", encoding="utf-8")
+
+    # hooks/validate_study.py（从 resources 复制到夹具，供 _validate_tmp 使用）
+    hooks_dir = docx_dir / "hooks"
+    hooks_dir.mkdir(exist_ok=True)
+    shutil.copy2(WEB_ROOT / "resources" / "hooks" / "validate_study.py",
+                 hooks_dir / "validate_study.py")
+
+
 def make_deps(config: ConfigService, session_path: Path) -> Deps:
     state_store = StateStore(config)
     memory = MemoryStore(config)
@@ -54,7 +240,7 @@ class TestFlows(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = Path(tempfile.mkdtemp(prefix="studyweb_test_"))
-        shutil.copytree(WEB_ROOT.parent / "docx", cls.tmp / "docx")
+        build_minimal_docx(cls.tmp / "docx")
         settings_src = (WEB_ROOT / "config" / "settings.toml").read_text(encoding="utf-8")
         settings = settings_src.replace(
             'docx_dir = "../docx"',
@@ -77,7 +263,8 @@ class TestFlows(unittest.TestCase):
 
     def _validate_tmp(self):
         rc = subprocess.run(
-            [sys.executable, str(self.tmp / "docx" / "hooks" / "validate_study.py")],
+            [sys.executable, str(self.tmp / "docx" / "hooks" / "validate_study.py"),
+             str(self.tmp / "docx"), "25", "ragent-replica"],
             capture_output=True, text=True)
         self.assertEqual(rc.returncode, 0, f"validate 失败: {rc.stderr}")
 

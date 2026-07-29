@@ -15,6 +15,7 @@ from backend.engine.quiz_engine import QuizEngine
 from backend.llm.mock import MockLLM
 from backend.services.config_service import ConfigService, WEB_ROOT
 from backend.engine.commands.base import Deps
+from tests.test_flows import build_minimal_docx
 from backend.engine.hooks.pipeline import HookPipeline
 from backend.engine.prompt_builder import PromptBuilder
 from backend.engine.session_store import SessionStore
@@ -47,7 +48,7 @@ class TestScoreRegex(unittest.TestCase):
 class TestRestartAndAlias(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="studyweb_fix_"))
-        shutil.copytree(WEB_ROOT.parent / "docx", self.tmp / "docx")
+        build_minimal_docx(self.tmp / "docx")
         (self.tmp / "ragent原项目").mkdir()  # step2 仓库校验依赖该目录存在
         settings = (WEB_ROOT / "config" / "settings.toml").read_text(encoding="utf-8")
         settings = settings.replace(

@@ -18,12 +18,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.services.config_service import ConfigService, WEB_ROOT
 from backend.engine.commands.start_day import StartDayHandler
 from tests.datefix import pin_today
-from tests.test_flows import make_deps
+from tests.test_flows import make_deps, build_minimal_docx
 
 
 def _make_tmp_docx(prefix: str):
     tmp = Path(tempfile.mkdtemp(prefix=prefix))
-    shutil.copytree(WEB_ROOT.parent / "docx", tmp / "docx")
+    build_minimal_docx(tmp / "docx")
     settings_src = (WEB_ROOT / "config" / "settings.toml") \
         .read_text(encoding="utf-8")
     settings = settings_src.replace(

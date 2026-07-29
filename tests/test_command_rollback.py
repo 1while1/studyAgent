@@ -32,6 +32,7 @@ from backend.api import routes
 from backend.engine.orchestrator import ChatOrchestrator
 from backend.llm.base import LLMClient
 from backend.services.config_service import ConfigService
+from tests.test_flows import build_minimal_docx
 
 WEB_ROOT = Path(__file__).resolve().parents[1]
 
@@ -69,7 +70,7 @@ class TestCommandRollback(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = Path(tempfile.mkdtemp(prefix="cmdrollback_"))
-        shutil.copytree(WEB_ROOT.parent / "docx", cls.tmp / "docx")
+        build_minimal_docx(cls.tmp / "docx")
         settings_src = (WEB_ROOT / "config" / "settings.toml").read_text(encoding="utf-8")
         settings = settings_src.replace(
             'docx_dir = "../docx"',
