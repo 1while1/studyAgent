@@ -1,4 +1,4 @@
-# studyAgent 架构设计 v3（封板版）—— 企业级学习 Agent
+# studyAgent 架构设计 v3（封板版）—— 可扩展的代码学习 Agent
 
 > 状态：**封板**（2026-07-22，v3 吸收三视角评审 + 用户拍板）
 > 前置共识：单独 agent（不并入 Ragent）；技术栈留 Python；学习者模型为核心；study/code 双模式；企业级不是玩具。
@@ -6,7 +6,7 @@
 
 ## 1. 定位与北极星
 
-**一句话**：studyAgent 是以「学习者模型」为核心的企业级学习 Agent，覆盖 **学（study 模式）** 与 **练（code 模式）** 两条一等路径，为任意编程项目提供有根据、有记忆、可验证的个性化教学与实战训练。
+**一句话**：studyAgent 是以「学习者模型」为核心的可扩展的代码学习 Agent，覆盖 **学（study 模式）** 与 **练（code 模式）** 两条一等路径，为任意编程项目提供有根据、有记忆、可验证的个性化教学与实战训练。
 
 **两大一等模式**：
 | | study 模式 | code 模式 |
@@ -20,7 +20,7 @@
 2. **有记忆**：每个教学决策都能查到学习者历史证据
 3. **有闭环**：教 → 练 → **讲** → 验，掌握度是证据累积而非 LLM 自评
 
-**企业级含义（NFR）**：
+**可扩展含义（NFR）**：
 - 代码结构正规：agent 生成的工程一律走标准脚手架，禁止聊天框散装片段当交付物
 - 可观测：LLM/工具/决策全量结构化日志，token 计量
 - 可靠：状态落盘原子化、失败可恢复、降级有阶梯
@@ -141,6 +141,7 @@
 - **平台内编写**：Monaco 编辑器（`frontend/vendor/monaco/` 固定版本号入 vendor/README，**仅 code 布局动态 import**，workers 指 vendor）；写路径规则 14 + 白名单（仅 demo/replica 目录，原项目永远只读）
 - **构建验证**：现有 code_runner/`[验证代码]` 复用，结果回喂并写 evidence
 - **process_mgr（进程管理）**：引入 **psutil**（杀进程树 + `net_connections` 端口探测）；启动用 `CREATE_NEW_PROCESS_GROUP`；注册表 `runtime/processes.json`（cmdline 哈希校验 PID 复用）；日志独立线程读 stdout 落 `runtime/logs/<id>.log`，SSE 只转 tail；验收含"真实杀树"（python -m http.server 验证）
+> ⚠️ 实现偏离：实际已改为进程 stdout 直接重定向到日志文件（抗服务重启）。见铁律 17。
 - **模式与布局（双轴钉死）**：`mode`(study|code) 是会话级 agent 状态（SessionContext.mode，钉住层/预算/工具权限不同）；`layout`(tutor|pair) 是展示层偏好；code 模式默认 pair 布局但用户可覆盖；UI 文案统一 study/code，tutor/pair 降级为内部 CSS 类名
 - **边界**：不做断点/变量查看等 debug 功能；不做热部署
 
@@ -204,6 +205,7 @@
 ## 11. 访问控制与多用户演进路径
 
 - **v1 落地：单用户访问密码门**——密码 bcrypt 哈希存 settings（不入库不入 git），session token（签名 cookie，7 天）鉴权中间件保护全部 API；登录页；走查补登录流程
+> ⚠️ 实现偏离：实际已改为 `.env AUTH_PASSWORD_HASH`（settings.toml 是 git 跟踪文件，不可存哈希）。见铁律 14。
 - **多用户预留（仅架构约定，不实施）**：所有新存储键空间预留 `user` 维度插入点（路径形如 `users/<uid>/workspaces/<slug>/`，v1 省略层级即默认单用户）；鉴权中间件按"解析 → 注入 user 上下文"设计，v1 返回固定单用户，未来替换为多用户账号体系不改业务代码；租户键 = (user, workspace slug)
 
 ## 12. 安全边界

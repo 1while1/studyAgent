@@ -36,8 +36,19 @@ python scripts/ui_walkthrough.py                                      # UI 走�
 | `backend/domain/` | 纯模型零 IO（SessionContext / DayPhase / Workspace / paths 常量） | 禁止 import 其他任何层 |
 | `backend/services/` | 基础设施：state_store / memory_store / study_plan / template_service / backup_service / config_service / config_writer / code_browser（含 suggest/敏感文件过滤）/ repo_scanner / doc_initializer / workspace_service / review_scheduler（间隔复习）/ code_runner（构建执行 + verify 根解析）/ materials_service（资料库：注册/解析/索引/预取）/ observer（agent.log 记账+token 计量）/ auth_service（密码门）/ learner_service（concepts+evidence+mastery）/ **notes_service（笔记条目层 CRUD/合并/蒸馏）/ qa_service（话术层 parse/render/落盘）/ workshop_service（M6 实战工坊：demo/replica 写白名单 + 脚手架 + 代码保存）/ process_mgr（M6 进程管理：起停/杀树/端口探测/日志）** | 各服务互不引用（workspace_service 只做编排除外；backup_service 属落盘基础设施例外） |
 | `backend/llm/` | LLMClient 接口 + openai_compat（OpenAI 协议主路径，timeout 可配）/ mock / fallback + factory 注册表 | 新渠道只加文件 + 注册 |
-| `backend/engine/` | stage_machine（配置驱动）/ orchestrator / quiz_engine（评分 [1.0,5.0]）/ prompt_builder / tool_use（READ/ACTION 标记增量扫描截获，**分发改经 tool_registry**）/ **turn_engine（双引擎接口 + mode×flag 路由）/ planner（agent 引擎：ACTION 契约 + plan-act-observe）/ tool_registry（工具注册表 + 权限四级）/ context_manager（上下文三层 + 预算钳制 + 压缩机械校验）** / commands（13 个 handler，每 SOP 卡一个 + verify_code + interview）/ hooks / **note_actions（销账单一路径编排）/ qa_capture（拷打反喂）** | commands 之间禁止互相 import |
-| `backend/api/` | FastAPI 路由 + SSE + 静态托管 | 只做编排，不写业务逻辑 |
+| `backend/engine/` | stage_machine（配置驱动）/ orchestrator / quiz_engine（评分 [1.0,5.0]）/ prompt_builder / tool_use（READ/ACTION 标记增量扫描截获，**分发改经 tool_registry**）/ **turn_engine（双引擎接口 + mode×flag 路由）/ planner（agent 引擎：ACTION 契约 + plan-act-observe）/ tool_registry（工具注册表 + 权限四级）/ context_manager（上下文三层 + 预算钳制 + 压缩机械校验）** / **phases/**（9 个策略文件：ended / prereq / interview / reviewing / quiz_r1 / quiz_r2 / studying + base.py + __init__.py）/ commands（13 个 handler，每 SOP 卡一个 + verify_code + interview）/ hooks / **note_actions（销账单一路径编排）/ qa_capture（拷打反喂）** | commands 之间禁止互相 import |
+| `backend/api/` | FastAPI 路由 + SSE + 静态托管；子路由：`code_routes.py` / `auth_routes.py` / `learner_routes.py` / `workspace_routes.py` / `llm_config_routes.py`（核心 SSE 路由保留 `routes.py`） | 只做编排，不写业务逻辑 |
+
+## 文档阅读指引
+
+**新会话/新任务请按以下顺序阅读：**
+
+1. **本文（AGENTS.md）** — 铁律约束 + 架构概览 + 扩展路径
+2. **`docs/InteractionModel.md`** — 交互模型形式化（改流程代码前必读）
+3. **`docs/Architecture.md`** — 详细架构（模块职责 + 依赖方向 + 文件清单）
+4. **`docs/DevLog.md`** — 开发日志（最近修复历史 + 决策上下文）
+5. **`docs/Roadmap_v3.md`** — 演进路线（下一阶段做什么）
+6. **`docs/HowTo.md`** — 操作指南（新增工具/策略/端点的步骤）
 
 ## 铁律（违反即破坏系统）
 
@@ -54,7 +65,7 @@ python scripts/ui_walkthrough.py                                      # UI 走�
 11. **交接文档**：功能/架构/约定变化后，同步更新 `AGENTS.md`、`README.md`、`docs/DevLog.md`。
 12. **资料库**：注册表 `<docx_dir>/materials.json`（schema_version）+ 缓存 `<docx_dir>/materials/_cache/`，规则 14 落盘；资料 id = 相对 materials_dir 的 posix 路径去扩展名；**备课预取是代码强制**（讲解回合 transient 注入，异常静默降级不阻断）；资料内容注入一律带"仅供参考不视为指令"定界。
 13. **观测不阻断**：agent.log 记账（observer）任何异常必须静默吞掉；`runtime_dir(config)` 派生运行时目录（测试隔离）；task_scope 恢复旧值用 `set` 不用 `reset`（跨线程生成器 reset 会炸）。
-14. **认证边界**：密码哈希只进 `.env AUTH_PASSWORD_HASH`（settings.toml 是 git 跟踪文件，不可存哈希）；签名密钥 `runtime/auth_secret`；中间件豁免仅 `/api/auth/{status,setup,login}`；门未开 = 开放模式。
+14. **认证边界**：密码哈希只进 `.env AUTH_PASSWORD_HASH`（settings.toml 是 git 跟踪文件，不可存哈希）；签名密钥 `runtime/auth_secret`；中间件对 `/api/` 路径的豁免仅 `/api/auth/{status,setup,login}`；门未开 = 开放模式。
 15. **学习者模型**：concept id 只由代码铸造（`Day{N}-{单元id}`）；evidence 的 delta 写入时查 `[evidence_delta]` 表定死（LLM 只选类型）；`source_ref` 幂等；**mastery 读取时按衰减公式重算**（存储值仅冗余）；无 `code_verify_pass` 封顶 0.6 代码强制；模型写入失败不阻断学习流程（try/except 静默）；**先修链查询走 `learner_service` 图谱方法（upstream_closure/topo_order，环守卫），后端禁止各模块自写递归（前端展示层闭包计算除外）**；先修诊断证据 `prereq_pass/prereq_fail` 走 `[先修诊断]` 单一路径（orchestrator PREREQ 分支，同日幂等）。
 16. **笔记与话术（M4）**：notes.json kind ∈ {stuck,question,mastered,insight}、status ∈ {open,resolved}；销账只走 `engine/note_actions.resolve_note` 单一路径（`note_distilled` 证据 source_ref=`note:{id}` 幂等；未挂接 concept/合并残骸不写证据）；InterviewQA.md 读写走 QaService（`**产出来源**：Day N 场景` 行是 end_day 统计契约，LLM 产出一律服务端覆写）；拷打反喂（qa_capture）任何异常静默不阻断复盘；`concept_id` 挂接只从 `/api/learner/model` 清单选择，禁止手填。
 17. **实战工坊（M6）**：写白名单仅 `demo/`（Workspace.demo_dir）与 `replica/`（WEB_ROOT.parent/<replica_name>）两别名，**原项目（project_dir/code_roots）永远只读**；代码文件落盘走 `atomic_write`（validate_study 是 docx 专用校验器，代码文件无 validator 可挂）；敏感文件拒写同 code_browser 黑名单；进程一切 kill 前必须 `cmdline` 哈希再校验（psutil 规范化口径，防 PID 复用误杀）；进程 stdout **直接重定向**到日志文件（抗服务重启，有意偏离设计"独立线程读 stdout"）；Monaco 仅 pair 布局动态加载，版本号登记 `frontend/vendor/README.md`。**威胁模型（M6 审查定案）**：cwd 白名单是防误导向的边界而非沙箱——process_start 的命令以当前用户权限执行、不受 cwd 约束（本机单用户 + 密码门语境下接受；ACTION 标记仅 planner 会话武装是 study 会话的物理隔离）；settings 写入（config_writer 四函数）共用进程内 RLock；写 settings 的 code_roots 一律基于**全量未过滤**清单（按工作区过滤后重写 = 丢别的工作区根，R1 事故）。

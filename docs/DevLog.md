@@ -27,6 +27,13 @@
 > 前次：2026-07-24（**完成度验收 G10 交付**——可观测与安全 6 项 ✅ 无修复批：_accept_g10.py e2e 验证双客户端并发（流程锁串行化、历史不丢不串、前端渲染一致）；10.1 agent.log 手动核查 + plan/prefetch 记账单测打勾、10.5 三道拒读单测打勾）
 > 前次：2026-07-24（**完成度验收 G9 交付**——上下文与模型渠道 6 项 ✅ 无修复批：_accept_g9.py e2e 验证 fallback（openai_compat 401→mock 接管）与 warmup 开关（false 无预热/true 重启出现 task=warmup 行）；9.1/9.2 test_context_manager、9.3/9.4 走查 6 打勾；留档：mock 按设计不记账，fallback 双记录仅真实备用渠道成立）
 
+## 上下文恢复指引（新会话）
+
+1. 读本文件 + `AGENTS.md` + `docs/InteractionModel.md`；接开发任务读 `docs/AgentDesign.md`（v3 封板，M1-M7 分期与全部硬规）
+2. 跑 `python -m unittest discover -s tests` 与 `python resources/hooks/validate_study.py ../docx 25 ragent-replica` 确认基线
+3. 服务若在跑（8765）：`python scripts/ui_walkthrough.py` 全量 UI 走查
+4. 前端改动后必须 Playwright 点击走查再交付；提交走分支 + 三件套全绿
+
 ## 当前运行状态
 
 - **Git**：`study-web/.git`（main）→ GitHub <https://github.com/1while1/studyAgent>。密钥 `.env`/`opencode.txt` 与数据 `runtime/`、`workspaces/` 已 gitignore。提交流程：分支 + 三件套验证（单测/validate/走查）全绿才 commit
@@ -41,9 +48,9 @@
 
 ## 下一步
 
-v1 Roadmap 与 v3 分期（M1 资料库 → M2 可观测 → M3 学习者模型 → M4 笔记管理 → M5a 工具骨架 → M5b 上下文+路由 → M5c planner → M6 实战工坊 → **M7 课程本体 ✅**）全部收官；架构审计修复批 ✅、UI 全面优化 ✅、全功能浏览器测试（152 项）✅。
+v1 Roadmap 与 v3 分期（M1 资料库 → M2 可观测 → M3 学习者模型 → M4 笔记管理 → M5a 工具骨架 → M5b 上下文+路由 → M5c planner → M6 实战工坊 → **M7 课程本体 ✅**）全部收官；架构审计修复批 ✅、UI 全面优化 ✅、全功能浏览器测试（187 项）✅。
 
-**当前阶段 = 完成度验收**：G1-G12 全部 ✅（G2/G3/G6/G12 含修复批）。收尾：清理 scripts/_accept_*.py 临时验收脚本 + 验收记录节填写 + 最终三件套。按 `docs/AcceptanceChecklist.md` 逐项检查（实测打勾，发现问题开修复批：分支 + 三件套全绿 + 双子审查 + 合并 push）。mark_wrong 工具（§9）与「command 失败外部落盘不回滚」修复批仍留档另立。
+**当前阶段 = 完成度验收**：G1-G12 全部 ✅（G2/G3/G6/G12 含修复批）。收尾：清理 scripts/_accept_*.py 临时验收脚本 + 验收记录节填写 + 最终三件套。按 `docs/AcceptanceChecklist.md` 逐项检查（实测打勾，发现问题开修复批：分支 + 三件套全绿 + 双子审查 + 合并 push）。mark_wrong 工具已在改进 2 中实现（feat/mark-wrong）。
 
 ## G12 验收修复批（2026-07-24，fix/g12-command-rollback-test，双子审查收编）
 
@@ -353,7 +360,7 @@ G2a 复验 20/20 全过；走查 155 项全绿（+2 断言）。
 
 | 模块 | 说明 |
 |------|------|
-| 学习流程 | 10 指令、五步状态机、2 回合追问、评分标记落盘、FAIL-FAST 双选项、天数递进 |
+| 学习流程 | 13 指令、五步状态机、2 回合追问、评分标记落盘、FAIL-FAST 双选项、天数递进 |
 | 聊天 | SSE 流式、Markdown 渲染（节流 200ms 最新值渲染 + rawText 累积器）、代码高亮+复制、思考中指示、历史回填 |
 | 双模式 | **知识学习**（tutor：暖纸书房，米白+赭石+衬线标题）/ **源码学习**（pair：IDE 深色 #1e1e1e + #0e86d8）。顶栏分段控件切换，模式绑定主题（无独立深浅切换） |
 | 布局三区 | 侧栏=纯学习仪表盘（进度/今日单元/同步速览/会话状态一行）；顶栏=模式切换+工作区下拉+工具图标；输入框上方=指令胶囊条 |
@@ -467,14 +474,7 @@ G2a 复验 20/20 全过；走查 155 项全绿（+2 断言）。
 - opencode 解封后自动回主渠道，无需操作
 - Study.md 需当日 `## Day N |` 细化小节才能 start_day（Day 3+ 还是路线图格式，需 CLI 助手先细化）
 - 复盘题量靠 prompt 约束；编码启动模板由 LLM 填充；仓库校验简化
-- v1 未做：模拟面试模式、论文联网检索、多用户、桌面打包
-
-## 上下文恢复指引（新会话）
-
-1. 读本文件 + `AGENTS.md` + `docs/InteractionModel.md`；接开发任务读 `docs/AgentDesign.md`（v3 封板，M1-M7 分期与全部硬规）
-2. 跑 `python -m unittest discover -s tests` 与 `python resources/hooks/validate_study.py ../docx 25 ragent-replica` 确认基线
-3. 服务若在跑（8765）：`python scripts/ui_walkthrough.py` 全量 UI 走查
-4. 前端改动后必须 Playwright 点击走查再交付；提交走分支 + 三件套全绿
+- v1 未做：论文联网检索、多用户、桌面打包
 
 
 ## 审计留档（2026-07-23 架构审计 🔵 归集，不阻塞）
