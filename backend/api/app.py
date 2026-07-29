@@ -128,6 +128,19 @@ def create_app() -> FastAPI:
         return response
 
     app.include_router(router=routes.router)
+
+    # 功能域子路由
+    from .code_routes import code_router
+    from .auth_routes import auth_router
+    from .learner_routes import learner_router
+    from .workspace_routes import workspace_router
+    from .llm_config_routes import config_router
+    app.include_router(code_router)
+    app.include_router(auth_router)
+    app.include_router(learner_router)
+    app.include_router(workspace_router)
+    app.include_router(config_router)
+
     frontend = WEB_ROOT / "frontend"
     app.mount("/", StaticFiles(directory=frontend, html=True), name="frontend")
     return app
