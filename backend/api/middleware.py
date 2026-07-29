@@ -7,7 +7,11 @@ from fastapi.responses import JSONResponse
 from ..services.auth_service import AUTH_COOKIE, get_auth
 from ..services.config_service import ConfigService
 
-_EXEMPT = {"/api/auth/status", "/api/auth/setup", "/api/auth/login"}
+_EXEMPT = {
+    "/api/auth/status", "/api/auth/setup", "/api/auth/login",
+    # FastAPI 内置 API 文档端点（非 /api/ 前缀，显式列出以防未来中间件范围扩大）
+    "/docs", "/openapi.json", "/redoc",
+}
 
 
 def make_auth_gate(config: ConfigService):
