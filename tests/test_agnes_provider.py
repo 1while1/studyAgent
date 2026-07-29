@@ -33,7 +33,7 @@ _SETTINGS_BODY = (
     '[llm]\nprovider = "{provider}"\nfallback_provider = ""\n'
     'warmup_on_start = false\n'
     '[llm.agnes]\nmodel = "agnes-2.0-flash"\nmax_tokens = 4096\n'
-    'temperature = 0.7\nbase_url = "https://apihub.agnes-ai.cn/v1"\n'
+    'temperature = 0.7\nbase_url = "https://apihub.agnes-ai.com/v1"\n'
     'api_key_env = "LLM_API_KEY_AGNES"\n'
     '[llm.deepseek_official]\nmodel = "m2"\nmax_tokens = 4096\n'
     'temperature = 0.7\nbase_url = "https://b"\napi_key_env = "K2"\n'
@@ -96,7 +96,7 @@ class TestAgnesFactory(AgnesBase):
         inner = client._inner
         self.assertEqual(inner._model, "agnes-2.0-flash")
         self.assertEqual(str(inner._client.base_url).rstrip("/"),
-                         "https://apihub.agnes-ai.cn/v1")
+                         "https://apihub.agnes-ai.com/v1")
 
     def test_missing_key_raises_clear_error(self):
         os.environ.pop(_KEY, None)
@@ -124,7 +124,7 @@ class TestAgnesConfigPage(AgnesBase):
         routes = self._routes()
         view = routes._section_view("agnes")
         self.assertEqual(view["model"], "agnes-2.0-flash")
-        self.assertEqual(view["base_url"], "https://apihub.agnes-ai.cn/v1")
+        self.assertEqual(view["base_url"], "https://apihub.agnes-ai.com/v1")
         self.assertTrue(view["has_key"])
         self.assertNotIn("sk-test-agnes-123456", view["api_key_masked"])  # 脱敏
 
@@ -139,7 +139,7 @@ class TestAgnesConfigPage(AgnesBase):
             provider="agnes", fallback_provider="", warmup_on_start=True,
             sections={"agnes": {
                 "model": "agnes-2.0-flash",
-                "base_url": "https://apihub.agnes-ai.cn/v1",
+                "base_url": "https://apihub.agnes-ai.com/v1",
                 "max_tokens": 8192, "temperature": 0.5}})
         r = routes.save_llm_config(body)
         self.assertTrue(r["ok"], r.get("error"))
@@ -163,7 +163,7 @@ class TestAgnesConfigPage(AgnesBase):
             provider="agnes", fallback_provider="", warmup_on_start=True,
             sections={"agnes": {
                 "model": "agnes-2.0-flash",
-                "base_url": "https://apihub.agnes-ai.cn/v1",
+                "base_url": "https://apihub.agnes-ai.com/v1",
                 "max_tokens": 4096, "temperature": 0.7}})
         r = routes.save_llm_config(body)
         self.assertTrue(r["ok"], r.get("error"))
@@ -189,7 +189,7 @@ class TestAgnesRepoSettings(unittest.TestCase):
     def test_agnes_section_complete(self):
         sec = self.data["llm"]["agnes"]
         self.assertEqual(sec["model"], "agnes-2.0-flash")
-        self.assertEqual(sec["base_url"], "https://apihub.agnes-ai.cn/v1")
+        self.assertEqual(sec["base_url"], "https://apihub.agnes-ai.com/v1")
         self.assertEqual(sec["api_key_env"], "LLM_API_KEY_AGNES")
         self.assertGreater(sec["max_tokens"], 0)
 
