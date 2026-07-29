@@ -1,6 +1,6 @@
-# studyAgent（study-web）—— 通用 AI 学习助手
+# studyAgent（study-web）—— 可扩展的代码学习 Agent
 
-把 prompt-as-code 学习辅助系统做成通用的 Web 应用：**规则执行由代码强制，内容生成由 LLM 负责**。多工作区设计——任意代码项目都能一键初始化为自己的面试导向学习助手。
+把 prompt-as-code 学习辅助系统做成通用的 Web 应用：**规则执行由代码强制，内容生成由 LLM 负责**。多工作区设计——任意代码项目都能一键初始化为自己的面向程序员的 AI 学习 Agent。
 
 - 确定性（代码）：模板渲染、FAIL-FAST、阶段流转、状态枚举、回合计数、评分标记提取、备份→落盘→validate→回滚、阈值检查
 - 内容（LLM）：讲解、连环追问、点评、复盘拷打、StudyReview 正文、初始化文档生成
@@ -130,7 +130,7 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765
 
 ```bash
 cd study-web
-python -m unittest discover -s tests    # 528 个后端测试，stdlib，无需真实 LLM
+python -m unittest discover -s tests    # 583 个后端测试，stdlib，无需真实 LLM
 python scripts/ui_walkthrough.py        # UI 真实点击走查 187 项（需服务运行中）
 python resources/hooks/validate_study.py <docx_dir> [total_days] [replica_name]
 ```
