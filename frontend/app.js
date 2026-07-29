@@ -374,6 +374,8 @@ async function streamPost(url, text) {
             bubble.parentElement.remove();
           }
           bubble = addMessage("error", payload.content);
+        } else if (payload.type === "teaching_suggestion") {
+          renderTeachingSuggestion(messagesEl, payload);
         } else if (payload.type === "done") {
           cancelThrottledRender();
           if (rawText && bubble.classList.contains("md")) {
@@ -1045,6 +1047,33 @@ function qaEdit(card, e) {
     openQa(false);
   };
   cancel.onclick = () => openQa(false);
+}
+
+// ---------- 教学建议卡片 ----------
+
+function renderTeachingSuggestion(container, ev) {
+    const data = typeof ev === 'string' ? JSON.parse(ev) : ev;
+    if (!data || !data.action) return;
+
+    const labels = {
+        'REVIEW_PREREQ': '🔗 补先修', 'RETELL_CORE': '📖 重讲核心',
+        'VARIANT_QUIZ': '🔄 变体练习', 'ADVANCE_NEXT': '➡️ 推进下一概念',
+        'REST': '☕ 休息一下', 'CHANGE_ANGLE': '🔀 换个角度',
+        'PRACTICE_PROJECT': '💻 项目实践'
+    };
+
+    const card = document.createElement('div');
+    card.className = 'teaching-suggestion-card';
+    card.innerHTML = `
+        <div style="font-weight:600;margin-bottom:6px">${labels[data.action] || data.action}</div>
+        <div style="font-size:0.9em;color:#666;margin-bottom:8px">${escapeHtml(data.reason || '')}</div>
+        <div style="display:flex;gap:8px">
+            <button onclick="streamPost('/api/command',{command:'${data.action}'})" style="padding:4px 12px;border-radius:4px;border:none;background:var(--primary,#4a90d9);color:#fff;cursor:pointer">采纳</button>
+            <button onclick="this.parentElement.parentElement.style.opacity='0.4'" style="padding:4px 12px;border-radius:4px;border:1px solid #ccc;background:transparent;cursor:pointer">跳过</button>
+        </div>
+    `;
+    container.appendChild(card);
+    scrollToBottom();
 }
 
 // ---------- 启动 ----------

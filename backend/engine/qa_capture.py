@@ -87,7 +87,9 @@ def _generate(deps, prompt: str) -> tuple[list[dict] | None, str]:
 
 
 def _write_error_patterns(deps, session, raw_output: str, day: int) -> None:
-    """从 LLM 原始输出提取错误分类，写入当前复盘单元的 evidence（静默失败）。"""
+    """从 LLM 原始输出提取错误分类，写入当前复盘单元的 evidence（静默失败）。
+    使用 deps 中的 learner_service（如可用），避免创建孤立实例。
+    """
     if not raw_output:
         return
     major, minor = extract_error_pattern(raw_output)
@@ -102,10 +104,13 @@ def _write_error_patterns(deps, session, raw_output: str, day: int) -> None:
             str(day), {}).get("units", [])
         if not review_units:
             return
-        ls = LearnerService(deps.config)
+        # 优先使用 deps 中共享的 learner_service，避免孤立实例
+        learner_svc = (deps.learner_service
+                       if hasattr(deps, 'learner_service')
+                       else LearnerService(deps.config))
         for unit in review_units:
             cid = concept_id(day, unit["id"])
-            ls.add_evidence(
+            learner_svc.add_evidence(
                 cid, "quiz_wrong",
                 f"Day{day}-{unit['id']}:qa_capture",
                 day,

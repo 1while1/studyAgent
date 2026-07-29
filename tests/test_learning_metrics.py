@@ -1,5 +1,6 @@
 """M1.3 学习效果度量测试：三指标 + BKT + FSRS + 落盘格式"""
 import unittest
+from datetime import date
 from unittest.mock import MagicMock
 
 from backend.engine.learning_metrics import (
@@ -56,20 +57,78 @@ class TestIndicatorB(unittest.TestCase):
 
     def test_all_zero_scores(self):
         self.assertEqual(
-            compute_indicator_b([{"score": 0}, {"score": 0}]), 0.0)
+            compute_indicator_b([{"score": 0, "date": "2026-01-01"}]), 0.0)
 
     def test_perfect_scores(self):
-        result = compute_indicator_b([{"score": 5.0}, {"score": 5.0}])
+        ref = date(2026, 1, 10)
+        result = compute_indicator_b(
+            [{"score": 5.0, "date": "2026-01-01"},
+             {"score": 5.0, "date": "2026-01-02"}],
+            reference_date=ref)
         self.assertAlmostEqual(result, 1.0)
 
     def test_mixed_scores(self):
+        ref = date(2026, 1, 10)
         # score=3 → 3/5=0.6, score=4 → 4/5=0.8 → avg=0.7
-        result = compute_indicator_b([{"score": 3}, {"score": 4}])
+        result = compute_indicator_b(
+            [{"score": 3, "date": "2026-01-01"},
+             {"score": 4, "date": "2026-01-02"}],
+            reference_date=ref)
         self.assertAlmostEqual(result, 0.7)
 
     def test_single_score(self):
-        result = compute_indicator_b([{"score": 2.5}])
+        ref = date(2026, 1, 10)
+        result = compute_indicator_b(
+            [{"score": 2.5, "date": "2026-01-01"}], reference_date=ref)
         self.assertAlmostEqual(result, 0.5)
+
+    def test_date_filtering_excludes_recent(self):
+        """距 reference_date < days_threshold 的 quiz 应被排除。"""
+        ref = date(2026, 1, 10)
+        # quiz 在 1 月 9 日（距参考日 1 天 < 3）应被排除
+        result = compute_indicator_b(
+            [{"score": 5.0, "date": "2026-01-09"}],
+            days_threshold=3, reference_date=ref)
+        self.assertEqual(result, 0.0)
+
+    def test_date_filtering_includes_old(self):
+        """距 reference_date >= days_threshold 的 quiz 应被计入。"""
+        ref = date(2026, 1, 10)
+        # quiz 在 1 月 7 日（距参考日 3 天 >= 3）应被计入
+        result = compute_indicator_b(
+            [{"score": 4.0, "date": "2026-01-07"}],
+            days_threshold=3, reference_date=ref)
+        self.assertAlmostEqual(result, 0.8)
+
+    def test_date_filtering_mixed(self):
+        """混合新旧 quiz，只计入满足阈值的。"""
+        ref = date(2026, 1, 10)
+        quizzes = [
+            {"score": 5.0, "date": "2026-01-09"},  # 1 天，排除
+            {"score": 4.0, "date": "2026-01-07"},  # 3 天，计入
+            {"score": 3.0, "date": "2026-01-01"},  # 9 天，计入
+        ]
+        result = compute_indicator_b(quizzes, days_threshold=3,
+                                     reference_date=ref)
+        # (4.0/5 + 3.0/5) / 2 = (0.8 + 0.6) / 2 = 0.7
+        self.assertAlmostEqual(result, 0.7)
+
+    def test_date_filtering_no_date_field(self):
+        """无 date 字段的 quiz 被安全跳过。"""
+        ref = date(2026, 1, 10)
+        result = compute_indicator_b(
+            [{"score": 5.0}],  # 无 date
+            days_threshold=3, reference_date=ref)
+        self.assertEqual(result, 0.0)
+
+    def test_custom_days_threshold(self):
+        """自定义 days_threshold。"""
+        ref = date(2026, 1, 10)
+        # 7 天后 quiz，threshold=7 应计入
+        result = compute_indicator_b(
+            [{"score": 5.0, "date": "2026-01-03"}],
+            days_threshold=7, reference_date=ref)
+        self.assertAlmostEqual(result, 1.0)
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +178,7 @@ class TestMasteryScore(unittest.TestCase):
 class TestComputeLearningMetrics(unittest.TestCase):
     def test_full_run(self):
         evs = [{"type": "quiz_right"} for _ in range(4)]
-        quizzes = [{"score": 4.0}]
+        quizzes = [{"score": 4.0, "date": "2020-01-01"}]  # 旧日期确保通过过滤
         m = compute_learning_metrics(
             concept_id="Day1-U1",
             evidence_list=evs,
@@ -254,6 +313,23 @@ class TestFSRS(unittest.TestCase):
         ]
         result = fsrs_interval_from_evidence(evs)
         self.assertGreaterEqual(result["interval_days"], 1)
+
+    def test_fsrs_custom_retention(self):
+        """自定义 request_retention 应影响间隔。"""
+        reviews = [{"date": "2026-01-01", "rating": 3},
+                   {"date": "2026-01-02", "rating": 3}]
+        default_result = fsrs_schedule(reviews)
+        # 更高的 retention → 更短间隔
+        high_ret = fsrs_schedule(reviews, {"request_retention": 0.95})
+        self.assertLessEqual(high_ret["interval_days"],
+                             default_result["interval_days"])
+
+    def test_fsrs_params_reserved_interface(self):
+        """params 为预留接口，传入 None 使用默认参数。"""
+        reviews = [{"date": "2026-01-01", "rating": 3}]
+        r1 = fsrs_schedule(reviews, None)
+        r2 = fsrs_schedule(reviews)
+        self.assertEqual(r1["interval_days"], r2["interval_days"])
 
 
 # ---------------------------------------------------------------------------

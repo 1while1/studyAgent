@@ -277,3 +277,16 @@ project_dir = "../temp_tinyrag"
 session_path = "workspaces/tinyrag/session.json"
 total_days = 5
 replica_name = "tinyrag-replica"
+
+# M1 教学大脑参数
+[bkt_params]
+p_init = 0.1
+p_transit = 0.1
+p_slip = 0.1
+p_guess = 0.25
+
+[fsrs_params]
+request_retention = 0.9
+
+[metrics]
+weights = [0.3, 0.3, 0.4]

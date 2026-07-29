@@ -1200,3 +1200,8 @@ body[data-layout="pair"] .heat-cell2.lv4 { background: #8fd694; }
 #viewer-overlay.viewer-code [data-act="fit"],
 #viewer-overlay.viewer-code [data-act="actual"],
 #viewer-overlay.viewer-code #viewer-scale { display: none; }
+
+.teaching-suggestion-card {
+    margin: 8px 0; padding: 12px; border-radius: 8px;
+    border: 1px solid var(--border, #ddd); background: var(--bg-secondary, #f8f9fa);
+}

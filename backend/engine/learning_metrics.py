@@ -45,21 +45,27 @@ def compute_indicator_a(evidence_list: list, total_days: int) -> float:
     return min(1.0, len(evidence_list) / expected)
 
 
-def compute_indicator_b(quiz_results: list[dict], days_threshold: int = 3) -> float:
-    """指标 B：知识保持度
+def compute_indicator_b(quiz_results: list[dict], days_threshold: int = 3,
+                         reference_date=None) -> float:
+    """指标 B：知识保持度（3天后 quiz 正确率）
 
-    = 3 天后 quiz 的平均正确率（归一化到 0-1）
+    = days_threshold 天后 quiz 的平均正确率（归一化到 0-1）
     quiz_results: [{"date": "2026-01-01", "score": 3.5}, ...]
-    score 按 5 分制归一化。
+    score 按 5 分制归一化。仅计入距 reference_date >= days_threshold 的 quiz。
     """
     if not quiz_results:
         return 0.0
-
+    ref = reference_date or date.today()
     late_quizzes = []
     for qr in quiz_results:
-        if qr.get("score", 0) > 0:
-            late_quizzes.append(qr["score"] / 5.0)
-
+        if qr.get("score", 0) <= 0:
+            continue
+        try:
+            quiz_date = date.fromisoformat(qr["date"])
+            if (ref - quiz_date).days >= days_threshold:
+                late_quizzes.append(qr["score"] / 5.0)
+        except (ValueError, KeyError, TypeError):
+            continue
     if not late_quizzes:
         return 0.0
     return sum(late_quizzes) / len(late_quizzes)
@@ -185,7 +191,7 @@ def bkt_mastery(evidence_list: list[dict],
 # ---------------------------------------------------------------------------
 
 FSRS_DEFAULT_PARAMS: dict = {
-    "request_retention": 0.9,
+    "request_retention": 0.9,  # 目标保留率（越高→间隔越短）；params 为预留接口
     "w": [
         0.4, 0.6, 2.4, 5.8,          # stability 初始化
         4.93, 0.94, 0.86, 0.01,      # difficulty 初始化
@@ -205,23 +211,36 @@ def fsrs_schedule(reviews: list[dict],
     输出：{"interval_days": N, "stability": S, "difficulty": D}
 
     rating: 1(忘记) / 2(困难) / 3(良好) / 4(简单)
+
+    params 为预留接口，当前使用 request_retention 校准间隔：
+    retention 越高 → 间隔越短（简化线性校准）。
     """
     if not reviews:
         return {"interval_days": 1, "stability": 1.0, "difficulty": 5.0}
+
+    p = params or FSRS_DEFAULT_PARAMS
+    retention = p.get("request_retention", 0.9)
+    # 使用 retention 校准间隔：retention 越高 → 间隔越短
+    # 默认 0.9 时 factor=1.0 保持向后兼容
+    default_retention = FSRS_DEFAULT_PARAMS.get("request_retention", 0.9)
+    if abs(retention - default_retention) < 0.001:
+        retention_factor = 1.0
+    else:
+        retention_factor = default_retention / (retention + 0.001)
 
     last = reviews[-1]
     rating = last.get("rating", 3)
     review_count = len(reviews)
 
-    # 基础间隔增长（简化：线性 × rating 系数）
+    # 基础间隔增长（线性 × rating 系数 × retention 校准）
     if rating <= 1:        # 忘记 → 重置
         interval = 1
     elif rating == 2:      # 困难
-        interval = max(1, review_count)
+        interval = max(1, int(review_count * abs(retention_factor)))
     elif rating == 3:      # 良好
-        interval = max(1, review_count * 2)
+        interval = max(1, int(review_count * 2 * abs(retention_factor)))
     else:                  # 简单
-        interval = max(1, review_count * 3)
+        interval = max(1, int(review_count * 3 * abs(retention_factor)))
 
     return {
         "interval_days": min(interval, 365),   # 上限 1 年

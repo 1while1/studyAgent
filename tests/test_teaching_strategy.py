@@ -252,9 +252,9 @@ class TestSuggestAction(unittest.TestCase):
     # ---- 容错测试 ----
 
     def test_empty_context(self):
-        """空 context 不崩溃，返回 VARIANT_QUIZ（默认 mastery=0.5）。"""
+        """空 context 返回 None（无有效掌握度信息）。"""
         s = suggest_action({})
-        self.assertEqual(s.action, TeachingAction.VARIANT_QUIZ)
+        self.assertIsNone(s)
 
     def test_partial_context(self):
         """部分字段缺失不崩溃。"""
@@ -266,21 +266,15 @@ class TestSuggestAction(unittest.TestCase):
         self.assertEqual(s.action, TeachingAction.ADVANCE_NEXT)
 
     def test_none_values(self):
-        """None 值字段不崩溃。"""
+        """None 值字段返回 None（mastery=None 时信息不足）。"""
         ctx = {
             "mastery": None,
             "consecutive_errors": None,
             "error_patterns": None,
             "session_minutes": None,
         }
-        # None 值会被 .get 返回，但不会触发 int/float 比较
-        # suggest_action 用 context.get 带默认值，None 不会被默认值覆盖
-        # 需要确保不崩溃
-        try:
-            s = suggest_action(ctx)
-        except TypeError:
-            # 如果 None 导致 TypeError，说明需要处理
-            self.fail("suggest_action 不应在 None 值时崩溃")
+        s = suggest_action(ctx)
+        self.assertIsNone(s)
 
 
 class TestExtractErrorPatterns(unittest.TestCase):
@@ -474,13 +468,13 @@ class TestBuildContextFromSession(unittest.TestCase):
         self.assertEqual(ctx["prereq_concept_id"], "Day1-X")
 
     def test_no_unit(self):
-        """无当前单元时返回默认值。"""
+        """无当前单元时返回 None mastery。"""
         state_store = MagicMock()
         session = MagicMock()
         session.current_unit_id = None
         learner_svc = MagicMock()
         ctx = build_context_from_session(state_store, session, learner_svc)
-        self.assertAlmostEqual(ctx["mastery"], 0.5)
+        self.assertIsNone(ctx["mastery"])
         self.assertEqual(ctx["consecutive_errors"], 0)
 
     def test_session_minutes_from_round_count(self):

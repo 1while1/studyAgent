@@ -97,6 +97,8 @@ class ChatOrchestrator(TurnEngine):
             learner_svc = LearnerService(self._config)
             ctx = build_context_from_session(self._state_store, session, learner_svc)
             suggestion = suggest_action(ctx)
+            if suggestion is None:
+                return None
             result = suggestion.to_dict()
             session.pending_teaching_suggestion = result
             return result

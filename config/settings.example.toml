@@ -220,3 +220,16 @@ sop_card = "SOP_跳转天数.md"
 
 # ---------- 个人工作区配置请移至 settings.local.toml ----------
 # [[code_roots]] 和 [[workspaces]] 段属于个人配置，请在 settings.local.toml 中填写
+
+# M1 教学大脑参数
+[bkt_params]
+p_init = 0.1
+p_transit = 0.1
+p_slip = 0.1
+p_guess = 0.25
+
+[fsrs_params]
+request_retention = 0.9
+
+[metrics]
+weights = [0.3, 0.3, 0.4]

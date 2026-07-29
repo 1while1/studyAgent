@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import json
-import re
 from enum import Enum
 
 
@@ -27,68 +26,81 @@ class ErrorPatternMajor(str, Enum):
 
 
 def extract_error_pattern(llm_output: str) -> tuple[str | None, str | None]:
-    """从 LLM 评分输出中提取错误分类
+    """从 LLM 评分输出中提取错误分类（支持嵌套 JSON）
 
     期望 LLM 输出包含 JSON：
     {"error_major": "CONCEPT_CONFUSION", "error_minor": "将BFS当成DFS"}
 
+    使用 json.JSONDecoder 逐位置尝试，支持嵌套/混合文本中的 JSON 提取。
+
     Returns:
         (major, minor) 元组，解析失败返回 (None, None)
     """
-    # 尝试从输出中提取 JSON
-    json_match = re.search(r'\{[^}]*"error_major"[^}]*\}', llm_output)
-    if not json_match:
-        return None, None
-
-    try:
-        data = json.loads(json_match.group())
-        major = data.get("error_major")
-        minor = data.get("error_minor")
-
-        # major 为 null / None → 回答正确，无错误
-        if major is None:
-            return None, None
-
-        # 验证 major 是否为合法枚举值
-        if major in ErrorPatternMajor.values():
-            return major, minor if minor else None
-        return None, None
-    except (json.JSONDecodeError, KeyError, TypeError):
-        return None, None
+    decoder = json.JSONDecoder()
+    idx = 0
+    while idx < len(llm_output):
+        try:
+            pos = llm_output.index('{', idx)
+            obj, end = decoder.raw_decode(llm_output, pos)
+            if "error_major" in obj:
+                major = obj.get("error_major")
+                minor = obj.get("error_minor")
+                # major 为 null / None → 回答正确，无错误
+                if major is None:
+                    return None, None
+                if major in ErrorPatternMajor.values():
+                    return major, minor if minor else None
+                return None, None
+            idx = end
+        except (ValueError, json.JSONDecodeError):
+            idx += 1
+    return None, None
 
 
 def extract_error_patterns(llm_output: str) -> list[str]:
     """从 LLM 输出中提取所有错误模式 major 列表（M1.2 教学行动策略输入）。
 
-    支持单个 JSON 对象或 JSON 数组：
-    - 单对象: {"error_major": "CONCEPT_CONFUSION", ...}
-    - 数组:   [{"error_major": "...", ...}, ...]
+    使用 json.JSONDecoder 逐位置扫描，支持：
+    - 单个 JSON 对象: {"error_major": "CONCEPT_CONFUSION", ...}
+    - JSON 数组:   [{"error_major": "...", ...}, ...]
+    - 嵌套/混合文本中的 JSON
 
     Returns:
         合法 major 值列表（去重保序），无匹配返回 []
     """
     results: list[str] = []
     seen: set[str] = set()
+    decoder = json.JSONDecoder()
+    idx = 0
 
-    # 尝试提取 JSON 数组
-    arr_match = re.search(r'\[\s*\{[^]]*\}\s*(?:,\s*\{[^]]*\}\s*)*\]', llm_output)
-    if arr_match:
+    while idx < len(llm_output):
         try:
-            arr = json.loads(arr_match.group())
-            if isinstance(arr, list):
-                for item in arr:
-                    major = item.get("error_major") if isinstance(item, dict) else None
-                    if major and major in ErrorPatternMajor.values() and major not in seen:
+            # 尝试数组
+            if llm_output[idx] == '[':
+                arr, end = decoder.raw_decode(llm_output, idx)
+                if isinstance(arr, list):
+                    for item in arr:
+                        if isinstance(item, dict):
+                            major = item.get("error_major")
+                            if (major and major in ErrorPatternMajor.values()
+                                    and major not in seen):
+                                seen.add(major)
+                                results.append(major)
+                idx = end
+                continue
+            # 尝试对象
+            if llm_output[idx] == '{':
+                obj, end = decoder.raw_decode(llm_output, idx)
+                if "error_major" in obj:
+                    major = obj.get("error_major")
+                    if (major and major in ErrorPatternMajor.values()
+                            and major not in seen):
                         seen.add(major)
                         results.append(major)
-                if results:
-                    return results
-        except (json.JSONDecodeError, TypeError):
+                idx = end
+                continue
+        except (ValueError, json.JSONDecodeError):
             pass
-
-    # 回退：提取单个 JSON 对象
-    major, _ = extract_error_pattern(llm_output)
-    if major and major not in seen:
-        results.append(major)
+        idx += 1
 
     return results

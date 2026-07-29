@@ -65,6 +65,36 @@ def learner_migrate_apply():
     return LearnerService(_deps().config).migrate_apply()
 
 
+@learner_router.get("/api/learner/metrics/{concept_id}")
+def learner_metrics(concept_id: str):
+    """获取指定 concept 的学习效果度量（BKT + 三指标 + FSRS）。"""
+    deps = _deps()
+    svc = LearnerService(deps.config)
+    bkt = svc.compute_bkt_mastery(concept_id)
+    # 从 concept_id 解析天数或取当前天
+    import re as _re
+    m = _re.match(r"Day(\d+)-", concept_id)
+    current_day = int(m.group(1)) if m else 1
+    try:
+        current_day = max(current_day,
+                          int(deps.state_store.load().get("current_day", 1)))
+    except Exception:
+        pass
+    metrics = svc.compute_concept_metrics(concept_id, current_day)
+    fsrs = svc.compute_fsrs_interval(concept_id)
+    return {
+        "concept_id": concept_id,
+        "bkt_mastery": bkt,
+        "metrics": {
+            "indicator_a": metrics.indicator_a,
+            "indicator_b": metrics.indicator_b,
+            "indicator_c": metrics.indicator_c,
+            "mastery_score": metrics.mastery_score,
+        },
+        "fsrs": fsrs,
+    }
+
+
 # ---------- 笔记（M4 条目层） ----------
 
 def _notes() -> NotesService:

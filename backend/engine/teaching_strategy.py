@@ -46,7 +46,7 @@ class TeachingSuggestion:
         }
 
 
-def suggest_action(context: dict) -> TeachingSuggestion:
+def suggest_action(context: dict) -> TeachingSuggestion | None:
     """根据学习者上下文推荐教学行动
 
     Args:
@@ -61,9 +61,9 @@ def suggest_action(context: dict) -> TeachingSuggestion:
         }
 
     Returns:
-        TeachingSuggestion 推荐的教学行动
+        TeachingSuggestion 推荐的教学行动，信息不足时返回 None
     """
-    mastery = context.get("mastery") or 0.5
+    mastery = context.get("mastery")
     consecutive_errors = context.get("consecutive_errors") or 0
     error_patterns = context.get("error_patterns") or []
     session_minutes = context.get("session_minutes") or 0
@@ -73,7 +73,7 @@ def suggest_action(context: dict) -> TeachingSuggestion:
 
     # ---- 规则优先级（从高到低） ----
 
-    # 1. 休息（长时间学习后）
+    # 1. 休息（长时间学习后，不需要 mastery）
     if session_minutes >= 45:
         return TeachingSuggestion(
             action=TeachingAction.REST,
@@ -81,8 +81,8 @@ def suggest_action(context: dict) -> TeachingSuggestion:
             confidence=0.9,
         )
 
-    # 2. 补先修（有先修缺口且掌握度低）
-    if has_prereq_gap and mastery < 0.5:
+    # 2. 补先修（有先修缺口，不需要 mastery 精确值）
+    if has_prereq_gap and (mastery is None or mastery < 0.5):
         return TeachingSuggestion(
             action=TeachingAction.REVIEW_PREREQ,
             reason=f"先修概念 {prereq_concept_id} 存在缺口",
@@ -90,7 +90,7 @@ def suggest_action(context: dict) -> TeachingSuggestion:
             concept_id=prereq_concept_id,
         )
 
-    # 3. 换角度（错误模式多样）
+    # 3. 换角度（错误模式多样，不需要 mastery）
     if len(set(error_patterns)) >= 2 and consecutive_errors >= 2:
         return TeachingSuggestion(
             action=TeachingAction.CHANGE_ANGLE,
@@ -98,13 +98,17 @@ def suggest_action(context: dict) -> TeachingSuggestion:
             confidence=0.8,
         )
 
-    # 4. 重讲核心（连续错误）
+    # 4. 重讲核心（连续错误，不需要 mastery）
     if consecutive_errors >= 2:
         return TeachingSuggestion(
             action=TeachingAction.RETELL_CORE,
             reason=f"连续 {consecutive_errors} 次错误，需要重新讲解核心概念",
             confidence=0.8,
         )
+
+    # 以下规则需要 mastery，信息不足时返回 None
+    if mastery is None:
+        return None
 
     # 5. 练项目（掌握度中等 + 代码未验证）
     if mastery >= 0.6 and not code_verify_pass:
@@ -144,7 +148,7 @@ def build_context_from_session(state_store, session, learner_service) -> dict:
     from ..domain.models import SessionContext
 
     # 默认值
-    mastery = 0.5
+    mastery = None  # 无有效单元时为 None，由 suggest_action 处理
     consecutive_errors = 0
     error_patterns: list[str] = []
     session_minutes = 0
@@ -156,7 +160,7 @@ def build_context_from_session(state_store, session, learner_service) -> dict:
     current_unit_id = getattr(session, "current_unit_id", None)
     if not current_unit_id:
         return {
-            "mastery": mastery,
+            "mastery": mastery,  # None：无有效单元
             "consecutive_errors": consecutive_errors,
             "error_patterns": error_patterns,
             "session_minutes": session_minutes,
