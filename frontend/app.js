@@ -1710,15 +1710,25 @@ async function openUsage() {
     (await fetch("/api/auth/status")).json(),
   ]);
   const t = u.totals, td = u.today || {};
+  const _CUR = { CNY: "¥", USD: "$", EUR: "€", GBP: "£", JPY: "¥" };
+  function _fmtCost(cost, costsByCurrency) {
+    if (costsByCurrency && typeof costsByCurrency === "object") {
+      const parts = Object.entries(costsByCurrency)
+        .filter(([, v]) => v > 0)
+        .map(([cur, v]) => `${_CUR[cur] || cur}${v}`);
+      if (parts.length > 0) return parts.join(" / ");
+    }
+    return cost ? `¥${cost}` : "";
+  }
   summaryEl.textContent =
     `近 ${u.days} 天：${t.calls} 次调用（失败 ${t.failures}）· ` +
     `输入 ${t.in_tokens.toLocaleString()} tok · 输出 ${t.out_tokens.toLocaleString()} tok` +
-    (t.cost ? ` · 估算成本 ¥${t.cost}` : "") +
+    (_fmtCost(t.cost, t.costs_by_currency) ? ` · 估算成本 ${_fmtCost(t.cost, t.costs_by_currency)}` : "") +
     "（token 为实际/估算混排，仅供参考）";
   todayEl.textContent =
     `今日：${td.calls || 0} 次 · 输入 ${(td.in_tokens || 0).toLocaleString()} tok · ` +
     `输出 ${(td.out_tokens || 0).toLocaleString()} tok` +
-    (td.cost ? ` · ¥${td.cost}` : "");
+    (_fmtCost(td.cost, td.costs_by_currency) ? ` · ${_fmtCost(td.cost, td.costs_by_currency)}` : "");
   todayEl.style.cssText = "font-size:13px;color:var(--text-dim);margin-top:6px";
   renderUsageAuth(a);
 }
