@@ -43,6 +43,7 @@ _EXPECTED = {
     "process_start": SANDBOX,     # M6
     "process_stop": SANDBOX,      # M6
     "process_logs": SANDBOX,      # M6
+    "mark_wrong": WRITE,           # 改进2 防幻觉闭环
 }
 
 
@@ -58,7 +59,7 @@ class TestToolRegistry(unittest.TestCase):
         settings.write_text(
             'active_workspace = "t"\n'
             'status_enum = ["not_started", "in_progress", "completed", "postponed"]\n'
-            '[evidence_delta]\nquiz_right = 0.10\nsync_mastered = 0.10\n'
+            '[evidence_delta]\nquiz_right = 0.10\nsync_mastered = 0.10\nmark_wrong = -0.05\n'
             '[[stages]]\nname = "teaching"\nnext = ""\n'
             'sop_step = "步骤一"\ninstruction = "讲"\n'
             f'[[code_roots]]\nname = "projA"\npath = "{proj.as_posix()}"\n'
@@ -385,6 +386,47 @@ class TestToolRegistry(unittest.TestCase):
                 ToolContext(config=self.config))
             self.assertFalse(r.ok)
             self.assertIn("ProcessManager", r.error)
+
+    # ---- mark_wrong ----
+
+    def test_mark_wrong_writes_evidence(self):
+        result = self.registry.invoke(
+            "mark_wrong", {"concept_id": "Day2-A", "reason": "讲反了"},
+            self.ctx)
+        self.assertTrue(result.ok, result.error)
+        self.assertTrue(result.data["written"])
+        self.assertEqual(result.data["concept_id"], "Day2-A")
+        self.assertIn("Day2-A", result.injection)
+        self.assertIn("讲反了", result.injection)
+        model = json.loads(
+            (self.docx / "learner_model.json").read_text(encoding="utf-8"))
+        evs = model["concepts"]["Day2-A"]["evidence"]
+        self.assertEqual(len(evs), 1)
+        self.assertEqual(evs[0]["type"], "mark_wrong")
+
+    def test_mark_wrong_rejects_empty_concept(self):
+        result = self.registry.invoke(
+            "mark_wrong", {"concept_id": "  "}, self.ctx)
+        self.assertFalse(result.ok)
+        self.assertIn("concept_id", result.error)
+
+    def test_mark_wrong_idempotent(self):
+        r1 = self.registry.invoke(
+            "mark_wrong", {"concept_id": "Day2-A"}, self.ctx)
+        self.assertTrue(r1.ok)
+        self.assertTrue(r1.data["written"])
+        r2 = self.registry.invoke(
+            "mark_wrong", {"concept_id": "Day2-A"}, self.ctx)
+        self.assertTrue(r2.ok)
+        self.assertFalse(r2.data["written"])
+        self.assertIn("幂等", r2.injection)
+
+    def test_mark_wrong_rejects_no_state_store(self):
+        ctx = ToolContext(config=self.config)  # 无 state_store
+        result = self.registry.invoke(
+            "mark_wrong", {"concept_id": "Day2-A"}, ctx)
+        self.assertFalse(result.ok)
+        self.assertIn("无法确定当前天数", result.error)
 
     def test_planner_instruction_lists_m6_tools(self):
         """planner 工具清单自动包含 M6 新工具（schemas 遍历，无需改 planner）。"""

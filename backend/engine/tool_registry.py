@@ -10,7 +10,7 @@
 - ToolContext 按需携带依赖；handler 缺依赖时返回 ok=False 明确错误，不抛异常。
 - §9 中 quiz_generate/retell_assess 属 M5c，process_*/scaffold_create/edit_file
   属 M6 实战工坊（workshop_service / process_mgr 包装），均已纳入本注册表；
-  mark_wrong 留档待 M7 前另立。
+  mark_wrong 已实现（改进2，防幻觉闭环关键工具）。
 """
 
 from __future__ import annotations
@@ -476,6 +476,35 @@ def _retell_assess(ctx: ToolContext, args: dict) -> ToolResult:
                                      "assessment": assessment.strip()[:3000]})
 
 
+# ---- mark_wrong（防幻觉闭环：用户标记讲解有误） ----
+
+def _mark_wrong(ctx: ToolContext, args: dict) -> ToolResult:
+    """用户标记讲解有误，写入纠正证据（幂等）。"""
+    cid = (args.get("concept_id") or "").strip()
+    if not cid:
+        return ToolResult(ok=False, error="concept_id 必填")
+    reason = (args.get("reason") or "").strip()
+    day = _current_day(ctx)
+    if day is None:
+        return ToolResult(ok=False, error=(
+            "无法确定当前天数（学习状态缺失或损坏），证据已拒绝写入"))
+    from datetime import date
+    source_ref = f"mark_wrong:{cid}:{date.today().isoformat()}"
+    from ..services.learner_service import LearnerService
+    try:
+        written = LearnerService(ctx.config).add_evidence(
+            cid, "mark_wrong", source_ref, day)
+    except Exception as e:
+        return ToolResult(ok=False, error=f"证据写入失败: {e}")
+    injection = f"用户标记知识点 {cid} 讲解有误"
+    if reason:
+        injection += f"：{reason}"
+    if not written:
+        injection += "（今日已记录过，幂等跳过）"
+    return ToolResult(ok=True, injection=injection,
+                      data={"concept_id": cid, "written": written})
+
+
 # ---- scaffold_create / edit_file（M6 写·demo/replica 白名单） ----
 
 def _scaffold_create(ctx: ToolContext, args: dict) -> ToolResult:
@@ -698,6 +727,17 @@ def build_default_registry() -> ToolRegistry:
                                    "description": "用户口述原文"}},
                 "required": ["concept_id", "transcript"]},
         handler=_retell_assess))
+    reg.register(ToolSpec(
+        name="mark_wrong", permission=WRITE,
+        description="用户标记讲解有误，写入纠正证据并注入纠正历史",
+        params={"type": "object",
+                "properties": {
+                    "concept_id": {"type": "string",
+                                   "description": "知识点 ID"},
+                    "reason": {"type": "string",
+                               "description": "纠正说明（可选）"}},
+                "required": ["concept_id"]},
+        handler=_mark_wrong))
     reg.register(ToolSpec(
         name="scaffold_create", permission=WRITE,
         description="在 demo 白名单目录创建正规工程脚手架（npm/maven-module/gradle），自动注册代码根",
