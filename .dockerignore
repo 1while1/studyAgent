@@ -1,0 +1,10 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+.pytest_cache
+runtime/logs/
+workspaces/
+*.egg-info
+.venv
+node_modules

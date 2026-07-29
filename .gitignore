@@ -13,6 +13,13 @@ __pycache__/
 runtime/
 workspaces/
 
+# ---- 配置分层（个人本地配置不入库） ----
+config/settings.local.toml
+
+# ---- Gradle 构建缓存（scaffolds 内的构建产物） ----
+resources/scaffolds/gradle/.gradle/
+resources/scaffolds/gradle/build/
+
 # ---- IDE / 系统 ----
 .idea/
 .vscode/

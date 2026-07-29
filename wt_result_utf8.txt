@@ -1,0 +1,195 @@
+=== STDOUT ===
+[PASS] 页面加载-侧栏可见
+[PASS] 页面加载-单元列表
+[PASS] 页面加载-指令胶囊 13 个
+[PASS] 消息容器就绪
+[PASS] FAIL-FAST 双选项输出
+[PASS] FAIL-FAST 无残留思考泡
+[PASS] 指令补全弹出
+[PASS] 补全回填输入框
+[PASS] 工作区下拉可见
+[PASS] 工作区菜单项
+[PASS] 工作区导出按钮
+[PASS] 工作区删除按钮
+[PASS] 向导弹窗打开
+[PASS] 学习模式预设选项
+[PASS] 扫描预览输出
+[PASS] 侧栏收起后悬浮按钮
+[PASS] 侧栏恢复
+[PASS] 资料弹窗-标题
+[PASS] 资料弹窗-渲染
+[PASS] 配置弹窗可见
+[PASS] 配置弹窗-渠道数
+[PASS] 配置弹窗-上下文窗口区
+[PASS] 上下文预算≈K 提示
+[PASS] 上下文预览含模型上限
+[PASS] 源码学习-布局切换
+[PASS] 源码学习-侧栏隐藏
+[PASS] 代码面板打开
+[PASS] 双头部对齐 — 80 vs 47
+[PASS] 双轴-模式回 study 布局不动
+[PASS] Monaco 动态加载
+[PASS] 文件打开-内容
+[PASS] 文件打开-高亮
+[PASS] IDE 状态栏
+[PASS] 浮动插入按钮
+[PASS] 插入输入框
+[PASS] 片段换行保留
+[PASS] 树折叠
+[PASS] 换行模式
+[PASS] 代码引用芯片渲染
+[PASS] 引用跳转-文件打开
+[PASS] 引用跳转-行高亮
+[PASS] 引用未找到-toast
+[PASS] 片段卡片渲染
+[PASS] 片段提问流式完成
+[PASS] 片段提问无错误泡
+[PASS] 历史回填渲染卡片
+[PASS] 片段跳转-行高亮
+[PASS] 切回知识学习
+[PASS] 知识学习-侧栏恢复
+[PASS] 知识学习-代码面板隐藏
+[PASS] code 模式落盘
+[PASS] code 模式布局配对
+[PASS] demo 弹窗打开
+[PASS] demo 创建成功
+[PASS] demo 代码根注册
+[PASS] demo 弹窗自动关闭
+[PASS] demo 文件可编辑
+[PASS] 保存按钮可见
+[PASS] 编辑后脏标记
+[PASS] 保存回读一致
+[PASS] undo 不跨文件污染
+[PASS] 原项目只读标记
+[PASS] 原项目无保存钮
+[PASS] 进程抽屉打开
+[PASS] 进程行出现
+[PASS] 进程端口链接
+[PASS] 进程登记 running
+[PASS] 进程日志 tail
+[PASS] 进程停止
+[PASS] 端口已释放
+[PASS] 面板收起
+[PASS] 悬浮重开钮
+[PASS] 面板重开
+[PASS] 切回 study 模式
+[PASS] 聊天流式完成 — bubbles 2→4
+[PASS] 无 LLM 错误泡
+[PASS] Mermaid 渲染为 SVG
+[PASS] tool-use chip 出现且续写完成
+[PASS] tool-use 无错误泡
+[PASS] chip 跳转打开文件
+[PASS] chip 跳转行高亮
+[PASS] 模拟面试口述要求出现
+[PASS] 模拟面试 teach_back 落盘
+[PASS] 快流下 LLM 评分泡不被 extra 覆盖
+[PASS] 资料库 API 非空
+[PASS] 资料库弹窗有条目
+[PASS] 资料预览有内容
+[PASS] LLM 状态条显示
+[PASS] 用量弹窗今日摘要
+[PASS] 完整统计页链接
+[PASS] 设置密码成功
+[PASS] 退出后登录层出现
+[PASS] 未登录 API 401
+[PASS] 错误密码被拒
+[PASS] 正确密码登录成功
+[PASS] 登录后 API 200
+[PASS] 密码已还原为开放模式
+[PASS] 统计页 KPI 卡渲染
+[PASS] 统计页明细行渲染
+[PASS] 统计页趋势图渲染
+[PASS] 统计页天数筛选重取
+[PASS] 查看器图表模式打开
+[PASS] 查看器克隆图非零尺寸 — area=14350
+[PASS] 查看器 Esc 关闭
+[PASS] 查看器代码模式打开+换行按钮
+[PASS] 查看器按钮关闭
+[PASS] 掌握度抽屉打开
+[PASS] 行动计数双卡
+[PASS] 顶部无公式长文
+[PASS] 算法说明弹层
+[PASS] 弹层可关闭
+[PASS] 需要行动分区
+[PASS] 紧急项行渲染
+[PASS] 今日学习分区
+[PASS] 其余默认折叠
+[PASS] 其余展开
+[PASS] 详情手风琴展开
+[PASS] 详情含建议行动
+[PASS] 详情含行动按钮
+[PASS] 明细默认折叠
+[PASS] 手风琴收起
+[PASS] 雷达 Donut 渲染
+[PASS] 雷达热力格
+[PASS] 课程时间轴渲染
+[PASS] 上游未达标徽标
+[PASS] 徽标语义提示
+[PASS] hover 上游链高亮
+[PASS] 移开后高亮清除
+[PASS] 时间轴跳转战术板
+[FAIL] 侧栏复习预警
+[PASS] 预警跳转展开详情
+[PASS] 笔记全屏页打开
+[PASS] 书架渲染
+[PASS] 新建后进编辑器
+[PASS] 工具条插入标题
+[PASS] 预览渲染 h1
+[PASS] 预览渲染 mermaid
+[PASS] 笔记卡片出现
+[PASS] 搜索空结果
+[PASS] 编辑保存生效
+[PASS] 销账后已解决态
+[PASS] 蒸馏 API 正常
+[PASS] 走查笔记已清理
+[PASS] 话术卡片视图工具条
+[PASS] 话术空态提示
+[PASS] 话术原文视图
+[PASS] 先修诊断出题
+[PASS] 先修诊断评分落盘
+[PASS] 先修诊断同日幂等
+[PASS] 超前学习成功（C1 修复）
+[PASS] 跳转天数成功
+[PASS] 跳转骨架带单元行（复核-1）
+[PASS] 跳转后开始学习链路不死
+[PASS] 重新开始今日学习出 Step 3
+[PASS] command 多 message 后 LLM 泡完整
+[PASS] 恢复学习响应
+[PASS] code 模式指令 guard
+[PASS] 补全菜单打开
+[PASS] ↓ 高亮生效
+[PASS] Esc 关闭菜单
+[PASS] Enter 选首项回填
+[PASS] 章节精确链接跳切片
+[PASS] 清理测试进程已登记
+[PASS] 清理按钮移除已停止条目
+[PASS] slash 补全菜单打开
+[PASS] slash 菜单分组标题
+[PASS] slash 菜单含 /compact
+[PASS] [ 菜单分组标题
+[PASS] slash 回填输入框
+[PASS] /compact 报告气泡
+[PASS] /compact 压缩成功
+[PASS] /compact 归档生效 — 0 → 14
+[PASS] /compact 无错误泡
+[PASS] /usage 打开用量面板
+[PASS] /usage 客户端指令无气泡
+[PASS] /model 报告当前渠道
+[PASS] /model 同渠道无需切换
+[PASS] /clear 清屏仅剩报告泡
+[PASS] /clear 报告气泡
+[PASS] /clear 后端历史归零
+[PASS] 清空历史移出顶栏
+[PASS] 笔记入口带文字标签
+[PASS] 悬浮钮与顶栏不重叠
+[PASS] 模式切换位置两布局恒定 — tutor=16 pair=10
+[PASS] 笔记页返回按钮可见
+[PASS] 返回主界面
+[PASS] 全程零 JS 错误
+
+发现 1 个问题：
+ - 侧栏复习预警: 
+
+=== STDERR ===
+
+=== RETURN CODE: 1 ===

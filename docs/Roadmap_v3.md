@@ -62,14 +62,14 @@ M0 ──→ M1.1 ──→ M1.2 ──→ M1.3 ──→ M2.1 ──→ M2.2 �
 
 #### 任务清单
 
-- [ ] 0.1 LICENSE 文件（MIT）
-- [ ] 0.2 配置分层：`settings.example.toml`（入库）+ `settings.local.toml`（gitignore）
-- [ ] 0.3 `workspaces/` 移出 git（`.gitkeep` 保留）
-- [ ] 0.4 README 修正（删除 `cd study-web`，新人 10 分钟 mock 模式跑通）
+- [x] 0.1 LICENSE 文件（MIT）
+- [x] 0.2 配置分层：`settings.example.toml`（入库）+ `settings.local.toml`（gitignore）
+- [x] 0.3 `workspaces/` 移出 git（`.gitkeep` 保留）
+- [x] 0.4 README 修正（删除 `cd study-web`，新人 10 分钟 mock 模式跑通）
 - [x] 0.5 测试数对齐（当前 583，统一 AGENTS.md / README）
-- [ ] 0.6 打 git tag v1.0.0
-- [ ] 0.7 Dockerfile + docker-compose（多阶段构建，uvicorn 非 root）
-- [ ] 0.8 依赖 lock 文件（pip-compile 或 uv lock）
+- [x] 0.6 打 git tag v1.0.0
+- [x] 0.7 Dockerfile + docker-compose（多阶段构建，uvicorn 非 root）
+- [x] 0.8 依赖 lock 文件（pip-compile 或 uv lock）
 - [x] 0.9 AGENTS.md 拆分：架构/模块职责移至 `docs/Architecture.md`
 
 #### 验收标准

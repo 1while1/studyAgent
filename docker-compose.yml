@@ -1,0 +1,21 @@
+version: "3.8"
+
+services:
+  studyagent:
+    build: .
+    container_name: studyagent
+    ports:
+      - "8765:8765"
+    volumes:
+      # 持久化运行时数据
+      - ./runtime:/app/runtime
+      - ./workspaces:/app/workspaces
+      - ./config:/app/config:ro
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8765/docs')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
