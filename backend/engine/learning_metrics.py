@@ -71,16 +71,28 @@ def compute_indicator_b(quiz_results: list[dict], days_threshold: int = 3,
     return sum(late_quizzes) / len(late_quizzes)
 
 
-def compute_indicator_c(code_verify_pass: bool, has_code_concept: bool) -> float:
+def compute_indicator_c(code_verify_pass: bool, has_code_concept: bool,
+                         verify_attempts: int = 0) -> float:
     """指标 C：迁移应用能力
 
     - 无代码概念：返回 1.0（不适用，不扣分）
     - 有代码概念 + 验证通过：1.0
-    - 有代码概念 + 验证未通过：0.3（部分分）
+    - 有代码概念 + 验证未通过：根据尝试次数给部分分
+      - 0 次尝试：0.3（从未尝试）
+      - 1-2 次尝试：0.4（少量尝试）
+      - 3+ 次尝试：0.5（多次尝试，有努力）
     """
     if not has_code_concept:
         return 1.0
-    return 1.0 if code_verify_pass else 0.3
+    if code_verify_pass:
+        return 1.0
+    # 未通过：根据尝试次数给部分分
+    if verify_attempts == 0:
+        return 0.3  # 从未尝试
+    elif verify_attempts <= 2:
+        return 0.4  # 少量尝试
+    else:
+        return 0.5  # 多次尝试（有努力）
 
 
 def compute_mastery_score(
@@ -164,12 +176,14 @@ def bkt_update(prior: float, correct: bool,
 
 
 def bkt_mastery(evidence_list: list[dict],
-                params: dict[str, float] | None = None) -> float:
+                params: dict[str, float] | None = None,
+                delta_threshold: float = 0.5) -> float:
     """从 evidence 序列计算 BKT 掌握概率
 
     evidence 中 type 含 quiz_right / quiz_wrong / quiz_score 的条目
     被视为观测事件；其余类型忽略。
     初始 prior = p_init。
+    delta_threshold: quiz_score 类型的 delta 阈值，超过视为正确（默认 0.5）。
     """
     p = params or BKT_DEFAULT_PARAMS
     prior = p["p_init"]
@@ -182,7 +196,7 @@ def bkt_mastery(evidence_list: list[dict],
         # quiz_score 按 delta 正负判断
         elif etype == "quiz_score":
             delta = ev.get("delta", 0)
-            prior = bkt_update(prior, delta > 0.5, p)
+            prior = bkt_update(prior, delta > delta_threshold, p)
     return round(prior, 4)
 
 

@@ -31,9 +31,13 @@ class TeachingAction(str, Enum):
 
 @dataclass
 class TeachingSuggestion:
-    """教学建议"""
+    """教学建议
+
+    安全约束：reason 字段必须为模板拼接（f-string），
+    禁止包含 LLM 原始输出或用户输入，防止前端 XSS。
+    """
     action: TeachingAction
-    reason: str               # 为什么推荐这个行动
+    reason: str               # 仅允许模板拼接，禁止 LLM 原始文本
     confidence: float         # 0.0-1.0
     concept_id: Optional[str] = None  # 关联的概念
 
@@ -211,8 +215,9 @@ def build_context_from_session(state_store, session, learner_service) -> dict:
     except Exception:
         pass
 
-    # 会话时长（从 round_count 粗略估算，每轮约 2-3 分钟）
-    session_minutes = getattr(session, "round_count", 0) * 3
+    # 会话时长（从 chat_history 长度估算，每条消息约 2 分钟交互）
+    chat_history = getattr(session, "chat_history", []) or []
+    session_minutes = len(chat_history) * 2
 
     return {
         "mastery": mastery,

@@ -145,6 +145,16 @@ class TestIndicatorC(unittest.TestCase):
     def test_code_fail(self):
         self.assertAlmostEqual(compute_indicator_c(False, True), 0.3)
 
+    def test_code_fail_few_attempts(self):
+        """未通过 + 少量尝试 → 0.4"""
+        self.assertAlmostEqual(compute_indicator_c(False, True, verify_attempts=1), 0.4)
+        self.assertAlmostEqual(compute_indicator_c(False, True, verify_attempts=2), 0.4)
+
+    def test_code_fail_many_attempts(self):
+        """未通过 + 多次尝试 → 0.5"""
+        self.assertAlmostEqual(compute_indicator_c(False, True, verify_attempts=3), 0.5)
+        self.assertAlmostEqual(compute_indicator_c(False, True, verify_attempts=10), 0.5)
+
 
 # ---------------------------------------------------------------------------
 # 组合公式
@@ -236,6 +246,15 @@ class TestBKT(unittest.TestCase):
         evs = [{"type": "quiz_score", "delta": 0.8}]
         result = bkt_mastery(evs)
         self.assertGreater(result, BKT_DEFAULT_PARAMS["p_init"])
+
+    def test_bkt_mastery_custom_delta_threshold(self):
+        """自定义 delta_threshold 影响 quiz_score 判定。"""
+        evs = [{"type": "quiz_score", "delta": 0.6}]
+        # 默认阈值 0.5 → delta=0.6 > 0.5 → 视为正确
+        result_default = bkt_mastery(evs)
+        # 阈值 0.7 → delta=0.6 < 0.7 → 视为错误
+        result_high = bkt_mastery(evs, delta_threshold=0.7)
+        self.assertGreater(result_default, result_high)
 
     def test_custom_params(self):
         params = {"p_init": 0.5, "p_transit": 0.2,

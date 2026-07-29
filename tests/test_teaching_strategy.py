@@ -477,11 +477,11 @@ class TestBuildContextFromSession(unittest.TestCase):
         self.assertIsNone(ctx["mastery"])
         self.assertEqual(ctx["consecutive_errors"], 0)
 
-    def test_session_minutes_from_round_count(self):
+    def test_session_minutes_from_chat_history(self):
         state_store, session, learner_svc = self._make_deps()
-        session.round_count = 10
+        session.chat_history = [{"role": "user"} for _ in range(10)]
         ctx = build_context_from_session(state_store, session, learner_svc)
-        self.assertEqual(ctx["session_minutes"], 30)  # 10 * 3
+        self.assertEqual(ctx["session_minutes"], 20)  # 10 * 2
 
     def test_code_verify_pass(self):
         state_store, session, learner_svc = self._make_deps(code_pass=True)
