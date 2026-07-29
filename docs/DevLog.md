@@ -1,7 +1,8 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-29（**改进2: mark_wrong 工具实现**（feat/mark-wrong）——`backend/engine/tool_registry.py` 新增 `_mark_wrong` handler + ToolSpec 注册（permission=WRITE）。防幻觉闭环关键工具：用户标记讲解有误，自动写入纠正证据（delta=-0.05）到学习者模型，source_ref 同日幂等，fail-closed 天数解析。injection 文本供 LLM 感知纠正历史。测试 +4 用例（581 全绿））
+> 最近更新：2026-07-29（**改进3: 跨币种成本聚合修复**（fix/cross-currency）——`backend/services/observer.py` `usage_summary()` 按币种分桶聚合：`_acc()` 增加 currency 参数，`totals`/`kpi`/`today`/`by_ws`/`by_model`/`by_task`/`rows` 均新增 `costs_by_currency: dict[str, float]`，保留 `cost` 字段向后兼容。`frontend/usage.js` `fmtCost(c, costsByCurrency)` 支持多币种显示（CNY→¥/USD→$/EUR→€，多币种 `¥12.3 / $0.1`，单币种保持原样）。`frontend/app.js` usage 弹窗同步适配。测试 +2 用例（跨币种聚合 + 单币种向后兼容，583 全绿））
+> 前次：2026-07-29（**改进2: mark_wrong 工具实现**（feat/mark-wrong）——`backend/engine/tool_registry.py` 新增 `_mark_wrong` handler + ToolSpec 注册（permission=WRITE）。防幻觉闭环关键工具：用户标记讲解有误，自动写入纠正证据（delta=-0.05）到学习者模型，source_ref 同日幂等，fail-closed 天数解析。injection 文本供 LLM 感知纠正历史。测试 +4 用例（581 全绿））
 > 前次：2026-07-29（**改进1: FastAPI API 文档启用**（feat/api-docs）——`backend/api/middleware.py` auth_gate 豁免路径显式添加 `/docs`、`/openapi.json`、`/redoc`。FastAPI Swagger UI 现可通过 `/docs` 直接访问。测试 577 全绿）
 > 前次：2026-07-29（**W4 工程基础设施改进**（chore/infra）——① `requirements-dev.txt`：playwright 开发依赖分离（psutil 保留 `requirements.txt` 运行时依赖）；② `.gitattributes`：统一换行符（`* text=auto`）+ gradle 构建产物 `linguist-generated` 标记；③ `.github/workflows/ci.yml`：GitHub Actions 最低 CI（unittest + validate hook）。测试基线 577 全绿）
 > 前次：2026-07-29（**W3 orchestrator 策略模式重构**（refactor/orchestrator-phases）——ChatOrchestrator 324 行 if/elif 拆为 `phases/` 目录 9 个策略文件，PhaseRegistry 按 `matches(session)` 双轴分发（day_phase + current_stage），与 `engine/commands/` 架构同构。4 个共享 helper 下沉 `phases/base.py`（current_unit_title / next_unit_title / interview_title / record_teach_back）。REVIEWING 的 atomic_persist+validator 逐字搬运（G2c 教训）。pending_qa_capture 标志原样保留。审查修复：PrereqPhase 多余 session_store.save 移除、注册优先级对齐计划、StudyingPhase 死导入清理、memory 死参数移除。测试 +41 用例（577 全绿）| validate SUCCESS | 走查 187 全 PASS。外部调用者零改动（routes.py/app.py/测试文件构造签名不变））
@@ -32,7 +33,7 @@
   备用 `deepseek_official`（DeepSeek 官方 deepseek-v4-flash，已充值）/ `openai_compat`（OpenCode Go，被上游 401 风控拦截，待解封）
 - fallback 自动切换已生效（`llm/fallback.py`）
 - 工作区：ragent（默认，`../docx`，Day 2 学习中，`materials_dir=../RAgent文档` 68 份资料已解析）/ tinyrag（5 天测试，可删）/ onecoupon（25 天，用户项目，初始化验证通过 25/25）
-- 测试：`python -m unittest discover -s tests` → 577 个全绿；UI 走查 187 项全绿
+- 测试：`python -m unittest discover -s tests` → 583 个全绿；UI 走查 187 项全绿
 - ⚠️ 走查结束会 `POST /api/session/reset` 清测试消息——**有值得保留的对话时不要跑走查**
 - ⚠️ 服务器实例（111.229.31.41:8765，systemd study-web）：**用户要求 2026-07-25 起不再自动同步**——代码改动只本地验证 + 推 GitHub，除非用户明确要求否则不要动服务器
 

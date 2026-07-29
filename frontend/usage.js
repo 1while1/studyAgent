@@ -11,7 +11,19 @@ function fmtK(n) {
   return n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "K" : String(n);
 }
 function fmtFull(n) { return (n ?? 0).toLocaleString(); }
-function fmtCost(c) { return c ? `¥${c}` : "—"; }
+const _CURRENCY_SYMBOLS = { CNY: "¥", USD: "$", EUR: "€", GBP: "£", JPY: "¥" };
+function fmtCost(c, costsByCurrency) {
+  // 多币种：传入字典时按币种拼接
+  if (costsByCurrency && typeof costsByCurrency === "object") {
+    const parts = Object.entries(costsByCurrency)
+      .filter(([, v]) => v > 0)
+      .map(([cur, v]) => `${_CURRENCY_SYMBOLS[cur] || cur}${v}`);
+    if (parts.length > 0) return parts.join(" / ");
+  }
+  // 向后兼容：数字或无值
+  if (c) return `¥${c}`;
+  return "—";
+}
 function fmtPct(x) { return x == null ? "—" : (x * 100).toFixed(1) + "%"; }
 
 async function load() {
@@ -66,7 +78,7 @@ function renderKpi(u) {
     ["总调用", fmtFull(k.calls), `今日 ${fmtFull(t.calls)}`],
     ["总输入", fmtFull(k.in_tokens), `今日 ${fmtFull(t.in_tokens)}`],
     ["总输出", fmtFull(k.out_tokens), `今日 ${fmtFull(t.out_tokens)}`],
-    ["估算成本", fmtCost(k.cost), `今日 ${fmtCost(t.cost)}`],
+    ["估算成本", fmtCost(k.cost, k.costs_by_currency), `今日 ${fmtCost(t.cost, t.costs_by_currency)}`],
     ["缓存命中率", fmtPct(k.cache_hit_rate), "命中按低价计费"],
     ["失败率", fmtPct(k.fail_rate), ""],
   ];
@@ -121,7 +133,7 @@ function renderMini(table, rows, nameKey) {
   for (const r of rows) {
     const tr = document.createElement("tr");
     for (const c of [r[nameKey], fmtFull(r.calls), fmtK(r.in_tokens),
-                     fmtK(r.out_tokens), fmtCost(r.cost)]) {
+                     fmtK(r.out_tokens), fmtCost(r.cost, r.costs_by_currency)]) {
       const td = document.createElement("td");
       td.textContent = c;
       tr.appendChild(td);
@@ -144,7 +156,7 @@ function renderDetail(rows) {
     const basis = g.est_calls ? `实测 ${measured} / 估算 ${g.est_calls}` : "实测";
     const cells = [g.date, g.ws, `${g.provider} / ${g.model}`, g.task,
                    g.calls, basis, fmtFull(g.in_tokens), fmtFull(g.cache_hit || 0),
-                   fmtFull(g.out_tokens), fmtCost(g.cost)];
+                   fmtFull(g.out_tokens), fmtCost(g.cost, g.costs_by_currency)];
     cells.forEach((c, i) => {
       const td = document.createElement("td");
       td.textContent = c;

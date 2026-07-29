@@ -288,17 +288,23 @@ class Observer:
         daily: dict[str, dict] = {}
         ws_seen: set[str] = set()
         today_s = time.strftime("%Y-%m-%d")
-        today = {"calls": 0, "in_tokens": 0, "out_tokens": 0, "cost": 0.0}
+        today = {"calls": 0, "in_tokens": 0, "out_tokens": 0, "cost": 0.0,
+                 "costs_by_currency": {}}
 
-        def _acc(bucket: dict, key: str, r: dict, cost: float) -> None:
+        def _acc(bucket: dict, key: str, r: dict, cost: float,
+                 currency: str) -> None:
             g = bucket.setdefault(key, {"calls": 0, "failures": 0,
                                         "in_tokens": 0, "out_tokens": 0,
-                                        "cost": 0.0})
+                                        "cost": 0.0,
+                                        "costs_by_currency": {}})
             g["calls"] += 1
             g["failures"] += 0 if r.get("ok") else 1
             g["in_tokens"] += r.get("in_tokens", 0)
             g["out_tokens"] += r.get("out_tokens", 0)
             g["cost"] += cost
+            if currency:
+                g["costs_by_currency"][currency] = (
+                    g["costs_by_currency"].get(currency, 0.0) + cost)
 
         for line in lines[-50000:]:
             try:
@@ -334,9 +340,13 @@ class Observer:
             g["est_calls"] += 1 if r.get("tokens_est") else 0
             g["cost"] += cost
             g["currency"] = g["currency"] or currency
-            _acc(by_ws, rec_ws, r, cost)
-            _acc(by_model, r.get("model", "?"), r, cost)
-            _acc(by_task, r.get("task", "?"), r, cost)
+            if currency:
+                g.setdefault("costs_by_currency", {})
+                g["costs_by_currency"][currency] = (
+                    g["costs_by_currency"].get(currency, 0.0) + cost)
+            _acc(by_ws, rec_ws, r, cost, currency)
+            _acc(by_model, r.get("model", "?"), r, cost, currency)
+            _acc(by_task, r.get("task", "?"), r, cost, currency)
             d = daily.setdefault(day, {"date": day, "in_tokens": 0,
                                        "out_tokens": 0})
             d["in_tokens"] += r.get("in_tokens", 0)
@@ -346,12 +356,17 @@ class Observer:
                 today["in_tokens"] += r.get("in_tokens", 0)
                 today["out_tokens"] += r.get("out_tokens", 0)
                 today["cost"] += cost
+                if currency:
+                    today["costs_by_currency"][currency] = (
+                        today["costs_by_currency"].get(currency, 0.0) + cost)
 
         def _rows(bucket: dict, name_key: str) -> list[dict]:
             out = []
             for name, g in bucket.items():
                 row = {name_key: name, **g}
                 row["cost"] = round(row["cost"], 4)
+                row["costs_by_currency"] = {
+                    c: round(v, 4) for c, v in row["costs_by_currency"].items()}
                 out.append(row)
             return sorted(out, key=lambda x: -x["cost"])
 
@@ -361,19 +376,29 @@ class Observer:
         total_out = sum(g["out_tokens"] for g in rows)
         total_hit = sum(g["cache_hit"] for g in rows)
         total_calls = sum(g["calls"] for g in rows)
+        # 汇总 costs_by_currency
+        total_currencies: dict[str, float] = {}
+        for g in rows:
+            for cur, v in g.get("costs_by_currency", {}).items():
+                total_currencies[cur] = total_currencies.get(cur, 0.0) + v
         totals = {"calls": total_calls,
                   "failures": sum(g["failures"] for g in rows),
                   "in_tokens": total_in, "out_tokens": total_out,
                   "cache_hit": total_hit,
-                  "cost": round(sum(g["cost"] for g in rows), 4)}
+                  "cost": round(sum(g["cost"] for g in rows), 4),
+                  "costs_by_currency": {c: round(v, 4)
+                                        for c, v in total_currencies.items()}}
         for g in rows:
             g["cost"] = round(g["cost"], 4)
+            g["costs_by_currency"] = {
+                c: round(v, 4) for c, v in g.get("costs_by_currency", {}).items()}
         return {
             "rows": rows, "totals": totals, "days": days,
             "log_path": str(self._log_path),
             "workspaces": sorted(ws_seen),
             "kpi": {"calls": total_calls, "in_tokens": total_in,
                     "out_tokens": total_out, "cost": totals["cost"],
+                    "costs_by_currency": totals["costs_by_currency"],
                     "cache_hit_rate": (round(total_hit / total_in, 4)
                                        if total_in else None),
                     "fail_rate": (round(totals["failures"] / total_calls, 4)
@@ -381,7 +406,9 @@ class Observer:
             "daily": [daily[d] for d in sorted(daily)],
             "today": {"calls": today["calls"], "in_tokens": today["in_tokens"],
                       "out_tokens": today["out_tokens"],
-                      "cost": round(today["cost"], 4)},
+                      "cost": round(today["cost"], 4),
+                      "costs_by_currency": {
+                          c: round(v, 4) for c, v in today["costs_by_currency"].items()}},
             "by_workspace": _rows(by_ws, "ws"),
             "by_model": _rows(by_model, "model"),
             "by_task": _rows(by_task, "task"),

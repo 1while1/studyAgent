@@ -179,6 +179,8 @@ class TestObservedLLM(ObserverTestBase):
 _PRICING_TOML = (
     '[pricing."m"]\ninput_per_million = 10\noutput_per_million = 20\n'
     'cache_hit_per_million = 1\ncurrency = "CNY"\n'
+    '[pricing."m_usd"]\ninput_per_million = 5\noutput_per_million = 10\n'
+    'cache_hit_per_million = 0.5\ncurrency = "USD"\n'
     '[pricing.peak]\nmultiplier = 2\nhours = [[9, 12]]\n')
 
 
@@ -269,6 +271,40 @@ class TestUsageM9(ObserverTestBase):
         self.assertEqual(bt["warmup"]["calls"], 1)
         self.assertIn("today", s)
         self.assertIn("kpi", s)
+
+    def test_cross_currency_aggregation(self):
+        """跨币种成本应按币种分桶累加，不应混合成一个无意义数字。"""
+        # CNY 记录：1M 输入，谷时 → 10 CNY
+        self._raw("2026-07-20 20:00:00", in_tokens=1_000_000, model="m")
+        # USD 记录：1M 输入，谷时 → 5 USD
+        self._raw("2026-07-20 20:00:01", in_tokens=1_000_000, model="m_usd")
+        s = self.obs.usage_summary(0)
+        # totals 的 costs_by_currency 应分别包含 CNY 和 USD
+        cbc = s["totals"]["costs_by_currency"]
+        self.assertAlmostEqual(cbc["CNY"], 10.0, places=3)
+        self.assertAlmostEqual(cbc["USD"], 5.0, places=3)
+        # 向后兼容：cost 字段仍存在（等于所有币种之和的数值）
+        self.assertAlmostEqual(s["totals"]["cost"], 15.0, places=3)
+        # kpi 也有 costs_by_currency
+        self.assertAlmostEqual(s["kpi"]["costs_by_currency"]["CNY"], 10.0, places=3)
+        self.assertAlmostEqual(s["kpi"]["costs_by_currency"]["USD"], 5.0, places=3)
+        # by_model 各行应有独立的 costs_by_currency
+        bm = {b["model"]: b for b in s["by_model"]}
+        self.assertAlmostEqual(bm["m"]["costs_by_currency"]["CNY"], 10.0, places=3)
+        self.assertAlmostEqual(bm["m_usd"]["costs_by_currency"]["USD"], 5.0, places=3)
+        # rows 各行也应有 costs_by_currency
+        for row in s["rows"]:
+            self.assertIn("costs_by_currency", row)
+
+    def test_single_currency_backward_compat(self):
+        """单币种场景：cost 字段值不变，costs_by_currency 只有一个币种。"""
+        self._raw("2026-07-20 20:00:00", in_tokens=1_000_000, model="m")
+        s = self.obs.usage_summary(0)
+        # cost 字段保持原值
+        self.assertAlmostEqual(s["totals"]["cost"], 10.0, places=3)
+        # costs_by_currency 只有 CNY
+        self.assertAlmostEqual(s["totals"]["costs_by_currency"]["CNY"], 10.0, places=3)
+        self.assertEqual(len(s["totals"]["costs_by_currency"]), 1)
 
 
 class TestWriteFailure(ObserverTestBase):
