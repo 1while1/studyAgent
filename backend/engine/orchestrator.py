@@ -100,6 +100,10 @@ class ChatOrchestrator(TurnEngine):
             if suggestion is None:
                 return None
             result = suggestion.to_dict()
+            # 与上次建议对比，相同则不重复弹出
+            prev = getattr(session, "pending_teaching_suggestion", None)
+            if prev and prev.get("action") == result.get("action") and prev.get("concept_id") == result.get("concept_id"):
+                return None
             session.pending_teaching_suggestion = result
             return result
         except Exception as e:
