@@ -1070,11 +1070,21 @@ const actionCommands = {
 };
 
 // 采纳按钮处理：根据映射路由到 /api/command 或 /api/chat
+function dismissSuggestionCard(card) {
+    card.classList.add('ts-fadeout');
+    card.addEventListener('transitionend', function handler() {
+        card.removeEventListener('transitionend', handler);
+        card.remove();
+    });
+    // 兜底：transition 未触发时仍移除
+    setTimeout(function() { if (card.parentNode) card.remove(); }, 350);
+}
+
 function adoptTeachingSuggestion(action) {
     const mapped = actionCommands.hasOwnProperty(action) ? actionCommands[action] : null;
-    // 隐藏卡片
+    // 动画移除卡片
     const card = event.target.closest('.teaching-suggestion-card');
-    if (card) card.remove();
+    if (card) dismissSuggestionCard(card);
     if (mapped === null || mapped === undefined) return;  // REST：仅视觉弱化
     if (mapped.startsWith('[')) {
         // 现有 SOP 指令 → /api/command
@@ -1099,11 +1109,11 @@ function renderTeachingSuggestion(container, ev) {
     const card = document.createElement('div');
     card.className = 'teaching-suggestion-card';
     card.innerHTML = `
-        <div style="font-weight:600;margin-bottom:6px">${labels[data.action] || data.action}</div>
-        <div style="font-size:0.9em;color:#666;margin-bottom:8px">${escapeHtml(data.reason || '')}</div>
-        <div style="display:flex;gap:8px">
-            <button onclick="adoptTeachingSuggestion('${data.action}')" style="padding:4px 12px;border-radius:4px;border:none;background:var(--primary,#4a90d9);color:#fff;cursor:pointer">采纳</button>
-            <button onclick="this.parentElement.parentElement.remove()" style="padding:4px 12px;border-radius:4px;border:1px solid #ccc;background:transparent;cursor:pointer">跳过</button>
+        <div class="suggestion-title">${escapeHtml(labels[data.action] || data.action)}</div>
+        ${data.reason ? `<div class="suggestion-reason">${escapeHtml(data.reason)}</div>` : ''}
+        <div class="suggestion-actions">
+            <button class="suggestion-btn adopt" onclick="adoptTeachingSuggestion('${data.action}')">采纳</button>
+            <button class="suggestion-btn skip" onclick="dismissSuggestionCard(this.closest('.teaching-suggestion-card'))">跳过</button>
         </div>
     `;
     container.appendChild(card);

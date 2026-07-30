@@ -19,7 +19,7 @@ from contextvars import ContextVar
 from pathlib import Path
 
 from .backup_service import atomic_write
-from .config_service import ConfigService, WEB_ROOT, runtime_dir
+from .config_service import ConfigService, WEB_ROOT, get_config, runtime_dir
 
 _task_var: ContextVar[str] = ContextVar("llm_task", default="chat")
 
@@ -457,6 +457,16 @@ def get_observer(config: ConfigService) -> Observer:
     if key not in _OBSERVERS:
         _OBSERVERS[key] = Observer(config)
     return _OBSERVERS[key]
+
+
+def get_log_path(config: ConfigService | None = None) -> Path:
+    """返回 agent.log 的绝对路径（供日志分析器使用）。"""
+    if config is None:
+        config = get_config()
+    raw = config.get("agent_log_path", "")
+    if raw:
+        return (WEB_ROOT / raw).resolve()
+    return runtime_dir(config) / "agent.log"
 
 
 def log_prefetch(config: ConfigService, sources: list[str]) -> None:

@@ -1201,7 +1201,72 @@ body[data-layout="pair"] .heat-cell2.lv4 { background: #8fd694; }
 #viewer-overlay.viewer-code [data-act="actual"],
 #viewer-overlay.viewer-code #viewer-scale { display: none; }
 
+/* ── 教学建议卡片 ── */
 .teaching-suggestion-card {
-    margin: 8px 0; padding: 12px; border-radius: 8px;
-    border: 1px solid var(--border, #ddd); background: var(--bg-secondary, #f8f9fa);
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin: 12px 0;
+    color: #fff;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+    animation: tsSlideIn 0.3s ease-out;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.teaching-suggestion-card.ts-fadeout {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.97);
+}
+
+.teaching-suggestion-card .suggestion-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.teaching-suggestion-card .suggestion-reason {
+    font-size: 13px;
+    opacity: 0.9;
+    margin-bottom: 12px;
+    line-height: 1.5;
+}
+
+.teaching-suggestion-card .suggestion-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.teaching-suggestion-card .suggestion-btn {
+    padding: 6px 16px;
+    border-radius: 20px;
+    border: none;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-weight: 500;
+}
+
+.teaching-suggestion-card .suggestion-btn.adopt {
+    background: rgba(255, 255, 255, 0.92);
+    color: #667eea;
+}
+
+.teaching-suggestion-card .suggestion-btn.adopt:hover {
+    background: #fff;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+}
+
+.teaching-suggestion-card .suggestion-btn.skip {
+    background: rgba(255, 255, 255, 0.2);
+    color: #fff;
+}
+
+.teaching-suggestion-card .suggestion-btn.skip:hover {
+    background: rgba(255, 255, 255, 0.35);
+}
+
+@keyframes tsSlideIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to   { opacity: 1; transform: translateY(0); }
 }

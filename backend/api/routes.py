@@ -441,3 +441,26 @@ from .llm_config_routes import (  # noqa: E402
     context_status, get_llm_config, save_llm_config, test_llm_config,
     LlmConfigIn, SETTINGS_PATH, _section_view, _context_view,
 )
+
+
+# ========== 日志分析 API（M3.5 可观测性增强） ==========
+
+@router.get("/api/logs/stats")
+async def get_log_stats(last_n: int = 0):
+    from ..services.config_service import runtime_dir
+    from ..services.log_analyzer import LogAnalyzer
+    log_path = runtime_dir(_deps.config) / "agent.log"
+    analyzer = LogAnalyzer(log_path)
+    stats = analyzer.analyze(last_n=last_n)
+    return {"total_entries": stats.total_entries, "token_usage": stats.token_usage,
+            "error_count": stats.error_count, "warning_count": stats.warning_count,
+            "event_types": stats.event_types, "avg_response_time": stats.avg_response_time}
+
+@router.get("/api/logs/query")
+async def query_logs(keyword: str, last_n: int = 100):
+    from ..services.config_service import runtime_dir
+    from ..services.log_analyzer import LogAnalyzer
+    log_path = runtime_dir(_deps.config) / "agent.log"
+    analyzer = LogAnalyzer(log_path)
+    results = analyzer.query(keyword, last_n=last_n)
+    return {"results": results, "count": len(results)}
