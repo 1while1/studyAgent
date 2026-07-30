@@ -24,6 +24,8 @@ api → engine → services/llm → domain
 | `code_routes.py` | 代码浏览器（目录树 + 文件读取 + suggest） |
 | `auth_routes.py` | 认证（登录/登出/状态/初始化密码） |
 | `llm_config_routes.py` | 模型配置热生效 + 可观测数据（token 计量/agent.log） |
+| `upload_routes.py` | 文件上传路由（POST /api/upload + GET /uploads/） |
+| `security_headers.py` | 安全响应头（CSP / X-Frame-Options / X-Content-Type-Options） |
 
 ### engine/ — 引擎层
 
@@ -44,6 +46,7 @@ api → engine → services/llm → domain
 | `tool_use.py` | READ/READ_DOC/ACTION 标记截获与分发 |
 | `note_actions.py` | 笔记销账编排（`resolve_note` 单一路径，铁律 16） |
 | `qa_capture.py` | 拷打反喂（异常静默不阻断，铁律 16） |
+| `teaching_strategy.py` | 教学行动策略库（7 行动 + suggest_action 规则引擎） |
 | `session_store.py` | 会话 JSON 读写（损坏自动 `.corrupt.bak`） |
 | `hooks/` | 后置钩子（`pipeline.py` + `validate_hook.py`，落盘后校验） |
 
@@ -110,6 +113,14 @@ api → engine → services/llm → domain
 | `notes_service.py` | 笔记管理（CRUD / 合并 / 蒸馏，kind ∈ {stuck,question,mastered,insight}） |
 | `qa_service.py` | 话术服务（InterviewQA.md 读写 + parse/render/落盘） |
 | `auth_service.py` | 认证（bcrypt 密码哈希，铁律 14） |
+| `repository.py` | 存储仓库抽象（Repository 接口 + JsonRepository） |
+| `auth_provider.py` | 认证提供者接口（AuthProvider + LocalAuthProvider） |
+| `log_analyzer.py` | 日志分析器（结构化查询/统计 + /api/logs 端点） |
+| `mcp_client_service.py` | MCP Client（MCPClientPool + JSON-RPC 2.0 stdio + 命令白名单） |
+| `plugin_service.py` | Plugin 系统（PluginSpec + PluginRegistry + entry_points 扫描） |
+| `upload_service.py` | 文件上传（类型/大小校验 + 存储） |
+| `vision_service.py` | 图片分析（base64/路径输入 + LLM Vision API） |
+| `web_search_service.py` | Web 搜索（DuckDuckGoProvider + 缓存） |
 
 ### llm/ — LLM 层
 
@@ -136,6 +147,8 @@ api → engine → services/llm → domain
 | `paths.py` | 路径常量（runtime_dir 等） |
 | `learner.py` | 学习者模型数据（Concept / Evidence / Mastery） |
 | `sensitive.py` | 敏感文件过滤黑名单（.env/证书/私钥，铁律 7） |
+| `error_pattern.py` | 错误模式分类（5 大类枚举 + 提取逻辑） |
+| `learning_metrics.py` | 学习效果度量（BKT + FSRS + 三指标组合） |
 
 ## 前端结构
 

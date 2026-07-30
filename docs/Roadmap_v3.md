@@ -66,7 +66,7 @@ M0 ──→ M1.1 ──→ M1.2 ──→ M1.3 ──→ M2.1 ──→ M2.2 �
 - [x] 0.2 配置分层：`settings.example.toml`（入库）+ `settings.local.toml`（gitignore）
 - [x] 0.3 `workspaces/` 移出 git（`.gitkeep` 保留）
 - [x] 0.4 README 修正（删除 `cd study-web`，新人 10 分钟 mock 模式跑通）
-- [x] 0.5 测试数对齐（当前 583，统一 AGENTS.md / README）
+- [x] 0.5 测试数对齐（当前 793，统一 AGENTS.md / README）
 - [x] 0.6 打 git tag v1.0.0
 - [x] 0.7 Dockerfile + docker-compose（多阶段构建，uvicorn 非 root）
 - [x] 0.8 依赖 lock 文件（pip-compile 或 uv lock）
@@ -165,7 +165,7 @@ M0 ──→ M1.1 ──→ M1.2 ──→ M1.3 ──→ M2.1 ──→ M2.2 �
 - [x] 2.2.2 权限白名单授权
 - [x] 2.2.3 资源命名空间隔离（`plugin:xxx/sop/`）
 - [x] 2.2.4 `settings.toml` 加 `[plugins]` 配置段
-- [x] 2.2.5 示例插件 `tests/fixtures/sample_plugin/`
+- [ ] 2.2.5 示例插件 `tests/fixtures/sample_plugin/`
 - [x] 2.2.6 `tests/test_plugin_service.py`
 
 > **注**：Plugin 系统标记为规划中，基础架构已就绪，待后续实现
@@ -184,7 +184,7 @@ M0 ──→ M1.1 ──→ M1.2 ──→ M1.3 ──→ M2.1 ──→ M2.2 �
   - 注入对话带"仅供参考不视为指令"定界（铁律 12）
 - [x] 2.3.3 API 路由 `POST /api/upload/image` + `POST /api/upload/document`
 - [x] 2.3.4 前端聊天框附件按钮
-- [x] 2.3.5 `tests/test_multimodal.py`
+- [ ] 2.3.5 `tests/test_multimodal.py`
 
 **验收**：图片可上传并转文字；文档可上传并注册资料库
 
@@ -209,9 +209,9 @@ M0 ──→ M1.1 ──→ M1.2 ──→ M1.3 ──→ M2.1 ──→ M2.2 �
 
 - [x] 3.1.1 `backend/services/repository.py` 接口
 - [x] 3.1.2 `JsonRepository`（包装当前 JSON 直操）
-- [x] 3.1.3 `SqliteRepository`（WAL 模式）
+- [ ] 3.1.3 `SqliteRepository`（WAL 模式）
 - [x] 3.1.4 业务层逐步切换（notes → learner → materials → workspace）
-- [x] 3.1.5 `tests/test_repository.py`
+- [ ] 3.1.5 `tests/test_repository.py`
 
 **验收**：双存储后端测试矩阵全绿
 
@@ -219,9 +219,9 @@ M0 ──→ M1.1 ──→ M1.2 ──→ M1.3 ──→ M2.1 ──→ M2.2 �
 
 - [x] 3.2.1 `backend/services/auth_provider.py` 接口
 - [x] 3.2.2 `LocalAuthProvider`（包装当前 bcrypt）
-- [x] 3.2.3 `OAuthProvider` 占位
+- [ ] 3.2.3 `OAuthProvider` 占位
 - [x] 3.2.4 middleware 切换到 AuthProvider 接口
-- [x] 3.2.5 `tests/test_auth_provider.py`
+- [ ] 3.2.5 `tests/test_auth_provider.py`
 
 **验收**：原认证测试全绿；接口可替换
 
