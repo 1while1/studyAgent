@@ -64,7 +64,10 @@ def auth_setup(body: _PasswordIn, response: Response):
 @auth_router.post("/api/auth/login")
 def auth_login(body: _PasswordIn, request: Request, response: Response):
     auth = get_auth(_deps().config)
-    ip = request.client.host if request.client else "unknown"
+    # 优先使用 X-Forwarded-For（反向代理场景），否则回退到直连 IP
+    xff = request.headers.get("x-forwarded-for", "")
+    ip = xff.split(",")[0].strip() if xff else (
+        request.client.host if request.client else "unknown")
     if auth.rate_limited(ip):
         return {"ok": False, "error": "尝试次数过多，请稍后再试"}
     if not auth.enabled():

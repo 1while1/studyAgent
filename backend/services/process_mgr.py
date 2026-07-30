@@ -34,6 +34,8 @@ _PORT_PROBE_TIMEOUT = 2.5    # 启动后端口快速探测窗口（秒）；慢�
 _STOP_GRACE = 3.0            # terminate 后等待再 kill 的宽限（秒）
 _REG_LOCK = threading.RLock()  # 注册表读改写互斥（M6 审查修复 B1：防并发 start 互踩丢条目/孤儿进程）
 _TAIL_READ_BYTES = 256 * 1024  # logs_tail 尾部定位读取窗口（B2 修复：防大日志全量入内存）
+_LOG_ROTATE_BYTES = 10 * 1024 * 1024  # 10MB：子进程日志 rotation 阈值
+_LOG_ROTATE_KEEP = 3                    # rotation 保留档数
 
 
 class ProcessError(Exception):
@@ -290,6 +292,24 @@ class ProcessManager:
 
     # ---- 日志 ----
 
+    def _rotate_log(self, log_path: Path) -> None:
+        """日志 rotation：超过 _LOG_ROTATE_BYTES 时轮转，保留 _LOG_ROTATE_KEEP 档。"""
+        try:
+            if not log_path.is_file():
+                return
+            if log_path.stat().st_size < _LOG_ROTATE_BYTES:
+                return
+            # 删除最旧档，依次前移
+            for i in range(_LOG_ROTATE_KEEP - 1, 0, -1):
+                src = log_path.with_suffix(f".log.{i}")
+                dst = log_path.with_suffix(f".log.{i + 1}")
+                if src.is_file():
+                    src.replace(dst)
+            # 当前日志 → .log.1
+            log_path.replace(log_path.with_suffix(".log.1"))
+        except Exception:
+            pass  # rotation 失败不阻断主流程
+
     def logs_tail(self, pid_id: str, n: int = 200) -> dict:
         entry = self._entry(pid_id)
         path = Path(entry["log_path"])
@@ -321,6 +341,8 @@ class ProcessManager:
                     pos = f.tell()
             if chunk:
                 idle = 0
+                # 检查日志是否需要轮转
+                self._rotate_log(path)
                 for line in chunk.splitlines():
                     yield {"type": "log", "line": line}
             else:

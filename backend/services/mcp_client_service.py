@@ -30,7 +30,7 @@ class MCPToolInfo:
 class MCPClient:
     """单个 MCP Server 的客户端"""
 
-    def __init__(self, name: str, command: str, args: list[str], env: dict = None):
+    def __init__(self, name: str, command: str, args: list[str], env: Optional[dict] = None):
         self.name = name
         self.command = command
         self.args = args
@@ -99,7 +99,15 @@ class MCPClient:
                 self._process.stdin.flush()
                 line = self._readline_with_timeout()
                 if line:
-                    return json.loads(line.decode())
+                    resp = json.loads(line.decode())
+                    # JSON-RPC 响应 id 校验：确保匹配请求
+                    req_id = message.get("id")
+                    if req_id is not None and resp.get("id") != req_id:
+                        logger.warning(
+                            "MCP response id mismatch [%s]: expected %s, got %s",
+                            self.name, req_id, resp.get("id"))
+                        return None
+                    return resp
             except Exception as e:
                 logger.warning("MCP _send failed [%s]: %s", self.name, e)
                 return None

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from ..services.config_service import WEB_ROOT
 from ..services.doc_initializer import InitError
 from ..services.repo_scanner import scan as repo_scan
 from ..services.workspace_service import WorkspaceError, WorkspaceService
@@ -65,8 +68,30 @@ def workspaces_presets():
 
 @workspace_router.get("/api/workspaces/scan-preview")
 def workspaces_scan_preview(path: str):
+    # 路径白名单校验：限定在已知工作区目录 / code_roots 内
     try:
-        return {"ok": True, "profile": repo_scan(path)}
+        target = Path(path)
+        if not target.is_absolute():
+            target = (WEB_ROOT / path).resolve()
+        else:
+            target = target.resolve()
+        config = _deps().config
+        allowed = []
+        # 收集所有已知工作区的 project_dir
+        for ws in WorkspaceService(config).list():
+            pd = Path(ws.get("project_dir", ""))
+            if pd.is_absolute() and pd.is_dir():
+                allowed.append(pd)
+        # code_roots
+        for r in config.code_roots:
+            rp = Path(r["path"])
+            if not rp.is_absolute():
+                rp = (WEB_ROOT / r["path"]).resolve()
+            if rp.is_dir():
+                allowed.append(rp)
+        if not any(target == a or a in target.parents for a in allowed):
+            return {"ok": False, "error": "路径不在白名单内（仅允许已知工作区/代码根目录）"}
+        return {"ok": True, "profile": repo_scan(str(target))}
     except FileNotFoundError as e:
         return {"ok": False, "error": str(e)}
 

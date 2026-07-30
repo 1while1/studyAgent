@@ -11,6 +11,7 @@ from pathlib import Path
 SENSITIVE_NAMES = {
     ".env", ".env.local", ".env.production", ".env.development",
     "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "credentials",
+    ".git", "secrets.yml", ".npmrc", "credentials.json", ".pypirc",
 }
 SENSITIVE_EXTS = {".pem", ".key", ".p12", ".pfx", ".jks", ".keystore", ".secret"}
 

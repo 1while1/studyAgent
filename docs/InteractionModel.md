@@ -103,7 +103,7 @@ StudyingPhase 暂不注册（回合计数由 orchestrator else 分支处理）�
 - 写类工具全走规则 14（atomic_persist + validator）
 - `update_model` 的 etype 只允许 `[evidence_delta]` 表内类型（铁律 15）
 - `persist_state` 白名单操作集：`set_unit_status`（completed 不可用）
-- MCP 工具适配器规划中（同一 ToolSpec 导出 marker / native 两种传输 schema）
+- MCP 工具适配器已交付（M2.3）（同一 ToolSpec 导出 marker / native 两种传输 schema）
 
 ## 6. 数据层契约
 
