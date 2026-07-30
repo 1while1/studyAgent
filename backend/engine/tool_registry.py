@@ -610,6 +610,11 @@ def _process_logs(ctx: ToolContext, args: dict) -> ToolResult:
 
 
 
+# ---- 模块级单例（C2: WebSearchService 缓存 / C4: MCPClientPool 防进程泄漏） ----
+_web_search_svc = None
+_mcp_pool = None
+
+
 # ---- web_search（READONLY，M2.1 扩展层） ----
 
 def _web_search(ctx: ToolContext, args: dict) -> ToolResult:
@@ -618,8 +623,10 @@ def _web_search(ctx: ToolContext, args: dict) -> ToolResult:
     if not query:
         return ToolResult(ok=False, error="query 不能为空")
     from ..services.web_search_service import WebSearchService
-    svc = WebSearchService(ctx.config)
-    results = svc.search(query, top_k=int(args.get("top_k", 5)))
+    global _web_search_svc
+    if _web_search_svc is None:
+        _web_search_svc = WebSearchService(ctx.config)
+    results = _web_search_svc.search(query, top_k=int(args.get("top_k", 5)))
     return ToolResult(ok=True, data={
         "query": query,
         "results": [
@@ -819,15 +826,20 @@ def build_default_registry() -> ToolRegistry:
                 "required": ["query"]},
         handler=_web_search))
     # M2.3: 动态注册 MCP 工具
+    global _mcp_pool
     try:
         from ..services.mcp_client_service import MCPClientPool
         from ..services.config_service import ConfigService
-        pool = MCPClientPool(ConfigService())
-        pool.load_from_config()
+        if _mcp_pool is None:
+            _mcp_pool = MCPClientPool(ConfigService())
+            _mcp_pool.load_from_config()
+        pool = _mcp_pool
         for server_name, tool_info in pool.get_all_tools():
             def _mcp_handler(ctx, args, _server=server_name, _tool=tool_info.name):
                 result = pool.call_tool(_server, _tool, args)
-                return result or {"error": "MCP tool call failed"}
+                if result and "error" not in result:
+                    return ToolResult(ok=True, data=result.get("result", result))
+                return ToolResult(ok=False, error="MCP tool call failed")
             reg.register(ToolSpec(
                 name=f"mcp_{server_name}_{tool_info.name}",
                 description=f"[MCP:{server_name}] {tool_info.description}",
@@ -837,4 +849,24 @@ def build_default_registry() -> ToolRegistry:
             ))
     except Exception:
         pass  # MCP 连接失败静默降级（铁律 13）
+    # M2.4: 加载 Plugin/Skill 工具（白名单 + 权限校验）
+    try:
+        from ..services.plugin_service import PluginLoader
+        loader = PluginLoader(ConfigService())
+        for spec in loader.load_all():
+            for tool_def in spec.tools:
+                perm = tool_def.get("permission", READONLY)
+                if perm not in PERMISSION_ORDER:
+                    continue  # 跳过非法权限声明
+                def _plugin_handler(ctx, args, _t=tool_def):
+                    return ToolResult(ok=False, error=(
+                        f"插件工具 {_t.get('name')} 无可用 handler（占位）"))
+                reg.register(ToolSpec(
+                    name=f"plugin_{spec.name}_{tool_def['name']}",
+                    permission=perm,
+                    description=f"[Plugin:{spec.name}] {tool_def.get('description', '')}",
+                    params=tool_def.get("params", {"type": "object", "properties": {}}),
+                    handler=_plugin_handler))
+    except Exception:
+        pass  # 插件加载失败静默降级（铁律 13）
     return reg

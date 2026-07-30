@@ -22,7 +22,7 @@ def make_auth_gate(config: ConfigService):
 
     async def auth_gate(request, call_next):
         path = request.url.path
-        if path.startswith("/api/") and path not in _EXEMPT:
+        if (path.startswith("/api/") or path.startswith("/uploads/")) and path not in _EXEMPT:
             auth = get_auth(config)
             if auth.enabled() and not auth.verify_token(
                     request.cookies.get(AUTH_COOKIE, "")):

@@ -253,3 +253,8 @@ transport = "stdio"
 command = "echo"
 args = []
 enabled = false
+
+# M2.4 Plugin 系统
+[plugins]
+enabled = []
+autoload = true
