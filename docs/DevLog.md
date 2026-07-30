@@ -1,7 +1,8 @@
 # DevLog — study-web 开发日志与交接上下文
 
 > 用途：跨会话/压缩后恢复上下文。记录当前状态、关键设计决策、已修复 bug 史。
-> 最近更新：2026-07-30（**M3 架构加固交付**——M3.1 Repository 抽象：`repository.py`（Repository 接口 + JsonRepository）+ StateStore 试点改造；M3.2 认证可插拔：`auth_provider.py`（AuthProvider 接口 + LocalAuthProvider）+ AuthService 委托；M3.3 安全加固：`security_headers.py`（安全头中间件）+ cookie secure + 生产模式关/docs + agent.log 轮转；M3.4 配置分层：ConfigService 深度合并 settings.local.toml + active_workspace 迁移；测试基线 744 → 745（+1））
+> 最近更新：2026-07-30（**M3.5 补强阶段交付**——P1 Repository 扩展：NotesService + LearnerService 迁移到 JsonRepository（Repository 覆盖率 3/6）；P1 依赖修复：duckduckgo-search → ddgs 更名同步 + lock 更新；P1 配置清理：settings.toml 个人路径迁移至 settings.local.toml + Agnes URL 统一 .cn；测试基线 745 全通过）
+> 前次：2026-07-30（**M3 架构加固交付**——M3.1 Repository 抽象：`repository.py`（Repository 接口 + JsonRepository）+ StateStore 试点改造；M3.2 认证可插拔：`auth_provider.py`（AuthProvider 接口 + LocalAuthProvider）+ AuthService 委托；M3.3 安全加固：`security_headers.py`（安全头中间件）+ cookie secure + 生产模式关/docs + agent.log 轮转；M3.4 配置分层：ConfigService 深度合并 settings.local.toml + active_workspace 迁移；测试基线 744 → 745（+1））
 > 前次：2026-07-29（**改进5: 前端模块化拆分**（refactor/frontend-modules）——`frontend/app.js` 3272 行拆为 8 个文件：`markdown.js`（Markdown 渲染+代码引用芯片+toast ~126 行）、`code-browser.js`（代码浏览器/Monaco/保存 ~428 行）、`llm-config.js`（模型配置弹窗 ~138 行）、`workspace-mgr.js`（工作区管理 ~176 行）、`mastery.js`（掌握度面板/雷达/预警 ~563 行）、`notes-page.js`（笔记管理/编辑器 ~511 行）、`process-mgr.js`（进程管理+实战工坊 ~198 行）。app.js 保留 ~1040 行核心（SSE 收发/消息气泡/状态面板/侧边栏/认证/资料弹窗/话术库/初始化）。script 标签加载顺序：vendor → viewer → markdown → code-browser → llm-config → workspace-mgr → mastery → notes-page → process-mgr → app。跨文件依赖通过全局作用域（与 viewer.js/usage.js 同模式）。铁律 8 streamPost try/catch/finally + 发送锁完整保留。测试 583 全绿）
 > 前次：2026-07-29（**改进4: routes.py 按功能域拆分**（refactor/routes-split）——`backend/api/routes.py` 1387 行拆为 5 个子路由文件：`code_routes.py`（代码浏览器+进程管理 ~238 行）、`auth_routes.py`（认证 ~80 行）、`learner_routes.py`（学习者模型+笔记+话术+资料库 ~278 行）、`workspace_routes.py`（工作区+会话+配置 ~194 行）、`llm_config_routes.py`（可观测性+模型配置+上下文状态 ~244 行）。核心 SSE 路由（chat/command/slash/state/history/doc/commands）+ LLMStreamer 保留 routes.py。延迟 `_deps()` 函数读 routes._deps 避循环导入；routes.py 底部 re-export 全部子路由符号（14 个测试文件 `from backend.api import routes` 零修改）；app.py include 5 个子路由。测试 583 全绿）
 > 前次：2026-07-29（**改进3: 跨币种成本聚合修复**（fix/cross-currency）——`backend/services/observer.py` `usage_summary()` 按币种分桶聚合：`_acc()` 增加 currency 参数，`totals`/`kpi`/`today`/`by_ws`/`by_model`/`by_task`/`rows` 均新增 `costs_by_currency: dict[str, float]`，保留 `cost` 字段向后兼容。`frontend/usage.js` `fmtCost(c, costsByCurrency)` 支持多币种显示（CNY→¥/USD→$/EUR→€，多币种 `¥12.3 / $0.1`，单币种保持原样）。`frontend/app.js` usage 弹窗同步适配。测试 +2 用例（跨币种聚合 + 单币种向后兼容，583 全绿））
@@ -58,6 +59,13 @@
 - **M3.3 安全加固**：`security_headers.py`（安全头中间件）+ cookie secure + 生产模式关/docs + agent.log 轮转
 - **M3.4 配置分层**：ConfigService 深度合并 settings.local.toml + active_workspace 迁移
 - **测试基线**：744 → 745（+1）
+
+## M3.5 补强阶段交付（2026-07-30）
+
+- **P1 Repository 扩展**：NotesService + LearnerService 迁移到 JsonRepository（Repository 覆盖率 3/6）
+- **P1 依赖修复**：duckduckgo-search → ddgs 更名同步 + lock 更新
+- **P1 配置清理**：settings.toml 个人路径迁移至 settings.local.toml + Agnes URL 统一 .cn
+- **测试基线**：745 个测试全部通过
 
 ## 当前运行状态
 

@@ -115,7 +115,7 @@ api_key_env = "LLM_API_KEY_DEEPSEEK"
 model = "agnes-2.0-flash"
 max_tokens = 4096
 temperature = 0.7
-base_url = "https://apihub.agnes-ai.com/v1"
+base_url = "https://apihub.agnes-ai.cn/v1"
 api_key_env = "LLM_API_KEY_AGNES"
 [[stages]]
 name = "teaching"
@@ -221,67 +221,15 @@ sop_card = "SOP_结束今日学习.md"
 handler = "jump_day"
 sop_card = "SOP_跳转天数.md"
 
-[[code_roots]]
-name = "ragent原项目"
-path = "../ragent原项目"
-workspace = "ragent"
-
-[[code_roots]]
-name = "ragent-replica"
-path = "../ragent-replica"
-workspace = "ragent"
-
-[[code_roots]]
-name = "onecoupon"
-path = "D:\\IntelliJ IDEA 2025.1.2\\onecoupon"
-workspace = "onecoupon"
-
-[[code_roots]]
-name = "demo"
-path = "workspaces/ragent/demo"
-workspace = "ragent"
-
-[[code_roots]]
-name = "temp_tinyrag"
-path = "../temp_tinyrag"
-workspace = "tinyrag"
-
-[[code_roots]]
-name = "demo"
-path = "workspaces/tinyrag/demo"
-workspace = "tinyrag"
-
-
 [[workspaces]]
 slug = "ragent"
-title = "Ragent AI 面试冲刺"
-goal = "25 天面试导向，深度掌握 Ragent 企业级 Agentic RAG 系统，能在面试中作为自有项目应对追问"
+title = "Ragent"
+goal = "Ragent workspace"
 docx_dir = "../docx"
 project_dir = "../ragent原项目"
 session_path = "runtime/session.json"
 total_days = 25
 replica_name = "ragent-replica"
-materials_dir = "../RAgent文档"
-
-[[workspaces]]
-slug = "onecoupon"
-title = "OneCoupon 面试冲刺"
-goal = "面试导向，深度掌握 onecoupon 项目架构与源码"
-docx_dir = "workspaces/onecoupon/docx"
-project_dir = "D:\\IntelliJ IDEA 2025.1.2\\onecoupon"
-session_path = "workspaces/onecoupon/session.json"
-total_days = 25
-replica_name = "onecoupon-replica"
-
-[[workspaces]]
-slug = "tinyrag"
-title = "TinyRAG 学习"
-goal = "测试通用工作区初始化流程"
-docx_dir = "workspaces/tinyrag/docx"
-project_dir = "../temp_tinyrag"
-session_path = "workspaces/tinyrag/session.json"
-total_days = 5
-replica_name = "tinyrag-replica"
 
 # M1 教学大脑参数
 [bkt_params]

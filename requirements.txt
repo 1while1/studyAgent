@@ -8,4 +8,4 @@ tiktoken==0.13.0
 bcrypt==5.0.0
 psutil==7.2.2
 python-multipart>=0.0.9
-duckduckgo-search>=6.0
+ddgs>=1.0

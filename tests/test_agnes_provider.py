@@ -189,7 +189,7 @@ class TestAgnesRepoSettings(unittest.TestCase):
     def test_agnes_section_complete(self):
         sec = self.data["llm"]["agnes"]
         self.assertEqual(sec["model"], "agnes-2.0-flash")
-        self.assertEqual(sec["base_url"], "https://apihub.agnes-ai.com/v1")
+        self.assertEqual(sec["base_url"], "https://apihub.agnes-ai.cn/v1")
         self.assertEqual(sec["api_key_env"], "LLM_API_KEY_AGNES")
         self.assertGreater(sec["max_tokens"], 0)
 

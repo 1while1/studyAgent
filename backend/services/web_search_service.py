@@ -33,7 +33,7 @@ class DuckDuckGoProvider(WebSearchProvider):
 
     def search(self, query: str, top_k: int = 5) -> list[SearchResult]:
         try:
-            from duckduckgo_search import DDGS
+            from ddgs import DDGS
             results = []
             with DDGS() as ddgs:
                 for r in ddgs.text(query, max_results=top_k):

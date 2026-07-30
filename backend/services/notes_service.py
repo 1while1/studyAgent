@@ -14,12 +14,12 @@ source_ref = note:{id} 幂等保证重复销账不产生重复证据。
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 import uuid
 
 from .backup_service import BackupService
 from .config_service import ConfigService
+from .repository import JsonRepository
 
 SCHEMA_VERSION = 1
 KINDS = ("stuck", "question", "mastered", "insight")
@@ -39,29 +39,33 @@ def new_id() -> str:
 class NotesService:
     def __init__(self, config: ConfigService):
         self._config = config
-        self.path = config.docx_dir / "notes.json"
+        docx_dir = config.docx_dir
+        self._repo = JsonRepository(docx_dir)
+        self._notes_file = "notes"
+        self.path = docx_dir / "notes.json"  # backward compat
 
     # ---- 读写 ----
 
     def _load(self) -> dict:
         default = {"schema_version": SCHEMA_VERSION, "notes": []}
-        try:
-            raw = self.path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return default
-        except Exception as e:
-            self._backup_and_log(e)
-            return default
-        try:
-            data = json.loads(raw)
-            if isinstance(data, dict) and isinstance(data.get("notes"), list):
-                return data
-        except Exception as e:
-            self._backup_and_log(e)
-            return default
-        # 合法 JSON 但结构不符
-        self._backup_and_log(ValueError("structure mismatch"))
-        return default
+        # Pre-check: detect corrupt / malformed file and back up before
+        # the repository silently returns None.
+        if self.path.exists():
+            try:
+                raw = self.path.read_text(encoding="utf-8")
+            except Exception as e:
+                self._backup_and_log(e)
+                return default
+            try:
+                import json
+                parsed = json.loads(raw)
+                if not (isinstance(parsed, dict) and isinstance(parsed.get("notes"), list)):
+                    self._backup_and_log(ValueError("structure mismatch"))
+                    return default
+            except Exception as e:
+                self._backup_and_log(e)
+                return default
+        return self._repo.load(self._notes_file) or default
 
     def _backup_and_log(self, exc) -> None:
         try:
@@ -77,9 +81,15 @@ class NotesService:
 
     def _save(self, data: dict, validator=None) -> None:
         data["schema_version"] = SCHEMA_VERSION
-        BackupService(self._config).atomic_persist(
-            {self.path: json.dumps(data, ensure_ascii=False, indent=2)},
-            validator=validator)
+        backup = BackupService(self._config)
+        backup.backup(self.path)
+        self._repo.save(self._notes_file, data)
+        if validator is not None:
+            ok, output = validator()
+            if not ok:
+                backup.restore(self.path)
+                from .backup_service import PersistError
+                raise PersistError(output)
 
     # ---- 查询 ----
 

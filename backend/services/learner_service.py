@@ -16,9 +16,10 @@ from __future__ import annotations
 import json
 import re
 from datetime import date
+from pathlib import Path
 
-from .backup_service import BackupService
 from .config_service import ConfigService
+from .repository import JsonRepository
 from ..domain.learner import (compute_mastery, concept_id, is_due,
                               review_interval, topo_order, upstream_closure)
 from ..engine.learning_metrics import (
@@ -36,18 +37,22 @@ def _empty_model() -> dict:
 class LearnerService:
     def __init__(self, config: ConfigService):
         self._config = config
-        self.concepts_path = config.docx_dir / "concepts.json"
-        self.model_path = config.docx_dir / "learner_model.json"
-        self.notes_path = config.docx_dir / "notes.json"
-        self.draft_path = config.docx_dir / "learner_model.migration-draft.json"
+        docx_dir = Path(config.docx_dir) if config else Path(".")
+        self._repo = JsonRepository(docx_dir)
+        # 保留 path 属性以兼容外部引用
+        self.concepts_path = docx_dir / "concepts.json"
+        self.model_path = docx_dir / "learner_model.json"
+        self.notes_path = docx_dir / "notes.json"
+        self.draft_path = docx_dir / "learner_model.migration-draft.json"
 
     # ---- 读写 ----
 
     def _load_json(self, path, default):
+        """通过 JsonRepository 加载，保留损坏备份与 observer 记账。"""
+        key = path.stem
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            return default
+            data = self._repo.load(key)
+            return data if data is not None else default
         except Exception as e:
             try:
                 import shutil
@@ -61,7 +66,10 @@ class LearnerService:
             return default
 
     def _save(self, files: dict) -> None:
-        BackupService(self._config).atomic_persist(files)
+        """兼容旧接口；新代码应直接调用 self._repo.save()。"""
+        for path, content_str in files.items():
+            data = json.loads(content_str)
+            self._repo.save(path.stem, data)
 
     def _deltas(self) -> dict:
         return self._config.get("evidence_delta", {}) or {}
