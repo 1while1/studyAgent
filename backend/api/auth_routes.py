@@ -18,7 +18,8 @@ def _deps():
 def _set_auth_cookie(auth, response: Response) -> None:
     cfg = _deps().config
     days = float(cfg.get("auth_session_days", 7))
-    secure = bool(cfg.get("auth_cookie_secure", False))
+    production = cfg.get("production_mode", False)
+    secure = cfg.get("auth_cookie_secure", False) or production
     response.set_cookie(AUTH_COOKIE, auth.make_token(),
                         max_age=int(days * 86400),
                         httponly=True, samesite="lax", secure=secure)
@@ -67,7 +68,10 @@ def auth_login(body: _PasswordIn, request: Request, response: Response):
 
 @auth_router.post("/api/auth/logout")
 def auth_logout(response: Response):
-    response.delete_cookie(AUTH_COOKIE)
+    cfg = _deps().config
+    production = cfg.get("production_mode", False)
+    secure = cfg.get("auth_cookie_secure", False) or production
+    response.delete_cookie(AUTH_COOKIE, httponly=True, samesite="lax", secure=secure)
     return {"ok": True}
 
 

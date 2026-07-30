@@ -146,6 +146,10 @@ class Observer:
         try:
             if not self._log_path.exists():
                 return
+            # 删除最旧档（而非覆盖）
+            oldest = self._log_path.parent / f"{self._log_path.name}.{self._MAX_LOG_FILES}"
+            if oldest.exists():
+                oldest.unlink()
             for i in range(self._MAX_LOG_FILES - 1, 0, -1):
                 src = self._log_path.parent / f"{self._log_path.name}.{i}"
                 dst = self._log_path.parent / f"{self._log_path.name}.{i + 1}"

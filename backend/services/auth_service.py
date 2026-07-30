@@ -23,6 +23,7 @@ from .backup_service import atomic_write
 from .config_service import ConfigService, ENV_PATH, runtime_dir
 
 AUTH_COOKIE = "study_auth"
+_FALLBACK_SECRET = "studyagent-dev-fallback-secret-do-not-use-in-production"
 
 
 class AuthService:
@@ -58,16 +59,18 @@ class AuthService:
             return self._secret_path.read_text(encoding="utf-8").strip().encode()
         except Exception:
             pass
+        # 文件不可读：尝试写入新密钥；写入也失败则用固定 fallback（保证一致）
         secret = secrets.token_hex(32)
         try:
             self._secret_path.parent.mkdir(parents=True, exist_ok=True)
             atomic_write(self._secret_path, secret)
+            return secret.encode()
         except Exception as e:
             if not self._secret_warned.is_set():
                 self._secret_warned.set()
                 import sys
-                print(f"[auth] auth_secret 写入失败: {e}", file=sys.stderr)
-        return secret.encode()
+                print(f"[auth] auth_secret 写入失败，使用 fallback: {e}", file=sys.stderr)
+        return _FALLBACK_SECRET.encode()
 
     def make_token(self) -> str:
         days = float(self._config.get("auth_session_days", 7))

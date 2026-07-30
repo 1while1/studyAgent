@@ -116,8 +116,10 @@ def create_app() -> FastAPI:
     prod_mode = config.get("production_mode", False)
     docs_url = None if prod_mode else "/docs"
     redoc_url = None if prod_mode else "/redoc"
+    openapi_url = None if prod_mode else "/openapi.json"
     app = FastAPI(title=config.workspace.title, version=__version__,
-                  lifespan=lifespan, docs_url=docs_url, redoc_url=redoc_url)
+                  lifespan=lifespan, docs_url=docs_url, redoc_url=redoc_url,
+                  openapi_url=openapi_url)
 
     # M3.3 安全响应头中间件（配置开关，默认开启）
     sec_enabled = config.get("security_headers_enabled", True)

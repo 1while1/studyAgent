@@ -75,13 +75,28 @@ class LocalAuthProvider(AuthProvider):
         import bcrypt
         hashed = bcrypt.hashpw(password.encode("utf-8"),
                                bcrypt.gensalt()).decode("utf-8")
-        from .config_writer import update_env_file
-        update_env_file(self._env_path, {self._KEY: hashed})
+        self._save_hash(hashed)
+
+    def _save_hash(self, hash_value: str) -> None:
+        """原子写入密码哈希到 .env 文件（tmp + replace）。"""
+        if not self._env_path or not self._env_path.exists():
+            return
+        content = self._env_path.read_text(encoding="utf-8")
+        import re
+        new_line = f"AUTH_PASSWORD_HASH={hash_value}"
+        content = re.sub(r"^AUTH_PASSWORD_HASH=.*$", new_line, content, flags=re.MULTILINE)
+        if "AUTH_PASSWORD_HASH=" not in content:
+            content += f"\n{new_line}\n"
+        tmp = self._env_path.with_suffix(".tmp")
+        tmp.write_text(content, encoding="utf-8")
+        tmp.replace(self._env_path)
+        # 运行时立即生效
+        import os
+        os.environ[self._KEY] = hash_value
 
     def clear_password(self) -> None:
         import os
-        from .config_writer import update_env_file
-        update_env_file(self._env_path, {self._KEY: ""})
+        self._save_hash("")
         os.environ.pop(self._KEY, None)
 
     def enabled(self) -> bool:
