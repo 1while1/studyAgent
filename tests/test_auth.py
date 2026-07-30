@@ -13,6 +13,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.services.auth_service import AUTH_COOKIE, AuthService
+from backend.services.auth_provider import LocalAuthProvider
 from backend.services.config_service import ConfigService
 
 _KEY = "AUTH_PASSWORD_HASH"
@@ -22,6 +23,7 @@ class AuthTestBase(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="auth_"))
         self.env_path = self.tmp / ".env"
+        self.env_path.write_text("", encoding="utf-8")
         settings = self.tmp / "settings.toml"
         settings.write_text("", encoding="utf-8")
         self.config = ConfigService(settings)
@@ -179,6 +181,23 @@ class TestErrorObservability(AuthTestBase):
             self.assertTrue(len(secret3) > 0)
         output = stderr_capture.getvalue()
         self.assertEqual(output.count("auth_secret 写入失败"), 1)
+
+
+class TestLocalAuthProvider(unittest.TestCase):
+    """M3.2：LocalAuthProvider 独立测试。"""
+
+    def test_env_path_not_found_raises(self):
+        """env_path 不存在时构造函数应抛 FileNotFoundError。"""
+        tmp = Path(tempfile.mkdtemp(prefix="auth_lap_"))
+        try:
+            settings = tmp / "settings.toml"
+            settings.write_text("", encoding="utf-8")
+            config = ConfigService(settings)
+            missing_env = tmp / "nonexistent" / ".env"
+            with self.assertRaises(FileNotFoundError):
+                LocalAuthProvider(config, env_path=missing_env)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 class TestUploadsAuth(unittest.TestCase):

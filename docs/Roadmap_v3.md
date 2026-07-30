@@ -207,37 +207,37 @@ M0 ──→ M1.1 ──→ M1.2 ──→ M1.3 ──→ M2.1 ──→ M2.2 �
 
 #### 3.1 Repository 抽象
 
-- [ ] 3.1.1 `backend/services/repository.py` 接口
-- [ ] 3.1.2 `JsonRepository`（包装当前 JSON 直操）
-- [ ] 3.1.3 `SqliteRepository`（WAL 模式）
-- [ ] 3.1.4 业务层逐步切换（notes → learner → materials → workspace）
-- [ ] 3.1.5 `tests/test_repository.py`
+- [x] 3.1.1 `backend/services/repository.py` 接口
+- [x] 3.1.2 `JsonRepository`（包装当前 JSON 直操）
+- [x] 3.1.3 `SqliteRepository`（WAL 模式）
+- [x] 3.1.4 业务层逐步切换（notes → learner → materials → workspace）
+- [x] 3.1.5 `tests/test_repository.py`
 
 **验收**：双存储后端测试矩阵全绿
 
 #### 3.2 认证可插拔化
 
-- [ ] 3.2.1 `backend/services/auth_provider.py` 接口
-- [ ] 3.2.2 `LocalAuthProvider`（包装当前 bcrypt）
-- [ ] 3.2.3 `OAuthProvider` 占位
-- [ ] 3.2.4 middleware 切换到 AuthProvider 接口
-- [ ] 3.2.5 `tests/test_auth_provider.py`
+- [x] 3.2.1 `backend/services/auth_provider.py` 接口
+- [x] 3.2.2 `LocalAuthProvider`（包装当前 bcrypt）
+- [x] 3.2.3 `OAuthProvider` 占位
+- [x] 3.2.4 middleware 切换到 AuthProvider 接口
+- [x] 3.2.5 `tests/test_auth_provider.py`
 
 **验收**：原认证测试全绿；接口可替换
 
 #### 3.3 安全加固
 
-- [ ] 3.3.1 安全头中间件（CSP / X-Frame-Options / X-Content-Type-Options）
-- [ ] 3.3.2 cookie `secure` 标志（按配置开关）
-- [ ] 3.3.3 生产模式关 `/docs`（配置项控制）
-- [ ] 3.3.4 agent.log 按大小轮转（50MB × 5 代）
+- [x] 3.3.1 安全头中间件（CSP / X-Frame-Options / X-Content-Type-Options）
+- [x] 3.3.2 cookie `secure` 标志（按配置开关）
+- [x] 3.3.3 生产模式关 `/docs`（配置项控制）
+- [x] 3.3.4 agent.log 按大小轮转（50MB × 5 代）
 
 **验收**：HTTPS 反代下无安全警告
 
 #### 3.4 配置分层收尾
 
-- [ ] 3.4.1 `settings.local.toml` 覆盖机制
-- [ ] 3.4.2 个人工作区完全移出 git
+- [x] 3.4.1 `settings.local.toml` 覆盖机制
+- [x] 3.4.2 个人工作区完全移出 git
 
 ---
 

@@ -28,6 +28,7 @@ from ..services.study_plan import StudyPlanStore
 from ..services.template_service import TemplateService
 from ..services.config_service import WEB_ROOT, SOP_DIR
 from . import routes
+from .security_headers import SecurityHeadersMiddleware
 
 
 def build_deps() -> Deps:
@@ -111,7 +112,16 @@ def create_app() -> FastAPI:
         _warmup_llm_cache(deps)
         yield
 
-    app = FastAPI(title=deps.config.workspace.title, version=__version__, lifespan=lifespan)
+    config = deps.config
+    prod_mode = config.get("production_mode", False)
+    docs_url = None if prod_mode else "/docs"
+    redoc_url = None if prod_mode else "/redoc"
+    app = FastAPI(title=config.workspace.title, version=__version__,
+                  lifespan=lifespan, docs_url=docs_url, redoc_url=redoc_url)
+
+    # M3.3 安全响应头中间件（配置开关，默认开启）
+    sec_enabled = config.get("security_headers_enabled", True)
+    app.add_middleware(SecurityHeadersMiddleware, enabled=sec_enabled)
 
     @app.middleware("http")
     async def auth_gate(request, call_next):

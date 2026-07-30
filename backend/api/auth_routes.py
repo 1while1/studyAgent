@@ -16,10 +16,12 @@ def _deps():
 
 
 def _set_auth_cookie(auth, response: Response) -> None:
-    days = float(_deps().config.get("auth_session_days", 7))
+    cfg = _deps().config
+    days = float(cfg.get("auth_session_days", 7))
+    secure = bool(cfg.get("auth_cookie_secure", False))
     response.set_cookie(AUTH_COOKIE, auth.make_token(),
                         max_age=int(days * 86400),
-                        httponly=True, samesite="lax")
+                        httponly=True, samesite="lax", secure=secure)
 
 
 @auth_router.get("/api/auth/status")

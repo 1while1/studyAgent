@@ -137,8 +137,24 @@ class Observer:
 
     # ---- 写日志 ----
 
-    # 日志滚动上限：超过即轮转为 agent.log.1（只留一档备份）
-    _ROTATE_BYTES = 10 * 1024 * 1024
+    # 日志滚动上限：超过即轮转（M3.3 多文件轮转）
+    _ROTATE_BYTES = 50 * 1024 * 1024  # 50MB
+    _MAX_LOG_FILES = 5
+
+    def _rotate_log(self) -> None:
+        """日志轮转：agent.log → agent.log.1 → ... → agent.log.N"""
+        try:
+            if not self._log_path.exists():
+                return
+            for i in range(self._MAX_LOG_FILES - 1, 0, -1):
+                src = self._log_path.parent / f"{self._log_path.name}.{i}"
+                dst = self._log_path.parent / f"{self._log_path.name}.{i + 1}"
+                if src.exists():
+                    src.replace(dst)
+            self._log_path.replace(
+                self._log_path.parent / f"{self._log_path.name}.1")
+        except Exception:
+            pass  # 轮转失败不丢本条记录，下回再试
 
     def _write(self, record: dict) -> None:
         if not self._enabled:
@@ -148,13 +164,9 @@ class Observer:
         try:
             with self._lock:
                 self._log_path.parent.mkdir(parents=True, exist_ok=True)
-                try:  # 轮转失败（如 Windows 读占用）不丢本条记录，下回再试
-                    if (self._log_path.exists()
-                            and self._log_path.stat().st_size > self._ROTATE_BYTES):
-                        self._log_path.replace(
-                            self._log_path.parent / (self._log_path.name + ".1"))
-                except Exception:
-                    pass
+                if (self._log_path.exists()
+                        and self._log_path.stat().st_size >= self._ROTATE_BYTES):
+                    self._rotate_log()
                 with open(self._log_path, "a", encoding="utf-8") as f:
                     f.write(json.dumps(record, ensure_ascii=False) + "\n")
         except Exception as e:

@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 from .config_service import ConfigService
+from .repository import JsonRepository
 
 
 class StateStoreError(Exception):
@@ -18,20 +19,24 @@ class StateStoreError(Exception):
 class StateStore:
     def __init__(self, config: ConfigService):
         self._config = config
-        self.path: Path = config.docx_dir / "StudyState.json"
+        docx_dir = Path(config.docx_dir) if config else Path(".")
+        self._repo = JsonRepository(docx_dir)
+        # 保留 path 属性以兼容外部引用（如 tool_registry 的 atomic_persist）
+        self.path: Path = docx_dir / "StudyState.json"
 
     # ---- 读 ----
 
     def load(self) -> dict:
-        if not self.path.exists():
-            raise StateStoreError(f"StudyState.json 不存在: {self.path}")
         try:
-            return json.loads(self.path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as e:
+            data = self._repo.load("StudyState")
+        except Exception as e:
             raise StateStoreError(f"StudyState.json 解析失败: {e}") from e
+        if data is None:
+            raise StateStoreError(f"StudyState.json 不存在: {self.path}")
+        return data
 
     def exists(self) -> bool:
-        return self.path.exists()
+        return self._repo.exists("StudyState")
 
     # ---- 写（仅内存对象 → 字符串，真正落盘走 backup_service.atomic_persist） ----
 

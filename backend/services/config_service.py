@@ -40,7 +40,9 @@ def _load_env_file(path: Path) -> None:
 class ConfigService:
     def __init__(self, settings_path: Path = SETTINGS_PATH):
         self._path = settings_path
+        self._local_path = settings_path.parent / "settings.local.toml"
         self._mtime: float = 0.0
+        self._local_mtime: float = 0.0
         self._data: dict = {}
         self.reload()
         self._last_bad_mtime: float = 0.0
@@ -54,14 +56,33 @@ class ConfigService:
         with open(self._path, "rb") as f:
             self._data = tomllib.load(f)
         self._mtime = self._path.stat().st_mtime
+        # M3.4: 加载 settings.local.toml 并深度合并
+        if self._local_path.exists():
+            with open(self._local_path, "rb") as f:
+                local_data = tomllib.load(f)
+            self._data = self._deep_merge(self._data, local_data)
+            self._local_mtime = self._local_path.stat().st_mtime
+
+    @staticmethod
+    def _deep_merge(base: dict, override: dict) -> dict:
+        """深度合并配置：标量/列表覆盖，字典递归合并。"""
+        result = dict(base)
+        for key, value in override.items():
+            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                result[key] = ConfigService._deep_merge(result[key], value)
+            else:
+                result[key] = value
+        return result
 
     def reload_if_changed(self) -> bool:
         """热重载：mtime 变化才重新解析。返回是否发生了重载。"""
         try:
             mtime = self._path.stat().st_mtime
+            local_mtime = (self._local_path.stat().st_mtime
+                           if self._local_path.exists() else 0.0)
         except OSError:
             return False
-        if mtime != self._mtime:
+        if mtime != self._mtime or local_mtime != self._local_mtime:
             try:
                 self.reload()
                 self._last_bad_mtime = 0.0

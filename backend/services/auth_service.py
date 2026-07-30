@@ -1,9 +1,7 @@
-"""访问密码门（M2）：单用户密码 + 签名 session token + 登录限速。
+"""访问密码门（M2 / M3.2）：单用户密码 + 签名 session token + 登录限速。
 
-- 密码 bcrypt 哈希存 `.env` 的 `AUTH_PASSWORD_HASH`（未设置 = 门关闭，
-  开放模式，本地开发友好）。设计原文"哈希存 settings（不入库不入 git）"，
-  但 settings.toml 是本仓 git 跟踪文件，.env 才符合"不入 git"意图与
-  密钥边界铁律——有意偏离，已记录 DevLog。
+- 密码验证策略委托给 AuthProvider（默认 LocalAuthProvider，bcrypt 哈希
+  存 `.env` 的 `AUTH_PASSWORD_HASH`，未设置 = 门关闭，开放模式）。
 - token = ``{expiry_ts}.{hmac_sha256_hex(secret, ts)}``；签名密钥
   `runtime/auth_secret` 首次生成（gitignored）；有效期 `auth_session_days`（默认 7）
 - 限速：每 IP 滑窗 `auth_login_max_attempts`（默认 10）次失败 /
@@ -15,57 +13,43 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import os
 import secrets
 import threading
 import time
 from pathlib import Path
 
+from .auth_provider import AuthProvider, LocalAuthProvider
 from .backup_service import atomic_write
 from .config_service import ConfigService, ENV_PATH, runtime_dir
-from .config_writer import update_env_file
 
 AUTH_COOKIE = "study_auth"
-_KEY = "AUTH_PASSWORD_HASH"
 
 
 class AuthService:
-    def __init__(self, config: ConfigService, env_path: Path | None = None):
+    def __init__(self, config: ConfigService, env_path: Path | None = None,
+                 provider: AuthProvider | None = None):
         self._config = config
         self._env_path = env_path or ENV_PATH  # 测试可注入临时 .env
         self._secret_path = runtime_dir(config) / "auth_secret"
         self._fails: dict[str, list[float]] = {}
         self._lock = threading.Lock()
         self._secret_warned = threading.Event()
+        # M3.2：密码验证委托给 provider（默认 LocalAuthProvider）
+        self._provider = provider or LocalAuthProvider(config, self._env_path)
 
-    # ---- 密码 ----
+    # ---- 密码（委托给 AuthProvider） ----
 
     def enabled(self) -> bool:
-        return bool(self._config.env(_KEY))
+        return self._provider.enabled()
 
     def verify_password(self, password: str) -> bool:
-        hashed = self._config.env(_KEY)
-        if not hashed or not password:
-            return False
-        try:
-            import bcrypt
-            return bcrypt.checkpw(password.encode("utf-8"),
-                                  hashed.encode("utf-8"))
-        except Exception as e:
-            from .observer import get_observer
-            get_observer(self._config).log_tool(
-                "auth_verify", False, repr(e)[:200])
-            return False
+        return self._provider.verify_password(password)
 
     def set_password(self, password: str) -> None:
-        import bcrypt
-        hashed = bcrypt.hashpw(password.encode("utf-8"),
-                               bcrypt.gensalt()).decode("utf-8")
-        update_env_file(self._env_path, {_KEY: hashed})
+        self._provider.set_password(password)
 
     def clear_password(self) -> None:
-        update_env_file(self._env_path, {_KEY: ""})
-        os.environ.pop(_KEY, None)
+        self._provider.clear_password()
 
     # ---- session token ----
 
