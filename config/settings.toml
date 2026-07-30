@@ -304,14 +304,6 @@ max_size_mb = 10           # 单文件最大 MB
 allowed_image_types = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
 allowed_doc_types = [".md", ".txt", ".pdf"]
 
-# M2.3 MCP Client
-[[mcp.servers]]
-name = "example"
-transport = "stdio"
-command = "echo"
-args = []
-enabled = false
-
 # M2.4 Plugin 系统
 [plugins]
 enabled = []

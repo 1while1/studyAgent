@@ -7,11 +7,14 @@ JSON-RPC 2.0 over stdio 传输。
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import threading
 from dataclasses import dataclass
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -32,11 +35,14 @@ class MCPClient:
         self._process: Optional[subprocess.Popen] = None
         self._tools: list[MCPToolInfo] = []
         self._connected = False
+        self._lock = threading.Lock()
+        self._next_id = 1
 
     def connect(self) -> bool:
         """连接到 MCP Server（stdio 传输）"""
         try:
-            full_env = {**os.environ, **self.env}
+            minimal_env = {"PATH": os.environ.get("PATH", "")}
+            full_env = {**minimal_env, **self.env}
             self._process = subprocess.Popen(
                 [self.command] + self.args,
                 stdin=subprocess.PIPE,
@@ -46,10 +52,12 @@ class MCPClient:
             )
             self._connected = True
             # 初始化握手
-            self._send({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+            self._send({"jsonrpc": "2.0", "id": self._next_id, "method": "initialize",
                         "params": {"protocolVersion": "2024-11-05"}})
+            self._next_id += 1
             # 获取工具列表
-            resp = self._send({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+            resp = self._send({"jsonrpc": "2.0", "id": self._next_id, "method": "tools/list"})
+            self._next_id += 1
             if resp and "result" in resp:
                 for t in resp["result"].get("tools", []):
                     self._tools.append(MCPToolInfo(
@@ -58,30 +66,43 @@ class MCPClient:
                         input_schema=t.get("inputSchema", {}),
                     ))
             return True
-        except Exception:
+        except Exception as e:
+            logger.warning("MCP connect failed [%s]: %s", self.name, e)
             self._connected = False
             return False
 
+    def _readline_with_timeout(self, timeout: int = 10) -> Optional[bytes]:
+        import selectors
+        sel = selectors.DefaultSelector()
+        sel.register(self._process.stdout, selectors.EVENT_READ)
+        events = sel.select(timeout=timeout)
+        sel.close()
+        if events:
+            return self._process.stdout.readline()
+        return None
+
     def _send(self, message: dict) -> Optional[dict]:
-        """发送 JSON-RPC 消息并等待响应"""
+        """发送 JSON-RPC 消息并等待响应（线程安全）"""
         if not self._process or not self._connected:
             return None
-        try:
-            data = json.dumps(message) + "\n"
-            self._process.stdin.write(data.encode())
-            self._process.stdin.flush()
-            # 读取响应（简化：读取一行）
-            line = self._process.stdout.readline()
-            if line:
-                return json.loads(line.decode())
-        except Exception:
-            pass
+        with self._lock:
+            try:
+                data = json.dumps(message) + "\n"
+                self._process.stdin.write(data.encode())
+                self._process.stdin.flush()
+                line = self._readline_with_timeout()
+                if line:
+                    return json.loads(line.decode())
+            except Exception:
+                pass
         return None
 
     def call_tool(self, tool_name: str, arguments: dict) -> Optional[dict]:
         """调用 MCP 工具"""
+        req_id = self._next_id
+        self._next_id += 1
         return self._send({
-            "jsonrpc": "2.0", "id": 3,
+            "jsonrpc": "2.0", "id": req_id,
             "method": "tools/call",
             "params": {"name": tool_name, "arguments": arguments},
         })
@@ -92,6 +113,10 @@ class MCPClient:
     def disconnect(self):
         if self._process:
             self._process.terminate()
+            try:
+                self._process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self._process.kill()
             self._connected = False
 
 

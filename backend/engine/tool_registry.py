@@ -858,7 +858,7 @@ def build_default_registry() -> ToolRegistry:
                 perm = tool_def.get("permission", READONLY)
                 if perm not in PERMISSION_ORDER:
                     continue  # 跳过非法权限声明
-                def _plugin_handler(ctx, args, _t=tool_def):
+                def _plugin_handler(ctx, args, _t=tool_def, _pname=spec.name):
                     return ToolResult(ok=False, error=(
                         f"插件工具 {_t.get('name')} 无可用 handler（占位）"))
                 reg.register(ToolSpec(

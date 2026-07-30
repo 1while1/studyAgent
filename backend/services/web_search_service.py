@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -37,9 +38,9 @@ class DuckDuckGoProvider(WebSearchProvider):
             with DDGS() as ddgs:
                 for r in ddgs.text(query, max_results=top_k):
                     results.append(SearchResult(
-                        title=r.get("title", ""),
+                        title=html.escape(r.get("title", "")),
                         url=r.get("href", ""),
-                        snippet=r.get("body", ""),
+                        snippet=html.escape(r.get("body", "")),
                         source="duckduckgo",
                     ))
             return results
@@ -50,11 +51,14 @@ class DuckDuckGoProvider(WebSearchProvider):
 class WebSearchService:
     def __init__(self, config=None, cache_size: int = 100):
         self._config = config
+        ws_config = config.get("web_search", {}) if config else {}
+        self._cache_size = int(ws_config.get("cache_size", cache_size))
+        self._cache_ttl = int(ws_config.get("cache_ttl_seconds", 3600))
         self._cache: dict[str, tuple[float, list[SearchResult]]] = {}
-        self._cache_size = cache_size
-        self._provider = self._build_provider()
+        provider_name = ws_config.get("provider", "duckduckgo")
+        self._provider = self._build_provider(provider_name)
 
-    def _build_provider(self) -> WebSearchProvider:
+    def _build_provider(self, name: str = "duckduckgo") -> WebSearchProvider:
         # 默认 DuckDuckGo，未来可扩展 Tavily/Serper
         return DuckDuckGoProvider()
 
@@ -65,10 +69,13 @@ class WebSearchService:
         key = self._cache_key(query, top_k)
         if key in self._cache:
             ts, results = self._cache[key]
-            if time.time() - ts < 3600:  # 1 小时缓存
+            if time.time() - ts < self._cache_ttl:
                 return results
 
-        results = self._provider.search(query, top_k)
+        try:
+            results = self._provider.search(query, top_k)
+        except Exception:
+            return []
 
         # 缓存管理
         if len(self._cache) >= self._cache_size:

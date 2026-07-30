@@ -181,5 +181,14 @@ class TestErrorObservability(AuthTestBase):
         self.assertEqual(output.count("auth_secret 写入失败"), 1)
 
 
+class TestUploadsAuth(unittest.TestCase):
+    """验证 /uploads/ 路径受认证保护。"""
+
+    def test_uploads_requires_auth(self):
+        """/uploads/ 不在豁免列表中。"""
+        from backend.api.middleware import _EXEMPT
+        self.assertNotIn("/uploads/test.png", _EXEMPT)
+
+
 if __name__ == "__main__":
     unittest.main()

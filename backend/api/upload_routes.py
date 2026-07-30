@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 
@@ -9,12 +11,14 @@ from ..services.upload_service import UploadService
 from ..services.config_service import get_config
 
 upload_router = APIRouter(tags=["文件上传"])
+logger = logging.getLogger(__name__)
 
 
 def _upload_service() -> UploadService:
     """创建 UploadService 实例（带配置）。"""
     config = get_config()
-    max_size = int(config.get("upload_max_size_mb", 10))
+    upload_cfg = config.get("upload", {}) if config else {}
+    max_size = int(upload_cfg.get("max_size_mb", 10))
     return UploadService(config=config, max_size_mb=max_size)
 
 
@@ -37,6 +41,10 @@ async def upload_file(file: UploadFile = File(...)):
         content = await file.read()
     except Exception as e:
         return {"ok": False, "error": f"文件读取失败：{e}"}
+
+    size = len(content)
+    if size > 5 * 1024 * 1024:
+        logger.info("大文件上传: %s, 大小: %d bytes", file.filename, size)
 
     if not content:
         return {"ok": False, "error": "文件内容为空"}

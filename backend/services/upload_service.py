@@ -22,6 +22,15 @@ ALLOWED_TYPES = ALLOWED_IMAGE_TYPES | ALLOWED_DOC_TYPES
 # 默认最大文件大小（10MB）
 DEFAULT_MAX_SIZE_MB = 10
 
+# Magic bytes 校验表
+_MAGIC_BYTES = {
+    ".jpg": b"\xff\xd8\xff",
+    ".png": b"\x89PNG",
+    ".gif": b"GIF8",
+    ".pdf": b"%PDF",
+    ".webp": b"RIFF",
+}
+
 
 @dataclass
 class UploadResult:
@@ -37,6 +46,20 @@ class UploadService:
     def __init__(self, config=None, max_size_mb: int = DEFAULT_MAX_SIZE_MB):
         self._config = config
         self._max_size = max_size_mb * 1024 * 1024
+        self._allowed_types = set(ALLOWED_TYPES)
+        if config:
+            upload_cfg = config.get("upload", {})
+            img_types = upload_cfg.get("allowed_image_types")
+            doc_types = upload_cfg.get("allowed_doc_types")
+            if img_types or doc_types:
+                self._allowed_types = set()
+                if img_types:
+                    self._allowed_types.update(img_types)
+                if doc_types:
+                    self._allowed_types.update(doc_types)
+            max_mb = upload_cfg.get("max_size_mb")
+            if max_mb:
+                self._max_size = int(max_mb) * 1024 * 1024
     
     def _get_upload_dir(self) -> Path:
         """获取上传目录（<docx_dir>/uploads/）"""
@@ -49,13 +72,17 @@ class UploadService:
         upload_dir.mkdir(parents=True, exist_ok=True)
         return upload_dir
     
-    def _validate_file(self, filename: str, size: int) -> Optional[str]:
-        """验证文件类型和大小，返回错误信息或 None"""
+    def _validate_file(self, filename: str, content: bytes, size: int) -> Optional[str]:
+        """验证文件类型、大小和 magic bytes，返回错误信息或 None"""
         ext = Path(filename).suffix.lower()
-        if ext not in ALLOWED_TYPES:
-            return f"不支持的文件类型：{ext}（支持：{', '.join(sorted(ALLOWED_TYPES))}）"
+        if ext not in self._allowed_types:
+            return f"不支持的文件类型：{ext}"
         if size > self._max_size:
-            return f"文件过大：{size / 1024 / 1024:.1f}MB（最大 {self._max_size / 1024 / 1024:.0f}MB）"
+            return f"文件过大"
+        magic = _MAGIC_BYTES.get(ext)
+        if magic and len(content) >= len(magic):
+            if not content[:len(magic)].startswith(magic):
+                return "文件内容与扩展名不匹配"
         return None
     
     def _get_file_type(self, filename: str) -> str:
@@ -70,7 +97,7 @@ class UploadService:
         Returns:
             UploadResult 成功，或错误信息字符串
         """
-        error = self._validate_file(filename, len(content))
+        error = self._validate_file(filename, content, len(content))
         if error:
             return error
         
@@ -94,9 +121,17 @@ class UploadService:
         )
     
     def get_file_path(self, file_id: str) -> Optional[Path]:
-        """根据 file_id 获取文件路径"""
+        """根据 file_id 获取文件路径（精确匹配优先）"""
         upload_dir = self._get_upload_dir()
+        # 精确匹配：file_id 即为文件 stem
+        exact = upload_dir / file_id
+        # 尝试带常见扩展名
+        for ext in ALLOWED_TYPES:
+            candidate = upload_dir / f"{file_id}{ext}"
+            if candidate.exists():
+                return candidate
+        # 回退：遍历目录精确匹配 stem
         for f in upload_dir.iterdir():
-            if f.stem.startswith(file_id):
+            if f.stem == file_id:
                 return f
         return None
