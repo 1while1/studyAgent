@@ -19,11 +19,9 @@ import time
 from pathlib import Path
 
 from .auth_provider import AuthProvider, LocalAuthProvider
-from .backup_service import atomic_write
 from .config_service import ConfigService, ENV_PATH, runtime_dir
 
 AUTH_COOKIE = "study_auth"
-_FALLBACK_SECRET = "studyagent-dev-fallback-secret-do-not-use-in-production"
 
 
 class AuthService:
@@ -34,7 +32,6 @@ class AuthService:
         self._secret_path = runtime_dir(config) / "auth_secret"
         self._fails: dict[str, list[float]] = {}
         self._lock = threading.Lock()
-        self._secret_warned = threading.Event()
         # M3.2：密码验证委托给 provider（默认 LocalAuthProvider）
         self._provider = provider or LocalAuthProvider(config, self._env_path)
 
@@ -55,22 +52,26 @@ class AuthService:
     # ---- session token ----
 
     def _secret(self) -> bytes:
+        # 尝试读取已有文件
         try:
-            return self._secret_path.read_text(encoding="utf-8").strip().encode()
+            existing = self._secret_path.read_text(encoding="utf-8").strip()
+            if existing:
+                return existing.encode()
         except Exception:
             pass
-        # 文件不可读：尝试写入新密钥；写入也失败则用固定 fallback（保证一致）
+
+        # 生成新密钥并写入
         secret = secrets.token_hex(32)
         try:
             self._secret_path.parent.mkdir(parents=True, exist_ok=True)
-            atomic_write(self._secret_path, secret)
+            tmp = self._secret_path.with_suffix(".tmp")
+            tmp.write_text(secret, encoding="utf-8")
+            tmp.replace(self._secret_path)
             return secret.encode()
         except Exception as e:
-            if not self._secret_warned.is_set():
-                self._secret_warned.set()
-                import sys
-                print(f"[auth] auth_secret 写入失败，使用 fallback: {e}", file=sys.stderr)
-        return _FALLBACK_SECRET.encode()
+            raise RuntimeError(
+                f"auth_secret 不可用且无法写入新密钥: {e}"
+            ) from e
 
     def make_token(self) -> str:
         days = float(self._config.get("auth_session_days", 7))

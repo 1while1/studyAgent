@@ -1,6 +1,5 @@
 """访问密码门（services/auth_service + api/middleware）测试。"""
 
-import io
 import os
 import shutil
 import sys
@@ -165,22 +164,15 @@ class TestErrorObservability(AuthTestBase):
         self.assertIn("auth_verify", content)
         self.assertIn("bcrypt爆炸", content)
 
-    def test_secret_write_failure_stderr_once(self):
+    def test_secret_write_failure_raises_runtime_error(self):
         # 确保 secret 文件不存在，强制走写入路径
         if self.auth._secret_path.exists():
             self.auth._secret_path.unlink()
-        with patch("backend.services.auth_service.atomic_write",
-                   side_effect=OSError("磁盘满")):
-            stderr_capture = io.StringIO()
-            with patch("sys.stderr", stderr_capture):
-                secret1 = self.auth._secret()
-                secret2 = self.auth._secret()
-                secret3 = self.auth._secret()
-            self.assertTrue(len(secret1) > 0)
-            self.assertTrue(len(secret2) > 0)
-            self.assertTrue(len(secret3) > 0)
-        output = stderr_capture.getvalue()
-        self.assertEqual(output.count("auth_secret 写入失败"), 1)
+        # 模拟父目录创建失败（写入不可写）
+        with patch("pathlib.Path.mkdir", side_effect=OSError("磁盘满")):
+            with self.assertRaises(RuntimeError) as ctx:
+                self.auth._secret()
+        self.assertIn("auth_secret 不可用", str(ctx.exception))
 
 
 class TestLocalAuthProvider(unittest.TestCase):

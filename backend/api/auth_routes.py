@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from ..services.auth_service import AUTH_COOKIE, get_auth
@@ -20,7 +21,11 @@ def _set_auth_cookie(auth, response: Response) -> None:
     days = float(cfg.get("auth_session_days", 7))
     production = cfg.get("production_mode", False)
     secure = cfg.get("auth_cookie_secure", False) or production
-    response.set_cookie(AUTH_COOKIE, auth.make_token(),
+    try:
+        token = auth.make_token()
+    except RuntimeError as e:
+        raise RuntimeError(str(e)) from e
+    response.set_cookie(AUTH_COOKIE, token,
                         max_age=int(days * 86400),
                         httponly=True, samesite="lax", secure=secure)
 
@@ -28,9 +33,12 @@ def _set_auth_cookie(auth, response: Response) -> None:
 @auth_router.get("/api/auth/status")
 def auth_status(request: Request):
     auth = get_auth(_deps().config)
-    return {"gate": auth.enabled(),
-            "authed": auth.enabled() and auth.verify_token(
-                request.cookies.get(AUTH_COOKIE, ""))}
+    try:
+        authed = auth.enabled() and auth.verify_token(
+            request.cookies.get(AUTH_COOKIE, ""))
+    except RuntimeError as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+    return {"gate": auth.enabled(), "authed": authed}
 
 
 class _PasswordIn(BaseModel):
@@ -46,7 +54,10 @@ def auth_setup(body: _PasswordIn, response: Response):
     if len(pw) < 6:
         return {"ok": False, "error": "密码至少 6 位"}
     auth.set_password(pw)
-    _set_auth_cookie(auth, response)
+    try:
+        _set_auth_cookie(auth, response)
+    except RuntimeError as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
     return {"ok": True}
 
 
@@ -62,7 +73,10 @@ def auth_login(body: _PasswordIn, request: Request, response: Response):
         auth.record_fail(ip)
         return {"ok": False, "error": "密码错误"}
     auth.record_success(ip)
-    _set_auth_cookie(auth, response)
+    try:
+        _set_auth_cookie(auth, response)
+    except RuntimeError as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
     return {"ok": True}
 
 

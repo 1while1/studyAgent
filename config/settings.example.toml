@@ -35,6 +35,7 @@ agent_mode_enabled = true       # M6 起默认开：session.mode 默认 study �
 production_mode = false          # true 时关闭 /docs、/redoc
 security_headers_enabled = true  # 安全响应头中间件开关
 auth_cookie_secure = false       # 生产环境（HTTPS）设为 true
+allow_private_urls = false       # true 时允许内网 LLM 地址（如 Ollama）
 
 # token 估算成本用定价（近似值，以官方为准；无定价的模型只显 token）
 [pricing."deepseek-chat"]

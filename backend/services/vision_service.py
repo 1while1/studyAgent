@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass
 
+from ..domain.sensitive import is_sensitive
+
+ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+
 
 @dataclass
 class VisionResult:
@@ -22,13 +26,36 @@ class VisionResult:
 class VisionService:
     """图片分析服务"""
     
-    def __init__(self, config=None):
+    def __init__(self, config=None, allowed_root: str = None):
         self._config = config
         self._max_size = 10 * 1024 * 1024  # 10MB
+        self._allowed_root = allowed_root
+        if config and not allowed_root:
+            ws = config.get("active_workspace", "")
+            if ws:
+                workspaces = config.get("workspaces", [])
+                for w in workspaces:
+                    if isinstance(w, dict) and w.get("slug") == ws:
+                        self._allowed_root = w.get("docx_dir", "")
     
     def analyze_image(self, image_path: Path, prompt: str = "请描述这张图片的内容") -> Optional[VisionResult]:
         """分析本地图片文件"""
-        if not image_path.exists():
+        if not image_path.exists() or not image_path.is_file():
+            return None
+        
+        # 安全检查：路径白名单
+        resolved = image_path.resolve()
+        if self._allowed_root:
+            root = Path(self._allowed_root).resolve()
+            if not str(resolved).startswith(str(root)):
+                return None
+        
+        # 安全检查：敏感文件
+        if is_sensitive(image_path.name):
+            return None
+        
+        # 安全检查：扩展名白名单
+        if image_path.suffix.lower() not in ALLOWED_IMAGE_EXTS:
             return None
         
         content_type = self._detect_content_type(image_path)

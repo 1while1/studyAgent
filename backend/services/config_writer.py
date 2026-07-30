@@ -54,8 +54,17 @@ def update_toml_sections(path: Path, sections: dict[str, list[str]]) -> None:
         atomic_write(path, "\n".join(out) + "\n")
 
 
+_ENV_KEY_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+
 def update_env_file(path: Path, values: dict[str, str]) -> None:
     """更新 .env 中的键（存在则替换，不存在则追加）。空值跳过。"""
+    # C-2: 注入防护——校验 key 格式与 value 不含换行符
+    for key, value in values.items():
+        if not _ENV_KEY_RE.match(key):
+            raise ValueError(f"非法的环境变量名: {key}")
+        if '\n' in value or '\r' in value:
+            raise ValueError(f"环境变量值不允许包含换行符: {key}")
     with _SETTINGS_LOCK:
         lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
         done = set()

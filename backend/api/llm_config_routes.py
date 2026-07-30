@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import ipaddress
+from urllib.parse import urlparse
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -9,6 +12,41 @@ from ..engine.context_manager import ContextManager
 from ..services.observer import get_observer
 
 config_router = APIRouter(tags=["可观测性", "模型配置"])
+
+
+def _validate_base_url(url: str, allow_private: bool = False) -> str | None:
+    """校验 base_url，返回错误信息或 None（C-4 SSRF 防护）。"""
+    if not url:
+        return None  # 空值允许
+
+    # 强制 http/https
+    if not url.startswith(("http://", "https://")):
+        return "base_url 必须以 http:// 或 https:// 开头"
+
+    if allow_private:
+        return None
+
+    # 解析 hostname
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        if not hostname:
+            return "base_url 缺少主机名"
+
+        # 检查是否为内网 IP
+        if hostname in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+            return "base_url 不允许指向本地地址"
+
+        try:
+            ip = ipaddress.ip_address(hostname)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                return "base_url 不允许指向内网地址"
+        except ValueError:
+            pass  # hostname 不是 IP 地址（域名），允许
+
+        return None
+    except Exception:
+        return "base_url 格式无效"
 
 
 def _deps():
@@ -177,6 +215,15 @@ def save_llm_config(body: LlmConfigIn):
         return {"ok": False, "error": f"未知 fallback provider: {body.fallback_provider}"}
 
     deps = _deps()
+
+    # C-4 SSRF 防护：校验所有 section 中的 base_url
+    allow_private = deps.config.data.get("allow_private_urls", False)
+    for section_name, section_data in body.sections.items():
+        if isinstance(section_data, dict) and "base_url" in section_data:
+            error = _validate_base_url(section_data["base_url"], allow_private)
+            if error:
+                return {"ok": False, "error": error}
+
     llm_lines = ["[llm]", f'provider = "{_esc(body.provider)}"']
     if body.fallback_provider:
         llm_lines.append(f'fallback_provider = "{_esc(body.fallback_provider)}"')

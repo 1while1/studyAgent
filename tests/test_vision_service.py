@@ -1,4 +1,6 @@
 """VisionService 测试"""
+import os
+import tempfile
 import unittest
 import base64
 from pathlib import Path
@@ -39,6 +41,74 @@ class TestVisionService(unittest.TestCase):
         svc = VisionService()
         result = svc._call_vision_api("abc", "image/png", "test")
         self.assertEqual(result, "[Vision API 未配置]")
+
+
+class TestVisionSecurity(unittest.TestCase):
+    """安全检查测试"""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_analyze_rejects_sensitive_file(self):
+        svc = VisionService(allowed_root=self._tmp)
+        env_path = Path(self._tmp) / ".env"
+        env_path.write_text("SECRET=value")
+        result = svc.analyze_image(env_path)
+        self.assertIsNone(result)
+
+    def test_analyze_rejects_outside_root(self):
+        svc = VisionService(allowed_root=self._tmp)
+        # 创建一个在 root 之外的文件
+        outside = tempfile.mkdtemp()
+        try:
+            outside_file = Path(outside) / "test.png"
+            outside_file.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 10)
+            result = svc.analyze_image(outside_file)
+            self.assertIsNone(result)
+        finally:
+            import shutil
+            shutil.rmtree(outside, ignore_errors=True)
+
+    def test_analyze_rejects_non_image_ext(self):
+        svc = VisionService(allowed_root=self._tmp)
+        txt_path = Path(self._tmp) / "test.txt"
+        txt_path.write_text("hello")
+        result = svc.analyze_image(txt_path)
+        self.assertIsNone(result)
+
+    def test_analyze_rejects_directory(self):
+        svc = VisionService(allowed_root=self._tmp)
+        # 传入一个目录而非文件
+        result = svc.analyze_image(Path(self._tmp))
+        self.assertIsNone(result)
+
+    def test_analyze_allows_valid_image_in_root(self):
+        svc = VisionService(allowed_root=self._tmp)
+        img_path = Path(self._tmp) / "photo.png"
+        img_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 10)
+        result = svc.analyze_image(img_path)
+        self.assertIsNotNone(result)
+
+    def test_analyze_no_root_allows_all(self):
+        svc = VisionService()
+        img_path = Path(self._tmp) / "photo.png"
+        img_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 10)
+        result = svc.analyze_image(img_path)
+        self.assertIsNotNone(result)
+
+    def test_init_with_config(self):
+        config = {
+            "active_workspace": "myws",
+            "workspaces": [
+                {"slug": "myws", "docx_dir": self._tmp}
+            ]
+        }
+        svc = VisionService(config=config)
+        self.assertEqual(svc._allowed_root, self._tmp)
 
 
 class TestVisionResult(unittest.TestCase):
