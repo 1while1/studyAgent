@@ -135,11 +135,13 @@ def create_app() -> FastAPI:
     from .learner_routes import learner_router
     from .workspace_routes import workspace_router
     from .llm_config_routes import config_router
+    from .upload_routes import upload_router
     app.include_router(code_router)
     app.include_router(auth_router)
     app.include_router(learner_router)
     app.include_router(workspace_router)
     app.include_router(config_router)
+    app.include_router(upload_router)
 
     frontend = WEB_ROOT / "frontend"
     app.mount("/", StaticFiles(directory=frontend, html=True), name="frontend")

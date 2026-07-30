@@ -233,3 +233,23 @@ request_retention = 0.9
 
 [metrics]
 weights = [0.3, 0.3, 0.4]
+
+# M2 Web 搜索
+[web_search]
+provider = "duckduckgo"
+cache_size = 100
+cache_ttl_seconds = 3600
+
+# M2.2 文件上传
+[upload]
+max_size_mb = 10           # 单文件最大 MB
+allowed_image_types = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
+allowed_doc_types = [".md", ".txt", ".pdf"]
+
+# M2.3 MCP Client
+[[mcp.servers]]
+name = "example"
+transport = "stdio"
+command = "echo"
+args = []
+enabled = false

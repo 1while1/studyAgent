@@ -610,6 +610,26 @@ def _process_logs(ctx: ToolContext, args: dict) -> ToolResult:
 
 
 
+# ---- web_search（READONLY，M2.1 扩展层） ----
+
+def _web_search(ctx: ToolContext, args: dict) -> ToolResult:
+    """Web 搜索工具（READONLY 权限）"""
+    query = (args.get("query") or "").strip()
+    if not query:
+        return ToolResult(ok=False, error="query 不能为空")
+    from ..services.web_search_service import WebSearchService
+    svc = WebSearchService(ctx.config)
+    results = svc.search(query, top_k=int(args.get("top_k", 5)))
+    return ToolResult(ok=True, data={
+        "query": query,
+        "results": [
+            {"title": r.title, "url": r.url, "snippet": r.snippet}
+            for r in results
+        ],
+        "count": len(results),
+    })
+
+
 # ---- 默认注册表（§9 v1 工具清单：M5a 已有能力 + M5c LLM 档 + M6 工坊） ----
 
 def build_default_registry() -> ToolRegistry:
@@ -788,4 +808,33 @@ def build_default_registry() -> ToolRegistry:
                                "tail": {"type": "integer", "default": 100}},
                 "required": ["id"]},
         handler=_process_logs))
+    reg.register(ToolSpec(
+        name="web_search", permission=READONLY,
+        description="Web 搜索：查询互联网获取最新信息。参数：query(搜索词), top_k(结果数,默认5)",
+        params={"type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "搜索词"},
+                    "top_k": {"type": "integer", "default": 5,
+                              "description": "返回结果数"}},
+                "required": ["query"]},
+        handler=_web_search))
+    # M2.3: 动态注册 MCP 工具
+    try:
+        from ..services.mcp_client_service import MCPClientPool
+        from ..services.config_service import ConfigService
+        pool = MCPClientPool(ConfigService())
+        pool.load_from_config()
+        for server_name, tool_info in pool.get_all_tools():
+            def _mcp_handler(ctx, args, _server=server_name, _tool=tool_info.name):
+                result = pool.call_tool(_server, _tool, args)
+                return result or {"error": "MCP tool call failed"}
+            reg.register(ToolSpec(
+                name=f"mcp_{server_name}_{tool_info.name}",
+                description=f"[MCP:{server_name}] {tool_info.description}",
+                params=tool_info.input_schema or {"type": "object", "properties": {}},
+                handler=_mcp_handler,
+                permission=READONLY,
+            ))
+    except Exception:
+        pass  # MCP 连接失败静默降级（铁律 13）
     return reg

@@ -1657,122 +1657,122 @@ orchestrator → 前端展示建议卡片
 
 ## 附录 A：现有代码库深度分析
 
-本附录分�?studyAgent 当前与教学大脑相关的四个核心模块，评�?M1 整合的可行性和具体改动点�?
+本附录分�?studyAgent 当前与教学大脑相关的四个核心模块，评�?M1 整合的可行性和具体改动点�?
 
-### A.1 learner.py �?学习者域纯函�?
+### A.1 learner.py �?学习者域纯函�?
 
-**当前实现**�?05 行）�?
+**当前实现**�?05 行）�?
 
 `learner.py` 是学习者模型的核心纯函数层，零 IO 设计，包含：
 
-1. **`concept_id(day, unit_id)`**：确定性铸�?concept ID（格�?`Day{N}-{单元id}`），禁止 LLM 生成。这�?studyAgent �?铁律"之一——所有标识符由代码确定性铸造�?
+1. **`concept_id(day, unit_id)`**：确定性铸�?concept ID（格�?`Day{N}-{单元id}`），禁止 LLM 生成。这�?studyAgent �?铁律"之一——所有标识符由代码确定性铸造�?
 
-2. **`compute_mastery(evidence, today, half_life, cap_without_code)`**：核心衰减公式实现�?
-   - 遍历所�?evidence，按 `delta * 0.5^(age/half_life)` 累加
-   - 返回三元�?`(mastery, uncapped, capped)`
-   - �?`code_verify_pass` 证据时封�?0.6（防"看懂"幻觉�?
-   - 设计精巧：衰减公式本质上�?Ebbinghaus 遗忘曲线的离散化
+2. **`compute_mastery(evidence, today, half_life, cap_without_code)`**：核心衰减公式实现�?
+   - 遍历所�?evidence，按 `delta * 0.5^(age/half_life)` 累加
+   - 返回三元�?`(mastery, uncapped, capped)`
+   - �?`code_verify_pass` 证据时封�?0.6（防"看懂"幻觉�?
+   - 设计精巧：衰减公式本质上�?Ebbinghaus 遗忘曲线的离散化
 
-3. **`review_interval(mastery)`**：固定规则间隔（<0.4�?�? <0.7�?�? �?.7�?天）。这�?Leitner 系统的数字化版本，M1 需要用 FSRS 替代�?
+3. **`review_interval(mastery)`**：固定规则间隔（<0.4�?�? <0.7�?�? �?.7�?天）。这�?Leitner 系统的数字化版本，M1 需要用 FSRS 替代�?
 
-4. **`upstream_closure(cid, prereq_map)`**：DFS 计算先修链闭包，环守�?+ 缺失容忍。这是知识图谱的基础设施�?
+4. **`upstream_closure(cid, prereq_map)`**：DFS 计算先修链闭包，环守�?+ 缺失容忍。这是知识图谱的基础设施�?
 
-5. **`topo_order(cids, prereq_map)`**：拓扑补弱序——上游先补。深�?= 上游闭包大小�?
+5. **`topo_order(cids, prereq_map)`**：拓扑补弱序——上游先补。深�?= 上游闭包大小�?
 
-**M1 改动评估**�?
+**M1 改动评估**�?
 - `compute_mastery()` 需增加 BKT 模式分支（约 30 行新增）
 - `review_interval()` 需增加 FSRS 模式分支（约 20 行新增）
-- 新增 `bkt_update()` 纯函数（�?30 行）
-- 新增 `fsrs_interval()` 纯函数（�?20 行）
-- 现有函数签名不变，向后兼�?
-- **风险**：低——纯函数层改动容易测�?
+- 新增 `bkt_update()` 纯函数（�?30 行）
+- 新增 `fsrs_interval()` 纯函数（�?20 行）
+- 现有函数签名不变，向后兼�?
+- **风险**：低——纯函数层改动容易测�?
 
-### A.2 learner_service.py �?学习者模型服�?
+### A.2 learner_service.py �?学习者模型服�?
 
-**当前实现**�?54 行）�?
+**当前实现**�?54 行）�?
 
-`LearnerService` 是学习者模型的业务层，管理三张 JSON 文件�?
-- `concepts.json`：概念注册表（id, title, prerequisites, materials, code_refs�?
-- `learner_model.json`：学习者状态（mastery, evidence, review_due�?
-- `notes.json`：迁移产物（卡壳/疑问条目�?
+`LearnerService` 是学习者模型的业务层，管理三张 JSON 文件�?
+- `concepts.json`：概念注册表（id, title, prerequisites, materials, code_refs�?
+- `learner_model.json`：学习者状态（mastery, evidence, review_due�?
+- `notes.json`：迁移产物（卡壳/疑问条目�?
 
-关键方法分析�?
+关键方法分析�?
 
-1. **`ensure_concepts()`**：从 StudyState 扫描 days 注册 concepts。确定�?ID + 先修边自动生成（天内�?+ 跨天链）。这是知识图谱的自动构建机制——虽然当前仅基于 Study.md 的天数顺序，但已提供了图谱骨架�?
+1. **`ensure_concepts()`**：从 StudyState 扫描 days 注册 concepts。确定�?ID + 先修边自动生成（天内�?+ 跨天链）。这是知识图谱的自动构建机制——虽然当前仅基于 Study.md 的天数顺序，但已提供了图谱骨架�?
 
-2. **`add_evidence()`**：核心证据写入方法�?
-   - �?`settings.toml` �?`[evidence_delta]` 表查 delta �?
+2. **`add_evidence()`**：核心证据写入方法�?
+   - �?`settings.toml` �?`[evidence_delta]` 表查 delta �?
    - source_ref 幂等去重
-   - 写入后调�?`compute_mastery()` 重算
+   - 写入后调�?`compute_mastery()` 重算
    - 更新 `review_due`（当前用 `review_interval()` 的固定规则）
-   - **M1 改动�?*：写入后增加 BKT 更新 + FSRS 间隔计算
+   - **M1 改动�?*：写入后增加 BKT 更新 + FSRS 间隔计算
 
-3. **`record_quiz()` / `record_review()` / `record_sync()` / `record_verify()`**：四类证据写入入口�?
-   - **M1 改动�?*：`record_quiz()` 需增加 error_pattern 参数
+3. **`record_quiz()` / `record_review()` / `record_sync()` / `record_verify()`**：四类证据写入入口�?
+   - **M1 改动�?*：`record_quiz()` 需增加 error_pattern 参数
 
-4. **`get_model()`**：实时计�?mastery 热力图数据�?
-   - �?concept ID 排序（DayN-X 格式�?
-   - 每条 concept �?mastery, uncapped, capped, has_code_pass, review_due, due, evidence
-   - **M1 改动�?*：增�?BKT 概率字段、FSRS DSR 状态字�?
+4. **`get_model()`**：实时计�?mastery 热力图数据�?
+   - �?concept ID 排序（DayN-X 格式�?
+   - 每条 concept �?mastery, uncapped, capped, has_code_pass, review_due, due, evidence
+   - **M1 改动�?*：增�?BKT 概率字段、FSRS DSR 状态字�?
 
 5. **图谱查询方法**：`upstream_chain()`, `unmastered_upstream()`, `remediation_order()`
-   - 已实现完整的先修链闭包和拓扑补弱�?
-   - **M1 价�?*：为 BKT 的先修关系建模提供了现成的图基础设施
+   - 已实现完整的先修链闭包和拓扑补弱�?
+   - **M1 价�?*：为 BKT 的先修关系建模提供了现成的图基础设施
 
-**M1 改动评估**�?
+**M1 改动评估**�?
 - `add_evidence()` 增加 BKT 更新调用（约 10 行）
 - `record_quiz()` 增加 error_pattern 参数（约 5 行）
 - `get_model()` 增加 BKT/FSRS 字段输出（约 15 行）
-- 新增 `calibrate_bkt_params()` 方法（参数校准，�?30 行）
+- 新增 `calibrate_bkt_params()` 方法（参数校准，�?30 行）
 - **风险**：中——JSON 文件 schema 变更需处理向后兼容
 
-### A.3 quiz_engine.py �?评分引擎
+### A.3 quiz_engine.py �?评分引擎
 
-**当前实现**�?0 行）�?
+**当前实现**�?0 行）�?
 
 `QuizEngine` 负责 LLM 评分标记提取，设计简洁：
 
-1. **`extract_score(text)`**：正则提�?`【评分：X.X】` 标记，范围校�?1.0-5.0�?
-2. **`extract_scores_by_cid(text, cids)`**：�?concept 提取评分，防 ID 窃取（F2 修复）�?
-3. **`ask_and_score(messages, max_retries)`**：请�?LLM 评价 + 失败重试（追加提醒）�?
-4. **`is_pass(score, mode)`**：及格判定（默认 3.0 分）�?
+1. **`extract_score(text)`**：正则提�?`【评分：X.X】` 标记，范围校�?1.0-5.0�?
+2. **`extract_scores_by_cid(text, cids)`**：�?concept 提取评分，防 ID 窃取（F2 修复）�?
+3. **`ask_and_score(messages, max_retries)`**：请�?LLM 评价 + 失败重试（追加提醒）�?
+4. **`is_pass(score, mode)`**：及格判定（默认 3.0 分）�?
 
-**M1 改动评估**�?
-- 评分 prompt 需增加错误分类指令（prompt 模板变更�?
+**M1 改动评估**�?
+- 评分 prompt 需增加错误分类指令（prompt 模板变更�?
 - 新增 `extract_error_pattern(text)` 方法（约 20 行）
 - `ask_and_score()` 返回值扩展为 `(text, score, error_pattern)`
 - **风险**：中——prompt 变更可能影响评分稳定性，需充分测试
 
-### A.4 review_scheduler.py �?间隔复习调度
+### A.4 review_scheduler.py �?间隔复习调度
 
-**当前实现**�?8 行）�?
+**当前实现**�?8 行）�?
 
-`collect_due()` 函数实现固定间隔复习调度�?
+`collect_due()` 函数实现固定间隔复习调度�?
 
-- 扫描过去所有天数，检�?`(day - d) �?[1, 3, 7]` 的到期项
-- 三类来源：卡壳、疑问（待解答）、回滚（低分�?
+- 扫描过去所有天数，检�?`(day - d) �?[1, 3, 7]` 的到期项
+- 三类来源：卡壳、疑问（待解答）、回滚（低分�?
 - 优先级排序：回滚 > 卡壳 > 疑问
-- 总量封顶 `review_max_items`（默�?6�?
+- 总量封顶 `review_max_items`（默�?6�?
 
-**M1 改动评估**�?
-- 新增 `fsrs_collect_due()` 函数：使�?FSRS 计算个性化间隔
+**M1 改动评估**�?
+- 新增 `fsrs_collect_due()` 函数：使�?FSRS 计算个性化间隔
 - 保留 `collect_due()` 作为 fallback
-- 需�?FSRS 状态（D, S, R）从 learner_model.json 读取
+- 需�?FSRS 状态（D, S, R）从 learner_model.json 读取
 - **风险**：低——新旧调度可并行运行对比
 
 ### A.5 整合可行性总结
 
-| 模块 | 改动�?| 风险 | 向后兼容 | 测试策略 |
+| 模块 | 改动�?| 风险 | 向后兼容 | 测试策略 |
 |------|--------|------|---------|----------|
-| learner.py | ~100 行新�?| �?| 完全兼容 | 纯函数单�?|
-| learner_service.py | ~60 行修�?| �?| 需 schema 迁移 | 集成测试 |
-| quiz_engine.py | ~30 行修�?| �?| 需 prompt 回归 | MockLLM 测试 |
-| review_scheduler.py | ~50 行新�?| �?| 完全兼容 | 对比测试 |
+| learner.py | ~100 行新�?| �?| 完全兼容 | 纯函数单�?|
+| learner_service.py | ~60 行修�?| �?| 需 schema 迁移 | 集成测试 |
+| quiz_engine.py | ~30 行修�?| �?| 需 prompt 回归 | MockLLM 测试 |
+| review_scheduler.py | ~50 行新�?| �?| 完全兼容 | 对比测试 |
 
-**关键依赖**�?
+**关键依赖**�?
 - `fsrs` PyPI 包需加入 `requirements.txt`
-- BKT 参数校准需至少 20 �?evidence（冷启动用全局默认值）
-- 错误分类 prompt 需�?LLM 供应商验证输出格�?
+- BKT 参数校准需至少 20 �?evidence（冷启动用全局默认值）
+- 错误分类 prompt 需�?LLM 供应商验证输出格�?
 
 ---
 
@@ -1780,59 +1780,59 @@ orchestrator → 前端展示建议卡片
 
 ### B.1 数学模型
 
-BKT 将每�?concept 的掌握建模为两状�?HMM�?
+BKT 将每�?concept 的掌握建模为两状�?HMM�?
 
 ```
-状态空间：{未掌�?L=0), 已掌�?L=1)}
+状态空间：{未掌�?L=0), 已掌�?L=1)}
 观察空间：{错误(O=0), 正确(O=1)}
 
-参数�?
-  P(L₀) �?[0,1]  �?初始掌握概率
-  P(T)  �?[0,1]  �?学习转移概率（每次练习后 0�? 的概率）
-  P(G)  �?[0,1]  �?猜测概率（未掌握但答对）
-  P(S)  �?[0,1]  �?失误概率（已掌握但答错）
+参数�?
+  P(L₀) �?[0,1]  �?初始掌握概率
+  P(T)  �?[0,1]  �?学习转移概率（每次练习后 0�? 的概率）
+  P(G)  �?[0,1]  �?猜测概率（未掌握但答对）
+  P(S)  �?[0,1]  �?失误概率（已掌握但答错）
 ```
 
 ### B.2 更新公式
 
 每次观察到学生的回答后，执行贝叶斯更新：
 
-**答对�?*�?
+**答对�?*�?
 ```
 P(L|correct) = P(L) × (1-P(S)) / [P(L) × (1-P(S)) + (1-P(L)) × P(G)]
 ```
 
-**答错�?*�?
+**答错�?*�?
 ```
 P(L|wrong) = P(L) × P(S) / [P(L) × P(S) + (1-P(L)) × (1-P(G))]
 ```
 
-**练习后转�?*（无论对错）�?
+**练习后转�?*（无论对错）�?
 ```
-P(Lₙ₊�? = P(L|obs) + (1 - P(L|obs)) × P(T)
+P(Lₙ₊�? = P(L|obs) + (1 - P(L|obs)) × P(T)
 ```
 
-### B.3 默认参数�?
+### B.3 默认参数�?
 
-基于文献推荐（论�?1, 7）和 studyAgent 场景�?
+基于文献推荐（论�?1, 7）和 studyAgent 场景�?
 
-| 参数 | 默认�?| 理由 |
+| 参数 | 默认�?| 理由 |
 |------|--------|------|
 | P(L₀) | 0.1 | 代码概念初始掌握度低 |
 | P(T) | 0.3 | 单次练习的学习转移率中等 |
 | P(G) | 0.25 | 代码题猜测概率适中 |
-| P(S) | 0.1 | 代码题失误概率较低（编译/运行验证�?|
+| P(S) | 0.1 | 代码题失误概率较低（编译/运行验证�?|
 
-### B.4 与现�?compute_mastery() 的关�?
+### B.4 与现�?compute_mastery() 的关�?
 
-**渐进迁移策略**�?
+**渐进迁移策略**�?
 
 1. **Phase 0（当前）**：纯衰减公式
    ```python
    mastery = Σ(delta × 0.5^(age/half_life))
    ```
 
-2. **Phase 1（M1 初期�?*：双轨运�?
+2. **Phase 1（M1 初期�?*：双轨运�?
    ```python
    if bkt_params_available:
        bkt_mastery = bkt_probability(evidence, bkt_params)
@@ -1842,7 +1842,7 @@ P(Lₙ₊�? = P(L|obs) + (1 - P(L|obs)) × P(T)
        mastery = compute_mastery(evidence, ...)  # 回退
    ```
 
-3. **Phase 2（M1 后期�?*：BKT 主导
+3. **Phase 2（M1 后期�?*：BKT 主导
    ```python
    if bkt_params_calibrated:
        mastery = bkt_probability(evidence, calibrated_params)
@@ -1852,34 +1852,34 @@ P(Lₙ₊�? = P(L|obs) + (1 - P(L|obs)) × P(T)
 
 ### B.5 参数校准方案
 
-**在线校准**（每�?evidence 写入时）�?
+**在线校准**（每�?evidence 写入时）�?
 - 使用 EM 算法（Expectation-Maximization）逐步更新参数
-- �?10 �?evidence 触发一次参数更�?
-- 参数变化幅度限制（防止单条异�?evidence 导致参数跳变�?
+- �?10 �?evidence 触发一次参数更�?
+- 参数变化幅度限制（防止单条异�?evidence 导致参数跳变�?
 
-**离线校准**（定期运行）�?
+**离线校准**（定期运行）�?
 - 基于全部 evidence 历史运行 MLE 优化
-- 可在 workspace 空闲时执�?
-- 结果写入 `learner_model.json` �?`bkt_params` 字段
+- 可在 workspace 空闲时执�?
+- 结果写入 `learner_model.json` �?`bkt_params` 字段
 
-**冷启动处�?*�?
-- �?workspace：使用全局默认参数
-- �?concept：继承同 workspace 的全局参数均�?
-- 数据不足�? 10 �?evidence）：使用默认参数 + 高不确定�?
+**冷启动处�?*�?
+- �?workspace：使用全局默认参数
+- �?concept：继承同 workspace 的全局参数均�?
+- 数据不足�? 10 �?evidence）：使用默认参数 + 高不确定�?
 
 ---
 
 ## 附录 C：FSRS 集成详细设计
 
-### C.1 fsrs 包接�?
+### C.1 fsrs 包接�?
 
 ```python
 from fsrs import FSRS, ReviewLog, Card, Rating
 
-# 初始�?
+# 初始�?
 scheduler = FSRS()
 
-# 创建新卡�?
+# 创建新卡�?
 card = Card()
 
 # 安排复习（返回下次复习时间）
@@ -1889,24 +1889,24 @@ card, review_log = scheduler.review_card(
     review_datetime=datetime.now()
 )
 
-# 卡片状�?
-card.stability    # 记忆强度（天�?
-card.difficulty   # 难度�?-10�?
+# 卡片状�?
+card.stability    # 记忆强度（天�?
+card.difficulty   # 难度�?-10�?
 card.due          # 下次复习时间
 ```
 
-### C.2 �?studyAgent 的映�?
+### C.2 �?studyAgent 的映�?
 
 | FSRS 概念 | studyAgent 映射 | 说明 |
 |-----------|----------------|------|
-| Card | concept (DayN-X) | 每个 concept 对应一�?FSRS 卡片 |
-| Rating.Good | quiz score �?3.5 | 通过 �?Good |
-| Rating.Again | quiz score < 3.5 | 未通过 �?Again |
-| Rating.Hard | quiz score 3.5-4.0 | 勉强通过 �?Hard |
-| Rating.Easy | quiz score �?4.5 | 轻松通过 �?Easy |
-| stability | 新增字段 | 存储�?learner_model.json |
-| difficulty | 新增字段 | 存储�?learner_model.json |
-| due | review_due 字段 | 替代当前的固定间隔计�?|
+| Card | concept (DayN-X) | 每个 concept 对应一�?FSRS 卡片 |
+| Rating.Good | quiz score �?3.5 | 通过 �?Good |
+| Rating.Again | quiz score < 3.5 | 未通过 �?Again |
+| Rating.Hard | quiz score 3.5-4.0 | 勉强通过 �?Hard |
+| Rating.Easy | quiz score �?4.5 | 轻松通过 �?Easy |
+| stability | 新增字段 | 存储�?learner_model.json |
+| difficulty | 新增字段 | 存储�?learner_model.json |
+| due | review_due 字段 | 替代当前的固定间隔计�?|
 
 ### C.3 learner_model.json schema 扩展
 
@@ -1944,14 +1944,14 @@ card.due          # 下次复习时间
 
 ### C.4 迁移策略
 
-- schema_version �?1 升到 2
-- 旧数据无 `fsrs` �?`bkt_params` 字段时自动填充默认�?
+- schema_version �?1 升到 2
+- 旧数据无 `fsrs` �?`bkt_params` 字段时自动填充默认�?
 - `review_due` 字段保持兼容（FSRS 使用日期，旧版使用天数）
 - 迁移函数 `migrate_v1_to_v2()` 在首次加载时自动执行
 
 ---
 
-## 附录 D：教学行动策略详细设�?
+## 附录 D：教学行动策略详细设�?
 
 ### D.1 教学行动枚举
 
@@ -1960,27 +1960,27 @@ class TeachingAction(str, Enum):
     REVIEW_PREREQ = "review_prereq"      # 复习先修概念
     RETELL_CORE = "retell_core"          # 重新讲解核心概念
     VARIANT_QUIZ = "variant_quiz"        # 变式测验
-    CHANGE_ANGLE = "change_angle"        # 换角度讲�?
+    CHANGE_ANGLE = "change_angle"        # 换角度讲�?
     PRACTICE_PROJECT = "practice_project" # 项目实践
     ADVANCE_NEXT = "advance_next"        # 推进到下一概念
     REST = "rest"                        # 休息建议
 ```
 
-### D.2 选择逻辑伪代�?
+### D.2 选择逻辑伪代�?
 
 ```python
 def suggest(context: TeachingContext) -> TeachingSuggestion:
     # 1. 认知负荷保护
     if context.session_duration > 45 * 60 or context.consecutive_errors >= 5:
-        return TeachingSuggestion(REST, "建议休息，避免认知过�?)
+        return TeachingSuggestion(REST, "建议休息，避免认知过�?)
 
-    # 2. 先修检�?
+    # 2. 先修检�?
     if context.mastery < 0.4:
         unmastered = find_unmastered_prereqs(context)
         if unmastered:
             return TeachingSuggestion(
                 REVIEW_PREREQ,
-                f"建议先复�? {unmastered[0].title}",
+                f"建议先复�? {unmastered[0].title}",
                 prereq_cid=unmastered[0].cid
             )
 
@@ -1988,7 +1988,7 @@ def suggest(context: TeachingContext) -> TeachingSuggestion:
     if context.error_pattern == ErrorPatternMajor.CONCEPT_CONFUSION:
         return TeachingSuggestion(
             CHANGE_ANGLE,
-            "概念混淆检测：尝试从不同角度理�?,
+            "概念混淆检测：尝试从不同角度理�?,
             confusion_detail=context.error_pattern_minor
         )
     if context.error_pattern == ErrorPatternMajor.CANNOT_APPLY:
@@ -2002,12 +2002,12 @@ def suggest(context: TeachingContext) -> TeachingSuggestion:
             "推理链断裂，建议重新梳理核心逻辑"
         )
 
-    # 4. 掌握度区间驱�?
+    # 4. 掌握度区间驱�?
     if 0.4 <= context.mastery < 0.7:
         if context.last_result == "correct":
             return TeachingSuggestion(
                 VARIANT_QUIZ,
-                "掌握度中等，尝试变式题检验理�?
+                "掌握度中等，尝试变式题检验理�?
             )
         else:
             return TeachingSuggestion(
@@ -2025,65 +2025,65 @@ def suggest(context: TeachingContext) -> TeachingSuggestion:
     # 6. 默认
     return TeachingSuggestion(
         RETELL_CORE,
-        "继续当前概念的学�?
+        "继续当前概念的学�?
     )
 ```
 
 ### D.3 前端建议卡片设计
 
-建议卡片包含以下信息�?
-- **行动类型图标**：每种行动对应不同图�?
+建议卡片包含以下信息�?
+- **行动类型图标**：每种行动对应不同图�?
 - **行动描述**：自然语言描述建议内容
 - **理由说明**：基于什么数据做出的建议
 - **确认按钮**：接受建议，系统执行对应教学行动
 - **跳过按钮**：跳过建议，继续当前流程
-- **详情展开**：可展开查看详细的数据依�?
+- **详情展开**：可展开查看详细的数据依�?
 
-### D.4 教学行动�?prompt 模板的映�?
+### D.4 教学行动�?prompt 模板的映�?
 
-每个教学行动对应不同�?prompt 模板�?
+每个教学行动对应不同�?prompt 模板�?
 
-| 教学行动 | prompt 核心指令 | 参考资�?|
+| 教学行动 | prompt 核心指令 | 参考资�?|
 |---------|----------------|----------|
 | REVIEW_PREREQ | "回顾先修概念 X 的核心要点，用简洁语言重述" | resources/prompts/ |
-| RETELL_CORE | "用不同方式重新讲�?X 的核心概念，突出 Y" | resources/sop/ |
-| VARIANT_QUIZ | "生成一道关�?X 的变式题，情境不同于之前的练�? | quiz_engine prompt |
-| CHANGE_ANGLE | "�?Z 角度重新解释 X，对比之前讲解的差异" | resources/sop/ |
+| RETELL_CORE | "用不同方式重新讲�?X 的核心概念，突出 Y" | resources/sop/ |
+| VARIANT_QUIZ | "生成一道关�?X 的变式题，情境不同于之前的练�? | quiz_engine prompt |
+| CHANGE_ANGLE | "�?Z 角度重新解释 X，对比之前讲解的差异" | resources/sop/ |
 | PRACTICE_PROJECT | "设计一个小型项目任务，要求应用 X 概念解决实际问题" | resources/sop/ |
-| ADVANCE_NEXT | "确认 X 已掌握，引入下一概念 Y，建立关�? | resources/prompts/ |
-| REST | "建议休息，总结已学内容，预告下一�? | 固定模板 |
+| ADVANCE_NEXT | "确认 X 已掌握，引入下一概念 Y，建立关�? | resources/prompts/ |
+| REST | "建议休息，总结已学内容，预告下一�? | 固定模板 |
 
 ---
 
 ## 附录 E：风险分析与缓解策略
 
-### E.1 技术风�?
+### E.1 技术风�?
 
 | 风险 | 概率 | 影响 | 缓解策略 |
 |------|------|------|----------|
-| BKT 参数校准不收�?| �?| �?| 参数变化幅度限制 + 回退到衰减公�?|
-| FSRS 包版本不兼容 | �?| �?| 锁定版本�?+ 封装适配�?|
-| 错误分类 prompt 不稳�?| �?| �?| MockLLM 测试 + 多格式容错解�?|
-| JSON schema 迁移数据丢失 | �?| �?| 迁移前备�?+ 回滚机制 |
-| 教学行动 prompt 生成质量�?| �?| �?| 人工审核 prompt 模板 + A/B 测试 |
+| BKT 参数校准不收�?| �?| �?| 参数变化幅度限制 + 回退到衰减公�?|
+| FSRS 包版本不兼容 | �?| �?| 锁定版本�?+ 封装适配�?|
+| 错误分类 prompt 不稳�?| �?| �?| MockLLM 测试 + 多格式容错解�?|
+| JSON schema 迁移数据丢失 | �?| �?| 迁移前备�?+ 回滚机制 |
+| 教学行动 prompt 生成质量�?| �?| �?| 人工审核 prompt 模板 + A/B 测试 |
 
 ### E.2 产品风险
 
 | 风险 | 概率 | 影响 | 缓解策略 |
 |------|------|------|----------|
-| 用户不理解教学建�?| �?| �?| 建议卡片附带清晰理由 |
-| 建议过于频繁打扰学习 | �?| �?| 可配置建议频率（每回�?�?N 回合�?|
-| 错误分类误导教学决策 | �?| �?| 大类固定 + 人工可覆�?|
-| 掌握度分数引起焦�?| �?| �?| 面板设计注重进步而非绝对分数 |
+| 用户不理解教学建�?| �?| �?| 建议卡片附带清晰理由 |
+| 建议过于频繁打扰学习 | �?| �?| 可配置建议频率（每回�?�?N 回合�?|
+| 错误分类误导教学决策 | �?| �?| 大类固定 + 人工可覆�?|
+| 掌握度分数引起焦�?| �?| �?| 面板设计注重进步而非绝对分数 |
 
 ### E.3 教育理论风险
 
 | 风险 | 概率 | 影响 | 缓解策略 |
 |------|------|------|----------|
-| BKT 两状态假设过于简�?| �?| �?| 监控预测精度，必要时升级�?AKT |
-| 固定 5 大类无法覆盖所有错�?| �?| �?| LLM 自由子类补充 |
-| 掌握门槛 0.7 可能不适合所有人 | �?| �?| 可配�?mastery_pass_score |
-| Bloom 掌握学习在代码学习中效果存疑 | �?| �?| 通过 A/B 测试验证 |
+| BKT 两状态假设过于简�?| �?| �?| 监控预测精度，必要时升级�?AKT |
+| 固定 5 大类无法覆盖所有错�?| �?| �?| LLM 自由子类补充 |
+| 掌握门槛 0.7 可能不适合所有人 | �?| �?| 可配�?mastery_pass_score |
+| Bloom 掌握学习在代码学习中效果存疑 | �?| �?| 通过 A/B 测试验证 |
 
 ---
 
@@ -2091,18 +2091,18 @@ def suggest(context: TeachingContext) -> TeachingSuggestion:
 
 | 术语 | 英文 | 定义 |
 |------|------|------|
-| 知识追踪 | Knowledge Tracing (KT) | 动态追踪学生知识掌握状态的技�?|
-| 贝叶斯知识追�?| Bayesian Knowledge Tracing (BKT) | 基于 HMM 的知识追踪方�?|
-| 深度知识追踪 | Deep Knowledge Tracing (DKT) | 基于 LSTM 的知识追踪方�?|
-| 间隔重复 | Spaced Repetition (SR) | 按递增间隔安排复习的技�?|
-| 遗忘曲线 | Forgetting Curve | 记忆保持量随时间衰减的曲�?|
-| 掌握学习 | Mastery Learning | 达到掌握标准后才推进的教学方�?|
-| 脚手�?| Scaffolding | 临时性教学支持，随能力增长逐步撤除 |
+| 知识追踪 | Knowledge Tracing (KT) | 动态追踪学生知识掌握状态的技�?|
+| 贝叶斯知识追�?| Bayesian Knowledge Tracing (BKT) | 基于 HMM 的知识追踪方�?|
+| 深度知识追踪 | Deep Knowledge Tracing (DKT) | 基于 LSTM 的知识追踪方�?|
+| 间隔重复 | Spaced Repetition (SR) | 按递增间隔安排复习的技�?|
+| 遗忘曲线 | Forgetting Curve | 记忆保持量随时间衰减的曲�?|
+| 掌握学习 | Mastery Learning | 达到掌握标准后才推进的教学方�?|
+| 脚手�?| Scaffolding | 临时性教学支持，随能力增长逐步撤除 |
 | 最近发展区 | Zone of Proximal Development (ZPD) | 独立能力与实际能力之间的差距 |
-| 记忆三组�?| Three Component Model (DSR) | Difficulty-Stability-Retrievability 模型 |
-| 教育数据挖掘 | Educational Data Mining (EDM) | 利用数据技术研究教育问�?|
+| 记忆三组�?| Three Component Model (DSR) | Difficulty-Stability-Retrievability 模型 |
+| 教育数据挖掘 | Educational Data Mining (EDM) | 利用数据技术研究教育问�?|
 | 强化学习 | Reinforcement Learning (RL) | 通过奖励信号学习最优策略的 ML 方法 |
-| 苏格拉底式提�?| Socratic Questioning | 通过提问引导而非直接给答案的教学方法 |
-| 2-sigma 效应 | 2-Sigma Problem | 一对一辅导比班级授课高出两个标准差的现�?|
-| 纳米级知识点 | Nano-level Knowledge Point | 极细粒度的知识单元划�?|
-| 期望保留�?| Desired Retrievability | 用户设定的目标记忆保持概�?|
+| 苏格拉底式提�?| Socratic Questioning | 通过提问引导而非直接给答案的教学方法 |
+| 2-sigma 效应 | 2-Sigma Problem | 一对一辅导比班级授课高出两个标准差的现�?|
+| 纳米级知识点 | Nano-level Knowledge Point | 极细粒度的知识单元划�?|
+| 期望保留�?| Desired Retrievability | 用户设定的目标记忆保持概�?|

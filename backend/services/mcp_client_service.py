@@ -1,0 +1,142 @@
+"""MCP Client 服务（M2.3 扩展层）
+
+studyAgent 作为 MCP Host，接入外部 MCP Server。
+JSON-RPC 2.0 over stdio 传输。
+连接失败静默降级（铁律 13）。
+"""
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import threading
+from dataclasses import dataclass
+from typing import Optional
+
+
+@dataclass
+class MCPToolInfo:
+    name: str
+    description: str
+    input_schema: dict
+
+
+class MCPClient:
+    """单个 MCP Server 的客户端"""
+
+    def __init__(self, name: str, command: str, args: list[str], env: dict = None):
+        self.name = name
+        self.command = command
+        self.args = args
+        self.env = env or {}
+        self._process: Optional[subprocess.Popen] = None
+        self._tools: list[MCPToolInfo] = []
+        self._connected = False
+
+    def connect(self) -> bool:
+        """连接到 MCP Server（stdio 传输）"""
+        try:
+            full_env = {**os.environ, **self.env}
+            self._process = subprocess.Popen(
+                [self.command] + self.args,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=full_env,
+            )
+            self._connected = True
+            # 初始化握手
+            self._send({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                        "params": {"protocolVersion": "2024-11-05"}})
+            # 获取工具列表
+            resp = self._send({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+            if resp and "result" in resp:
+                for t in resp["result"].get("tools", []):
+                    self._tools.append(MCPToolInfo(
+                        name=t["name"],
+                        description=t.get("description", ""),
+                        input_schema=t.get("inputSchema", {}),
+                    ))
+            return True
+        except Exception:
+            self._connected = False
+            return False
+
+    def _send(self, message: dict) -> Optional[dict]:
+        """发送 JSON-RPC 消息并等待响应"""
+        if not self._process or not self._connected:
+            return None
+        try:
+            data = json.dumps(message) + "\n"
+            self._process.stdin.write(data.encode())
+            self._process.stdin.flush()
+            # 读取响应（简化：读取一行）
+            line = self._process.stdout.readline()
+            if line:
+                return json.loads(line.decode())
+        except Exception:
+            pass
+        return None
+
+    def call_tool(self, tool_name: str, arguments: dict) -> Optional[dict]:
+        """调用 MCP 工具"""
+        return self._send({
+            "jsonrpc": "2.0", "id": 3,
+            "method": "tools/call",
+            "params": {"name": tool_name, "arguments": arguments},
+        })
+
+    def get_tools(self) -> list[MCPToolInfo]:
+        return self._tools
+
+    def disconnect(self):
+        if self._process:
+            self._process.terminate()
+            self._connected = False
+
+
+class MCPClientPool:
+    """管理多个 MCP Server 连接"""
+
+    def __init__(self, config=None):
+        self._config = config
+        self._clients: dict[str, MCPClient] = {}
+
+    def load_from_config(self) -> int:
+        """从 settings.toml 加载并连接 MCP servers"""
+        if not self._config:
+            return 0
+        mcp_section = self._config.data.get("mcp", {})
+        servers = mcp_section.get("servers", []) if isinstance(mcp_section, dict) else []
+        connected = 0
+        for srv in servers:
+            if not srv.get("enabled", True):
+                continue
+            client = MCPClient(
+                name=srv["name"],
+                command=srv["command"],
+                args=srv.get("args", []),
+                env=srv.get("env", {}),
+            )
+            if client.connect():
+                self._clients[srv["name"]] = client
+                connected += 1
+        return connected
+
+    def get_all_tools(self) -> list[tuple[str, MCPToolInfo]]:
+        """获取所有 MCP 工具（server_name, tool_info）"""
+        tools = []
+        for name, client in self._clients.items():
+            for tool in client.get_tools():
+                tools.append((name, tool))
+        return tools
+
+    def call_tool(self, server_name: str, tool_name: str, arguments: dict) -> Optional[dict]:
+        client = self._clients.get(server_name)
+        if client:
+            return client.call_tool(tool_name, arguments)
+        return None
+
+    def disconnect_all(self):
+        for client in self._clients.values():
+            client.disconnect()

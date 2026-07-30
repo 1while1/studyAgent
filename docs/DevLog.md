@@ -42,6 +42,14 @@
 - **测试基线**：583 → 686（+103）
 - **调研报告**：`docs/M1_Research_Report.md`（25篇论文 + 5个系统分析，2108行）
 
+## M2 扩展层交付（2026-07-30）
+
+- **M2.1 Web 搜索**：`web_search_service.py`（DuckDuckGoProvider + 缓存）+ tool_registry 注册 + 4测试
+- **M2.2 文件上传**：`upload_service.py` + `upload_routes.py`（POST /api/upload + GET /uploads/）+ 16测试
+- **M2.3 MCP Client**：`mcp_client_service.py`（MCPClient + MCPClientPool + JSON-RPC 2.0 stdio）+ 4测试
+- **测试基线**：696 → 720（+24）
+- **新增依赖**：duckduckgo-search / python-multipart
+
 ## 当前运行状态
 
 - **Git**：`study-web/.git`（main）→ GitHub <https://github.com/1while1/studyAgent>。密钥 `.env`/`opencode.txt` 与数据 `runtime/`、`workspaces/` 已 gitignore。提交流程：分支 + 三件套验证（单测/validate/走查）全绿才 commit

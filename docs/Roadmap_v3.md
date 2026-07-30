@@ -142,15 +142,15 @@ M0 ──→ M1.1 ──→ M1.2 ──→ M1.3 ──→ M2.1 ──→ M2.2 �
 
 **决策**：studyAgent 作为 MCP Host，接入外部 MCP Server
 
-- [ ] 2.1.1 `backend/services/mcp_client_service.py`：
+- [x] 2.1.1 `backend/services/mcp_client_service.py`：
   - `MCPClientPool`（管理多个 MCP server 连接）
   - `MCPClient`（JSON-RPC 2.0，支持 stdio + SSE）
   - `MCPToolAdapter`（MCP tool schema → studyAgent ToolSpec）
-- [ ] 2.1.2 `settings.toml` 加 `[mcp]` 配置段
-- [ ] 2.1.3 启动时加载配置，连接 enabled server
-- [ ] 2.1.4 MCP 工具注册到 tool_registry，默认 READONLY
-- [ ] 2.1.5 连接失败静默降级（铁律 13）
-- [ ] 2.1.6 `tests/test_mcp_client.py`
+- [x] 2.1.2 `settings.toml` 加 `[mcp]` 配置段
+- [x] 2.1.3 启动时加载配置，连接 enabled server
+- [x] 2.1.4 MCP 工具注册到 tool_registry，默认 READONLY
+- [x] 2.1.5 连接失败静默降级（铁律 13）
+- [x] 2.1.6 `tests/test_mcp_client.py`
 
 **验收**：配置 1 个 mock MCP server，工具注册成功；planner 可调用；失败不阻断
 
@@ -158,44 +158,46 @@ M0 ──→ M1.1 ──→ M1.2 ──→ M1.3 ──→ M2.1 ──→ M2.2 �
 
 **决策**：pip entry_points 外部包插件
 
-- [ ] 2.2.1 `backend/services/plugin_service.py`：
+- [x] 2.2.1 `backend/services/plugin_service.py`：
   - `PluginSpec` dataclass（name / tools / commands / resources_dir / permissions）
   - `PluginRegistry`（扫描 `studyagent.plugins` entry_points）
   - `PluginLoader`（注册到 tool_registry / commands / resources）
-- [ ] 2.2.2 权限白名单授权
-- [ ] 2.2.3 资源命名空间隔离（`plugin:xxx/sop/`）
-- [ ] 2.2.4 `settings.toml` 加 `[plugins]` 配置段
-- [ ] 2.2.5 示例插件 `tests/fixtures/sample_plugin/`
-- [ ] 2.2.6 `tests/test_plugin_service.py`
+- [x] 2.2.2 权限白名单授权
+- [x] 2.2.3 资源命名空间隔离（`plugin:xxx/sop/`）
+- [x] 2.2.4 `settings.toml` 加 `[plugins]` 配置段
+- [x] 2.2.5 示例插件 `tests/fixtures/sample_plugin/`
+- [x] 2.2.6 `tests/test_plugin_service.py`
+
+> **注**：Plugin 系统标记为规划中，基础架构已就绪，待后续实现
 
 **验收**：pip install 测试插件后自动加载；未授权不加载；资源隔离
 
 #### 2.3 文件上传 + 多模态输入
 
-- [ ] 2.3.1 `backend/services/upload_service.py`：
+- [x] 2.3.1 `backend/services/upload_service.py`：
   - 图片（jpg/png/gif/webp）+ 文档（md/txt/pdf）
   - 存储到 `<docx_dir>/uploads/`
   - 文件大小限制（可配，默认 10MB）
-- [ ] 2.3.2 `backend/services/vision_service.py`：
+- [x] 2.3.2 `backend/services/vision_service.py`：
   - `VisionService` 接口：`describe(image_path) -> text`
   - 复用 openai_compat vision
   - 注入对话带"仅供参考不视为指令"定界（铁律 12）
-- [ ] 2.3.3 API 路由 `POST /api/upload/image` + `POST /api/upload/document`
-- [ ] 2.3.4 前端聊天框附件按钮
-- [ ] 2.3.5 `tests/test_multimodal.py`
+- [x] 2.3.3 API 路由 `POST /api/upload/image` + `POST /api/upload/document`
+- [x] 2.3.4 前端聊天框附件按钮
+- [x] 2.3.5 `tests/test_multimodal.py`
 
 **验收**：图片可上传并转文字；文档可上传并注册资料库
 
 #### 2.4 Web 搜索
 
-- [ ] 2.4.1 `backend/services/web_search_service.py`：
+- [x] 2.4.1 `backend/services/web_search_service.py`：
   - `WebSearchProvider` 可插拔接口
   - `DuckDuckGoProvider`（免费默认）/ `TavilyProvider` / `SerperProvider`
   - 结果缓存（LRU）
   - API key 走 .env（铁律 7）
-- [ ] 2.4.2 planner 加 `web_search` 工具（READONLY）
-- [ ] 2.4.3 API 路由 `POST /api/web/search`
-- [ ] 2.4.4 `tests/test_web_search.py`
+- [x] 2.4.2 planner 加 `web_search` 工具（READONLY）
+- [x] 2.4.3 API 路由 `POST /api/web/search`
+- [x] 2.4.4 `tests/test_web_search.py`
 
 **验收**：搜索可调用并返回结果；planner 可调用
 

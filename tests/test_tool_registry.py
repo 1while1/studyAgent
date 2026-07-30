@@ -44,6 +44,7 @@ _EXPECTED = {
     "process_stop": SANDBOX,      # M6
     "process_logs": SANDBOX,      # M6
     "mark_wrong": WRITE,           # 改进2 防幻觉闭环
+    "web_search": READONLY,         # M2.1 Web 搜索
 }
 
 

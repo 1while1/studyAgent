@@ -284,10 +284,15 @@ async function loadHistory() {
 let streaming = false;
 
 function setSendEnabled(on) {
-  const btn = document.querySelector("#input-form button");
+  const btn = document.querySelector("#input-form button[type='submit']");
   if (btn) btn.disabled = !on;
   document.getElementById("command-chips").style.pointerEvents = on ? "" : "none";
   for (const id of ["mode-tutor", "mode-pair", "reset-history"]) {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !on;
+  }
+  // 流式期间禁用搜索 / 附件按钮
+  for (const id of ["btn-web-search", "btn-file-upload"]) {
     const el = document.getElementById(id);
     if (el) el.disabled = !on;
   }
@@ -1103,6 +1108,180 @@ function renderTeachingSuggestion(container, ev) {
     `;
     container.appendChild(card);
     scrollToBottom();
+}
+
+// ---------- Web 搜索 + 文件上传按钮 ----------
+
+// 注入辅助样式
+(function injectAuxStyles() {
+  const s = document.createElement("style");
+  s.textContent = `
+    #input-form .input-aux-btn {
+      background: transparent; box-shadow: none; padding: 6px 4px;
+    }
+    #input-form .input-aux-btn:hover {
+      background: var(--accent-soft); filter: none; box-shadow: none;
+    }
+    .input-aux-btn:disabled {
+      opacity: 0.4; cursor: not-allowed;
+    }
+    .input-aux-btn {
+      background: transparent; border: none; cursor: pointer;
+      font-size: 20px; line-height: 1; padding: 6px 4px; flex-shrink: 0;
+      color: var(--text-dim); border-radius: 8px; transition: background .15s, color .15s;
+    }
+    .input-aux-btn:hover { background: var(--accent-soft); color: var(--accent); }
+    .search-bar {
+      display: none; align-items: center; gap: 8px;
+      margin: 0 20px 4px; padding: 6px 12px;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+    }
+    .search-bar.open { display: flex; }
+    .search-bar input {
+      flex: 1; border: none; outline: none; background: transparent;
+      font-size: 14px; color: var(--text); font-family: inherit;
+    }
+    .search-bar button {
+      background: none; border: none; cursor: pointer; font-size: 16px;
+      color: var(--text-dim); padding: 2px 4px;
+    }
+    .search-bar button:hover { color: var(--accent); }
+    .upload-progress {
+      font-size: 12px; color: var(--text-dim); padding: 2px 20px 0;
+    }
+  `;
+  document.head.appendChild(s);
+})();
+
+// 在 input-form 内，发送按钮之前插入辅助按钮
+(function injectAuxButtons() {
+  const sendBtn = form.querySelector('button[type="submit"]');
+
+  // 🔍 搜索按钮
+  const searchBtn = document.createElement("button");
+  searchBtn.type = "button";
+  searchBtn.className = "input-aux-btn";
+  searchBtn.textContent = "🔍";
+  searchBtn.title = "Web 搜索";
+  searchBtn.id = "btn-web-search";
+
+  // 📎 附件按钮
+  const attachBtn = document.createElement("button");
+  attachBtn.type = "button";
+  attachBtn.className = "input-aux-btn";
+  attachBtn.textContent = "📎";
+  attachBtn.title = "上传文件（图片/文档）";
+  attachBtn.id = "btn-file-upload";
+
+  // 隐藏 file input
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = ".jpg,.jpeg,.png,.gif,.webp,.md,.txt,.pdf";
+  fileInput.style.display = "none";
+  fileInput.id = "file-input-hidden";
+
+  form.insertBefore(fileInput, sendBtn);
+  form.insertBefore(attachBtn, sendBtn);
+  form.insertBefore(searchBtn, sendBtn);
+
+  // 搜索栏（在 form 上方插入）
+  const searchBar = document.createElement("div");
+  searchBar.className = "search-bar";
+  searchBar.id = "search-bar";
+  const searchInput = document.createElement("input");
+  searchInput.type = "text";
+  searchInput.placeholder = "输入搜索关键词…";
+  searchInput.id = "search-input";
+  const searchGoBtn = document.createElement("button");
+  searchGoBtn.textContent = "搜索";
+  searchGoBtn.type = "button";
+  const searchCloseBtn = document.createElement("button");
+  searchCloseBtn.textContent = "✕";
+  searchCloseBtn.type = "button";
+  searchBar.append(searchInput, searchGoBtn, searchCloseBtn);
+  form.parentNode.insertBefore(searchBar, form);
+
+  // 事件：搜索按钮 → 显示搜索栏
+  searchBtn.onclick = () => {
+    searchBar.classList.toggle("open");
+    if (searchBar.classList.contains("open")) searchInput.focus();
+  };
+
+  // 事件：执行搜索
+  function doSearch() {
+    const q = searchInput.value.trim();
+    if (!q) return;
+    searchBar.classList.remove("open");
+    searchInput.value = "";
+    streamPost("/api/chat", "web_search:" + q);
+  }
+  searchGoBtn.onclick = doSearch;
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); doSearch(); }
+    if (e.key === "Escape") { searchBar.classList.remove("open"); searchInput.value = ""; }
+  });
+  searchCloseBtn.onclick = () => {
+    searchBar.classList.remove("open");
+    searchInput.value = "";
+  };
+
+  // 事件：附件按钮 → 打开文件选择器
+  attachBtn.onclick = () => fileInput.click();
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files.length) {
+      handleFileUpload(fileInput.files[0]);
+      fileInput.value = "";  // 允许重复选同一文件
+    }
+  });
+})();
+
+// ---------- 文件上传 ----------
+
+async function handleFileUpload(file) {
+  const maxSize = 20 * 1024 * 1024;  // 20 MB
+  if (file.size > maxSize) {
+    showToast("文件过大（上限 20 MB）");
+    return;
+  }
+
+  // 显示上传进度
+  const progEl = document.createElement("div");
+  progEl.className = "upload-progress";
+  progEl.textContent = `⏳ 正在上传：${file.name}（${formatFileSize(file.size)}）…`;
+  form.parentNode.insertBefore(progEl, form);
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  try {
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      body: formData,
+    });
+    const data = await res.json();
+    progEl.remove();
+    if (data.ok === false) {
+      showToast(data.error || "上传失败");
+      return;
+    }
+    // 在输入框插入文件引用
+    const ref = data.filename || data.name || file.name;
+    const url = data.url || data.path || "";
+    const prefix = inputEl.value ? " " : "";
+    inputEl.value += `${prefix}[${ref}](${url}) `;
+    autosizeInput();
+    inputEl.focus();
+    showToast(`✅ 已上传：${ref}`);
+  } catch (err) {
+    progEl.remove();
+    showToast("上传失败：" + (err.message || err));
+  }
+}
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
 }
 
 // ---------- 启动 ----------
