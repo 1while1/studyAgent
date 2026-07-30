@@ -22,7 +22,7 @@ from .config_service import ConfigService
 from .repository import JsonRepository
 from ..domain.learner import (compute_mastery, concept_id, is_due,
                               review_interval, topo_order, upstream_closure)
-from ..engine.learning_metrics import (
+from ..domain.learning_metrics import (
     bkt_mastery, fsrs_interval_from_evidence, compute_learning_metrics,
     LearningMetrics, BKT_DEFAULT_PARAMS,
 )

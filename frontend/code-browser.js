@@ -1,6 +1,13 @@
 // ---------- 代码浏览器（源码学习模式面板） ----------
 // 从 app.js 拆分出的独立功能域模块
 
+// XSS 防护：HTML 转义（用于 innerHTML 拼接）
+function escHtml(s) {
+    const d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+}
+
 const codePanel = document.getElementById("code-panel");
 const codeTreeEl = document.getElementById("code-tree");
 const codeContentEl = document.getElementById("code-content");
@@ -90,7 +97,7 @@ async function loadTreeLevel(root, rel, container, replace) {
     row.className = `tree-row ${entry.type}`;
     const entryRel = rel ? `${rel}/${entry.name}` : entry.name;
     if (entry.type === "dir") {
-      row.innerHTML = `<span class="tree-icon">▸</span> ${entry.name}`;
+      row.innerHTML = `<span class="tree-icon">▸</span> ${escHtml(entry.name)}`;
       row.title = entryRel;  // 悬停显示完整路径
       const children = document.createElement("div");
       children.className = "tree-children hidden";
@@ -107,7 +114,7 @@ async function loadTreeLevel(root, rel, container, replace) {
       container.appendChild(row);
       container.appendChild(children);
     } else {
-      row.innerHTML = `<span class="tree-icon">·</span> ${entry.name}`;
+      row.innerHTML = `<span class="tree-icon">·</span> ${escHtml(entry.name)}`;
       row.title = entryRel;  // 悬停显示完整路径
       row.onclick = () => {
         container.closest(".code-tree").querySelectorAll(".tree-row.active")

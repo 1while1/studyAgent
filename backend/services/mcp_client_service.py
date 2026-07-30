@@ -12,9 +12,12 @@ import os
 import subprocess
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+_ALLOWED_COMMANDS = {"python", "python3", "node", "npx", "uvx"}
 
 
 @dataclass
@@ -40,6 +43,10 @@ class MCPClient:
 
     def connect(self) -> bool:
         """连接到 MCP Server（stdio 传输）"""
+        cmd_name = Path(self.command).name
+        if cmd_name not in _ALLOWED_COMMANDS:
+            logger.error("MCP command not allowed: %s", self.command)
+            return False
         try:
             minimal_env = {"PATH": os.environ.get("PATH", "")}
             full_env = {**minimal_env, **self.env}
@@ -93,9 +100,9 @@ class MCPClient:
                 line = self._readline_with_timeout()
                 if line:
                     return json.loads(line.decode())
-            except Exception:
-                pass
-        return None
+            except Exception as e:
+                logger.warning("MCP _send failed [%s]: %s", self.name, e)
+                return None
 
     def call_tool(self, tool_name: str, arguments: dict) -> Optional[dict]:
         """调用 MCP 工具"""
@@ -117,6 +124,14 @@ class MCPClient:
                 self._process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 self._process.kill()
+                self._process.wait(timeout=2)
+            for pipe in (self._process.stdin, self._process.stdout, self._process.stderr):
+                if pipe:
+                    try:
+                        pipe.close()
+                    except Exception:
+                        pass
+            self._process = None
             self._connected = False
 
 
@@ -126,6 +141,7 @@ class MCPClientPool:
     def __init__(self, config=None):
         self._config = config
         self._clients: dict[str, MCPClient] = {}
+        self._lock = threading.RLock()
 
     def load_from_config(self) -> int:
         """从 settings.toml 加载并连接 MCP servers"""
@@ -134,34 +150,38 @@ class MCPClientPool:
         mcp_section = self._config.data.get("mcp", {})
         servers = mcp_section.get("servers", []) if isinstance(mcp_section, dict) else []
         connected = 0
-        for srv in servers:
-            if not srv.get("enabled", True):
-                continue
-            client = MCPClient(
-                name=srv["name"],
-                command=srv["command"],
-                args=srv.get("args", []),
-                env=srv.get("env", {}),
-            )
-            if client.connect():
-                self._clients[srv["name"]] = client
-                connected += 1
+        with self._lock:
+            for srv in servers:
+                if not srv.get("enabled", True):
+                    continue
+                client = MCPClient(
+                    name=srv["name"],
+                    command=srv["command"],
+                    args=srv.get("args", []),
+                    env=srv.get("env", {}),
+                )
+                if client.connect():
+                    self._clients[srv["name"]] = client
+                    connected += 1
         return connected
 
     def get_all_tools(self) -> list[tuple[str, MCPToolInfo]]:
         """获取所有 MCP 工具（server_name, tool_info）"""
-        tools = []
-        for name, client in self._clients.items():
-            for tool in client.get_tools():
-                tools.append((name, tool))
-        return tools
+        with self._lock:
+            tools = []
+            for name, client in self._clients.items():
+                for tool in client.get_tools():
+                    tools.append((name, tool))
+            return tools
 
     def call_tool(self, server_name: str, tool_name: str, arguments: dict) -> Optional[dict]:
-        client = self._clients.get(server_name)
-        if client:
-            return client.call_tool(tool_name, arguments)
-        return None
+        with self._lock:
+            client = self._clients.get(server_name)
+            if client:
+                return client.call_tool(tool_name, arguments)
+            return None
 
     def disconnect_all(self):
-        for client in self._clients.values():
-            client.disconnect()
+        with self._lock:
+            for client in self._clients.values():
+                client.disconnect()

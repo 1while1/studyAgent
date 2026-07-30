@@ -130,8 +130,17 @@ def update_code_roots(path: Path, roots: list[dict]) -> None:
 
 def _esc(value) -> str:
     """TOML 基本字符串转义（C3：补换行——裸换行会写出非法 TOML）。"""
-    return (str(value).replace("\\", "\\\\").replace('"', '\\"')
-            .replace("\n", "\\n").replace("\r", "\\r"))
+    s = str(value)
+    s = s.replace("\\", "\\\\")
+    s = s.replace('"', '\\"')
+    s = s.replace("\n", "\\n")
+    s = s.replace("\r", "\\r")
+    s = s.replace("\t", "\\t")
+    s = s.replace("\b", "\\b")
+    s = s.replace("\f", "\\f")
+    # M-S6: 转义剩余控制字符（U+0000-U+001F 中尚未处理的）
+    s = re.sub(r'[\x00-\x07\x0b\x0e-\x1f]', lambda m: f"\\u{ord(m.group()):04x}", s)
+    return s
 
 
 def update_workspaces(path: Path, workspaces: list[dict], active: str) -> None:

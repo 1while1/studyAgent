@@ -83,6 +83,10 @@ class UploadService:
         if magic and len(content) >= len(magic):
             if not content[:len(magic)].startswith(magic):
                 return "文件内容与扩展名不匹配"
+        # 文本类型 NULL 字节检测（防止二进制伪装为文本）
+        _TEXT_EXTS = {".md", ".txt"}
+        if ext in _TEXT_EXTS and b'\x00' in content[:1024]:
+            return "文本文件包含非法二进制内容"
         return None
     
     def _get_file_type(self, filename: str) -> str:

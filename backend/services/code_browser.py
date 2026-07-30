@@ -99,6 +99,10 @@ class CodeBrowser:
     def read_file(self, root_name: str, rel: str) -> dict:
         root = self.root_path(root_name)
         target = self._safe_join(root, rel)
+        # M-S5: 禁止读取隐藏目录下的任何文件（.git 等）
+        rel_parts = target.relative_to(root).parts
+        if any(part.startswith(".") for part in rel_parts):
+            raise CodeBrowserError("不允许查看隐藏目录下的文件")
         if _is_sensitive(target.name):
             raise CodeBrowserError("敏感文件（密钥/证书类）不允许在线查看")
         if not target.is_file():

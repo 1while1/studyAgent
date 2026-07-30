@@ -3,7 +3,7 @@ import unittest
 from datetime import date
 from unittest.mock import MagicMock
 
-from backend.engine.learning_metrics import (
+from backend.domain.learning_metrics import (
     compute_indicator_a,
     compute_indicator_b,
     compute_indicator_c,

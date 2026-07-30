@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
@@ -50,7 +51,10 @@ async def upload_file(file: UploadFile = File(...)):
         return {"ok": False, "error": "文件内容为空"}
 
     svc = _upload_service()
-    result = svc.save_upload(file.filename, content)
+    # M-S2: filename sanitization（防路径注入/特殊字符）
+    safe_name = re.sub(r'[^\w\s\-.]', '_', file.filename or 'unnamed')
+    safe_name = safe_name.strip()[:255]
+    result = svc.save_upload(safe_name, content)
 
     # 返回错误字符串
     if isinstance(result, str):

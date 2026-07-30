@@ -17,7 +17,7 @@ from __future__ import annotations
 from .config_service import ConfigService
 from .memory_store import MemoryStore
 from .state_store import StateStore
-from ..engine.learning_metrics import fsrs_schedule, FSRS_DEFAULT_PARAMS
+from ..domain.learning_metrics import fsrs_schedule, FSRS_DEFAULT_PARAMS
 
 _PRIORITY = {"回滚": 0, "卡壳": 1, "疑问": 2}
 
