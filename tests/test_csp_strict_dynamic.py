@@ -1,4 +1,4 @@
-"""M-S4: CSP script-src 使用 strict-dynamic 替代 unsafe-inline"""
+"""M-S4: CSP script-src 安全策略验证（移除 strict-dynamic，保留 'self'）"""
 import unittest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -6,7 +6,7 @@ from backend.api.security_headers import SecurityHeadersMiddleware, SECURITY_HEA
 
 
 class TestCSPStrictDynamic(unittest.TestCase):
-    """验证 CSP 头中 script-src 使用 strict-dynamic 而非 unsafe-inline。"""
+    """验证 CSP 头中 script-src 使用 'self'，不包含 'strict-dynamic' 或 'unsafe-inline'。"""
 
     def setUp(self):
         app = FastAPI()
@@ -23,11 +23,13 @@ class TestCSPStrictDynamic(unittest.TestCase):
         app.add_middleware(SecurityHeadersMiddleware, enabled=True)
         self.client = TestClient(app)
 
-    def test_csp_script_src_has_strict_dynamic(self):
-        """script-src 包含 'strict-dynamic'"""
+    def test_csp_script_src_has_self_only(self):
+        """script-src 包含 'self' 且不包含 'strict-dynamic'"""
         resp = self.client.get("/html")
         csp = resp.headers["content-security-policy"]
-        self.assertIn("'strict-dynamic'", csp)
+        script_src = [d.strip() for d in csp.split(";") if "script-src" in d][0]
+        self.assertIn("'self'", script_src)
+        self.assertNotIn("'strict-dynamic'", script_src)
 
     def test_csp_script_src_no_unsafe_inline(self):
         """script-src 不包含 'unsafe-inline'"""
