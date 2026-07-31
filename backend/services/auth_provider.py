@@ -101,3 +101,26 @@ class LocalAuthProvider(AuthProvider):
 
     def enabled(self) -> bool:
         return bool(self._hash())
+
+
+class OAuthProvider(AuthProvider):
+    """OAuth 认证提供者（占位实现）
+    
+    未来可扩展为 OIDC/OAuth2 认证。
+    当前所有方法抛出 NotImplementedError。
+    """
+    
+    def __init__(self, config=None):
+        self._config = config
+    
+    def verify_password(self, password: str) -> bool:
+        raise NotImplementedError("OAuthProvider.verify_password 尚未实现")
+    
+    def set_password(self, password: str) -> None:
+        raise NotImplementedError("OAuthProvider.set_password 尚未实现")
+    
+    def clear_password(self) -> None:
+        raise NotImplementedError("OAuthProvider.clear_password 尚未实现")
+    
+    def enabled(self) -> bool:
+        return False
