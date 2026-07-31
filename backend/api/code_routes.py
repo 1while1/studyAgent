@@ -6,7 +6,6 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from ..services.code_browser import CodeBrowser, CodeBrowserError
-from ..services.config_writer import update_code_roots
 from ..services.process_mgr import ProcessError, ProcessManager, split_cmd
 from ..services.workshop_service import WorkshopError, WorkshopService
 
@@ -40,50 +39,20 @@ def code_roots():
 
 @code_router.post("/api/code/roots")
 def add_code_root(body: dict):
-    deps = _deps()
     name = (body or {}).get("name", "").strip()
     raw_path = (body or {}).get("path", "").strip()
-    if not name or not raw_path:
-        return {"ok": False, "error": "name 和 path 不能为空"}
-    # C3：名称白名单（XSS 防线——name 会进 settings 并回显到前端 DOM）
-    import re as _re
-    if not _re.fullmatch(r"[A-Za-z0-9_-]{1,40}", name):
-        return {"ok": False,
-                "error": "项目根名称仅限字母/数字/_/-（≤40 字符）"}
-    if any(r["name"] == name for r in deps.config.code_roots):
-        return {"ok": False, "error": f"项目根已存在: {name}"}
-    all_roots = list(deps.config.data.get("code_roots", []))
-    new_roots = all_roots + [{"name": name, "path": raw_path,
-                              "workspace": deps.config.workspace.slug}]
-    try:
-        cb = CodeBrowser(deps.config)
-        from ..services.config_service import WEB_ROOT
-        from pathlib import Path as _P
-        p = _P(raw_path) if _P(raw_path).is_absolute() else (WEB_ROOT / raw_path).resolve()
-        if not p.is_dir():
-            return {"ok": False, "error": f"目录不存在: {raw_path}"}
-        update_code_roots(deps.config.path, new_roots)
-        deps.config.reload()
-    except Exception as e:
-        return {"ok": False, "error": str(e)[:200]}
+    result = _deps().config.add_code_root(name, raw_path)
+    if not result.get("ok"):
+        return result
     return {"ok": True, "roots": _code_browser().roots()}
 
 
 @code_router.post("/api/code/roots/delete")
 def delete_code_root(body: dict):
-    deps = _deps()
     name = (body or {}).get("name", "").strip()
-    all_roots = list(deps.config.data.get("code_roots", []))
-    slug = deps.config.workspace.slug
-    new_roots = [r for r in all_roots
-                 if not (r["name"] == name and r.get("workspace", slug) == slug)]
-    if len(new_roots) == len(all_roots):
-        return {"ok": False, "error": f"项目根不存在: {name}"}
-    try:
-        update_code_roots(deps.config.path, new_roots)
-        deps.config.reload()
-    except Exception as e:
-        return {"ok": False, "error": str(e)[:200]}
+    result = _deps().config.delete_code_root(name)
+    if not result.get("ok"):
+        return result
     return {"ok": True, "roots": _code_browser().roots()}
 
 

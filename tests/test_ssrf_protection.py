@@ -2,7 +2,7 @@
 
 import unittest
 
-from backend.api.llm_config_routes import _validate_base_url
+from backend.services.llm_config_service import validate_base_url as _validate_base_url
 
 
 class TestValidateBaseUrl(unittest.TestCase):

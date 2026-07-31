@@ -2,7 +2,7 @@
 
 > 用途：逐项检查学习 Agent 的完成度。验收方法列：走查=UI 走查覆盖项；手动=浏览器人工实测；API=接口直调；单测=已有单测锁定。
 > 使用方式：逐项实测后在「结果」列写 ✅/❌+现象；发现问题开修复批（分支 + 三件套全绿 + 双子审查 + 合并 push）。
-> 基线：main（793 单测 / 187 走查全绿）。服务：`python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765`
+> 基线：main（828 单测 / 187 走查全绿）。服务：`python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8765`
 
 ## 1. 工作区与初始化
 
@@ -147,7 +147,7 @@
 |---|--------|------|------|
 | 12.1 | 规则 14：全部学习数据写走 atomic_persist（备份→写→validate→回滚） | 代码抽查+单测 | ✅ 代码抽查：atomic_write（tmp+os.replace）为基元，学习流程落盘全走 atomic_persist（五指令）+ test_review_batch 写入期失败回滚；🟡 留档：refresh_project_md 直写无备份（初始化/刷新路径） |
 | 12.2 | validate_study 三方一致（JSON/StudyMemory/Study.md） | 每次落盘后 | ✅ validate_study 三方一致实时跑过（0 warning）；G12 修复批三新测试均过 validator |
-| 12.3 | 单测 793 全绿；走查 187 全绿 | 三件套 | ✅ 三件套：单测全绿 / validate 绿 / 走查全 PASS（真实 LLM 402 两项环境阻塞除外） |
+| 12.3 | 单测 828 全绿；走查 187 全绿 | 三件套 | ✅ 三件套：单测全绿 / validate 绿 / 走查全 PASS（真实 LLM 402 两项环境阻塞除外） |
 | 12.4 | settings/session/进程/settings.toml 写全部持锁（无互踩） | 单测 | ✅ test_arch_fixes（concurrent_save_never_corrupts / flow_lock 跨线程释放）+ test_process_mgr（concurrent_start_registers_all 注册表锁）+ config_writer _SETTINGS_LOCK（test_llm_config_toml_escaping_roundtrip） |
 | 12.5 | LLM 失败状态一致：chat 落盘用户消息；command 回滚快照 | 单测 | ✅ test_chat_disconnect（chat 先落盘用户消息）+ 本修复批 test_command_rollback（command 回滚快照：spy save 恰好一次+内容=快照，首包失败/中途断流双变体，外部落盘不回滚边界锁定）；顺带修复 [超前学习] 死胡同（test_arch_fixes 三新测试） |
 

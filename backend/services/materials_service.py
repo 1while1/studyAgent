@@ -23,8 +23,9 @@ import threading
 import time
 from pathlib import Path
 
-from .backup_service import BackupService, atomic_write
+from .backup_service import atomic_write
 from .config_service import ConfigService, WEB_ROOT
+from .repository import JsonRepository
 from ..domain.paths import SKIP_DIRS
 from ..domain.sensitive import is_sensitive
 
@@ -58,6 +59,9 @@ class MaterialsService:
 
     def __init__(self, config: ConfigService):
         self._config = config
+        docx_dir = Path(config.docx_dir) if config else Path(".")
+        self._repo = JsonRepository(docx_dir)
+        self._materials_file = "materials"
 
     def ensure_scanned(self) -> None:
         """首次使用前自动扫描一次（mtime 幂等，后续零成本）。"""
@@ -93,18 +97,17 @@ class MaterialsService:
     # ---- 注册表读写 ----
 
     def _load(self) -> dict:
-        try:
-            data = json.loads(self.registry_path.read_text(encoding="utf-8"))
-            if isinstance(data, dict) and isinstance(data.get("materials"), dict):
-                return data
-        except Exception:
-            pass
-        return {"schema_version": SCHEMA_VERSION, "materials": {}}
+        default = {"schema_version": SCHEMA_VERSION, "materials": {}}
+        data = self._repo.load(self._materials_file)
+        if data is None:
+            return default
+        if isinstance(data, dict) and isinstance(data.get("materials"), dict):
+            return data
+        return default
 
     def _save(self, reg: dict) -> None:
         reg["schema_version"] = SCHEMA_VERSION
-        BackupService(self._config).atomic_persist(
-            {self.registry_path: json.dumps(reg, ensure_ascii=False, indent=2)})
+        self._repo.save(self._materials_file, reg)
 
     def list(self) -> list[dict]:
         """用户面清单（不含内部 mtime 等字段）。"""

@@ -110,17 +110,51 @@ class VisionService:
     
     def _call_vision_api(self, image_b64: str, content_type: str, prompt: str) -> str:
         """调用 LLM Vision API 分析图片"""
-        # 当前为占位实现，未来接入 OpenAI Vision API
-        # 或兼容的 Vision 模型
         if not self._config:
             return "[Vision API 未配置]"
         
         try:
-            # 尝试通过 LLM factory 获取 vision-capable client
-            from ..llm.factory import build_client
-            client = build_client(self._config)
-            if hasattr(client, "analyze_image"):
-                return client.analyze_image(image_b64, content_type, prompt)
+            from ..llm.factory import create_llm
+            client = create_llm(self._config)
+            # 解包 ObservedLLM / FallbackClient 获取底层 OpenAI 客户端
+            raw = self._unwrap_client(client)
+            if raw is not None:
+                openai_client = raw._client  # OpenAI 实例
+                model = raw._model           # 模型名称
+                response = openai_client.chat.completions.create(
+                    model=model,
+                    messages=[{
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {
+                                "url": f"data:{content_type};base64,{image_b64}"
+                            }}
+                        ]
+                    }],
+                    max_tokens=1024,
+                )
+                return response.choices[0].message.content
             return "[当前 LLM 不支持 Vision]"
         except Exception as e:
             return f"[Vision 分析失败: {e}]"
+    
+    @staticmethod
+    def _unwrap_client(client):
+        """解包 ObservedLLM / FallbackClient，返回底层 OpenAICompatClient 或 None"""
+        from ..llm.observed import ObservedLLM
+        from ..llm.fallback import FallbackClient
+        from ..llm.openai_compat import OpenAICompatClient
+        seen = set()
+        while id(client) not in seen:
+            seen.add(id(client))
+            if isinstance(client, OpenAICompatClient):
+                return client
+            if isinstance(client, ObservedLLM):
+                client = client.inner
+                continue
+            if isinstance(client, FallbackClient):
+                client = client._primary
+                continue
+            break
+        return None

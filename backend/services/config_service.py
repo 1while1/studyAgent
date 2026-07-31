@@ -194,6 +194,59 @@ class ConfigService:
     def env(self, key: str, default: str = "") -> str:
         return os.environ.get(key, default)
 
+    # ---- 代码根操作 ----
+
+    def add_code_root(self, name: str, raw_path: str) -> dict:
+        """添加代码根：校验 → 查重 → 路径验证 → 写盘 → 重载。
+
+        返回 {"ok": True/False, ...} 响应体。
+        """
+        import re
+        from pathlib import Path as _P
+        from .config_writer import update_code_roots
+
+        if not name or not raw_path:
+            return {"ok": False, "error": "name 和 path 不能为空"}
+        # C3：名称白名单（XSS 防线）
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", name):
+            return {"ok": False,
+                    "error": "项目根名称仅限字母/数字/_/-（≤40 字符）"}
+        # 查重
+        all_roots = list(self._data.get("code_roots", []))
+        if any(r["name"] == name for r in all_roots
+               if r.get("workspace", self.workspaces()[0].slug) == self.workspace.slug):
+            return {"ok": False, "error": f"项目根已存在: {name}"}
+        # 路径验证
+        p = _P(raw_path) if _P(raw_path).is_absolute() else (WEB_ROOT / raw_path).resolve()
+        if not p.is_dir():
+            return {"ok": False, "error": f"目录不存在: {raw_path}"}
+        # 写盘
+        new_roots = all_roots + [{"name": name, "path": raw_path,
+                                  "workspace": self.workspace.slug}]
+        try:
+            update_code_roots(self.path, new_roots)
+            self.reload()
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:200]}
+        return {"ok": True}
+
+    def delete_code_root(self, name: str) -> dict:
+        """删除代码根：过滤 → 写盘 → 重载。返回响应体。"""
+        from .config_writer import update_code_roots
+
+        all_roots = list(self._data.get("code_roots", []))
+        slug = self.workspace.slug
+        new_roots = [r for r in all_roots
+                     if not (r["name"] == name and r.get("workspace", slug) == slug)]
+        if len(new_roots) == len(all_roots):
+            return {"ok": False, "error": f"项目根不存在: {name}"}
+        try:
+            update_code_roots(self.path, new_roots)
+            self.reload()
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:200]}
+        return {"ok": True}
+
 
 _config: ConfigService | None = None
 
