@@ -180,6 +180,14 @@
           <input id="ctx-ratio" type="number" min="0.5" max="0.95" step="0.05"></div>
         <div class="ctx-preview" id="ctx-preview"></div>
       </fieldset>
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid #eee;">
+        <h3 style="font-size:14px;color:#666;margin-bottom:8px;">MCP Server</h3>
+        <p style="font-size:12px;color:#999;">MCP Client 已就绪。在 settings.toml 的 [[mcp.servers]] 中配置 server，enabled=true 即可启用。</p>
+      </div>
+      <div style="margin-top:12px;padding-top:16px;border-top:1px solid #eee;">
+        <h3 style="font-size:14px;color:#666;margin-bottom:8px;">Plugin / Skill</h3>
+        <p style="font-size:12px;color:#999;">Plugin 系统已就绪。通过 pip install 安装插件，在 settings.toml [plugins] enabled 中授权。</p>
+      </div>
       <div id="llm-status"></div>
     </div>
     <div class="modal-foot">
