@@ -52,6 +52,40 @@ class TextIn(BaseModel):
     text: str
 
 
+def _analyze_images_in_message(text: str, deps: "Deps") -> str:
+    """检测消息中的图片引用并调用 VisionService 分析，将结果注入消息文本。"""
+    import re
+    from pathlib import Path
+    image_pattern = r'(?:!\[([^\]]*)\]|\[([^\]]*)\])\((/uploads/[^)]+\.(?:png|jpe?g|gif|webp))\)'
+    matches = re.findall(image_pattern, text, re.IGNORECASE)
+    if not matches:
+        return text
+    from ..services.vision_service import VisionService
+    from ..services.upload_service import UploadService
+    vision = VisionService(deps.config)
+    upload_svc = UploadService(config=deps.config)
+    descriptions = []
+    for alt1, alt2, img_url in matches:
+        alt = alt1 or alt2 or ""
+        try:
+            # /uploads/xxx.png → 解析到实际文件路径
+            filename = img_url.split("/")[-1]
+            file_id = Path(filename).stem
+            file_path = upload_svc.get_file_path(file_id)
+            if file_path is None:
+                continue
+            result = vision.analyze_image(file_path)
+            if result and result.analysis:
+                descriptions.append(f"[图片分析: {result.analysis}]")
+            else:
+                descriptions.append(f"[图片: {alt}]")
+        except Exception:
+            descriptions.append(f"[图片: {alt}]")
+    if descriptions:
+        return text + "\n\n" + "\n".join(descriptions)
+    return text
+
+
 def _build_tool_context(deps: Deps) -> "ToolContext":
     """chat 路径的完整工具上下文（含 LLM 档工具依赖；M5c 审查修复 R1）。"""
     from ..engine.tool_registry import ToolContext
@@ -124,7 +158,7 @@ class LLMStreamer:
             return None, None  # 预取是增强不是闸门：任何异常静默降级
 
     def stream(self, session, instruction: str, sop_card: str = "",
-               allow_actions: bool = False):
+               allow_actions: bool = False, readonly_actions: bool = False):
         card_text = (CommandHandler.read_sop_card(self._deps, sop_card)
                      if sop_card else "")
         cm = ContextManager(self._deps)
@@ -145,7 +179,8 @@ class LLMStreamer:
         ctx = _build_tool_context(self._deps)
         loop = ToolUseLoop(self._deps.config, self._deps.llm, ctx.browser,
                            ctx.materials, registry=build_default_registry(),
-                           tool_context=ctx, allow_actions=allow_actions)
+                           tool_context=ctx, allow_actions=allow_actions,
+                           readonly_actions=readonly_actions)
         if event:
             yield sse(event)
         self.est_prompt = cm._est_messages(messages)
@@ -179,6 +214,11 @@ def chat(body: TextIn):
     def _flow():
         session = deps.session_store.load()
         text = body.text.strip()
+        # 图片分析：检测图片引用并调用 VisionService
+        try:
+            text = _analyze_images_in_message(text, deps)
+        except Exception:
+            pass  # 图片分析失败不阻断
         engine = build_turn_engine(session, deps, tutor=orch)
         instruction = engine.instruction_for(session, text)
         session.chat_history.append({"role": "user", "content": text})
@@ -187,7 +227,8 @@ def chat(body: TextIn):
         try:
             yield from streamer.stream(
                 session, instruction,
-                allow_actions=isinstance(engine, PlannerEngine))
+                allow_actions=isinstance(engine, PlannerEngine),
+                readonly_actions=not isinstance(engine, PlannerEngine))
         except Exception as e:
             deps.session_store.save(session)
             yield sse({"type": "error", "content": f"LLM 调用失败：{e}"})
@@ -274,7 +315,9 @@ def command(body: TextIn):
             streamer = LLMStreamer(deps)
             try:
                 session.chat_history.append({"role": "user", "content": body.text})
-                yield from streamer.stream(session, result.llm_instruction, sop)
+                yield from streamer.stream(
+                    session, result.llm_instruction, sop,
+                    readonly_actions=True)
             except Exception as e:
                 deps.session_store.save(snapshot)
                 yield sse({"type": "error", "content": f"LLM 调用失败：{e}"})

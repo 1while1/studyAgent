@@ -93,7 +93,8 @@ class ToolUseLoop:
                  browser: CodeBrowser, materials: MaterialsService | None = None,
                  registry: ToolRegistry | None = None,
                  tool_context: ToolContext | None = None,
-                 allow_actions: bool = False):
+                 allow_actions: bool = False,
+                 readonly_actions: bool = False):
         self._config = config
         self._llm = llm
         self._browser = browser
@@ -102,6 +103,7 @@ class ToolUseLoop:
             config=config, browser=browser, materials=materials)
         self._registry = registry or build_default_registry()
         self._allow_actions = allow_actions
+        self._readonly_actions = readonly_actions
         self.text: str = ""  # 最终文本（不含标记行），供落 chat_history
         self.usage: dict | None = None  # 最后一轮的实测 usage（M8 上下文账本）
 
@@ -116,7 +118,8 @@ class ToolUseLoop:
             pending_read = None  # 本轮回合截获的标记
             for ev in self._stream_round(
                     convo, allow_read=reads < max_reads,
-                    allow_action=self._allow_actions
+                    allow_action=(self._allow_actions
+                                  or self._readonly_actions)
                     and actions < max_actions):
                 if ev["type"] == "delta":
                     self.text += ev["content"]
@@ -278,9 +281,22 @@ class ToolUseLoop:
                     yield {"type": "delta", "content": token, "_rest": rest}
                     return  # 无法解析：按普通文本下发
                 if allow_action:
-                    yield {"type": "_marker", "kind": "action", "raw": raw}
-                    return
-                buf = rest  # 超限静默丢弃，继续扫描后续内容
+                    if self._allow_actions or not self._readonly_actions:
+                        yield {"type": "_marker", "kind": "action",
+                               "raw": raw}
+                        return
+                    # readonly 模式：只允许 READONLY 权限工具
+                    try:
+                        payload = json.loads(raw)
+                        action_name = payload.get("action", "")
+                        spec = self._registry.get(action_name)
+                        if spec and spec.permission == "readonly":
+                            yield {"type": "_marker", "kind": "action",
+                                   "raw": raw}
+                            return
+                    except Exception:
+                        pass
+                buf = rest  # 超限/非只读工具：静默丢弃，继续扫描后续内容
                 continue
             j = buf.find("]", i + len(prefix))
             if j == -1:

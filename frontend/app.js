@@ -13,9 +13,24 @@ const scrollBtn = document.getElementById("scroll-bottom");
 // 片段提问消息 → 紧凑卡片（模型仍收到完整代码，仅显示折叠）
 const SNIPPET_RE = /^`(.+?:L\d+(?:-L\d+)?)`\s*```(\w*)\s*\n?([\s\S]*?)\n?```\s*(?:我的问题：)?([\s\S]*)$/;
 
+// 图片 markdown 正则：[alt](/uploads/xxx.png)
+const IMG_MD_RE = /!\[([^\]]*)\]\((\/uploads\/[^)]+)\)/g;
+const IMG_LINK_RE = /\[([^\]]*)\]\((\/uploads\/[^)]+\.(?:png|jpe?g|gif|webp))\)/gi;
+
 function addUserMessage(text) {
   const m = text.match(SNIPPET_RE);
-  if (!m) { addMessage("user", text); return; }
+  if (!m) {
+    // 检测是否包含图片引用，渲染图片预览
+    const hasImage = IMG_MD_RE.test(text) || IMG_LINK_RE.test(text);
+    IMG_MD_RE.lastIndex = 0;
+    IMG_LINK_RE.lastIndex = 0;
+    if (hasImage) {
+      _addUserMessageWithImages(text);
+    } else {
+      addMessage("user", text);
+    }
+    return;
+  }
   const [, ref, lang, code, question] = m;
   const div = document.createElement("div");
   div.className = "msg user";
@@ -29,6 +44,39 @@ function addUserMessage(text) {
     <div class="snippet-q">${question.trim() ? escapeHtml(question.trim()) : "（未补充问题）"}</div>`;
   bubble.querySelector("code").textContent = code;
   hljs.highlightElement(bubble.querySelector("code"));
+  div.appendChild(bubble);
+  messagesEl.appendChild(div);
+  scrollToBottom();
+}
+
+// 渲染含图片预览的用户消息
+function _addUserMessageWithImages(text) {
+  const div = document.createElement("div");
+  div.className = "msg user";
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
+  // 提取并渲染图片
+  const combined = new RegExp(IMG_MD_RE.source + "|" + IMG_LINK_RE.source, "gi");
+  let lastIdx = 0;
+  let html = "";
+  let m;
+  while ((m = combined.exec(text)) !== null) {
+    // 渲染图片前的文本
+    if (m.index > lastIdx) {
+      const before = text.slice(lastIdx, m.index).trim();
+      if (before) html += `<div class="message-text">${escapeHtml(before)}</div>`;
+    }
+    const alt = m[1] || m[3] || "";
+    const url = m[2] || m[4] || "";
+    if (url) {
+      html += `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" style="max-width:300px;border-radius:8px;margin:4px 0;display:block;" />`;
+    }
+    lastIdx = m.index + m[0].length;
+  }
+  // 渲染剩余文本
+  const rest = text.slice(lastIdx).trim();
+  if (rest) html += `<div class="message-text">${escapeHtml(rest)}</div>`;
+  bubble.innerHTML = html;
   div.appendChild(bubble);
   messagesEl.appendChild(div);
   scrollToBottom();
@@ -1274,11 +1322,16 @@ async function handleFileUpload(file) {
       showToast(data.error || "上传失败");
       return;
     }
-    // 在输入框插入文件引用
+    // 在输入框插入文件引用（图片用 ![]() 语法，其他用 []() 语法）
     const ref = data.filename || data.name || file.name;
     const url = data.url || data.path || "";
+    const isImage = file.type && file.type.startsWith("image/");
     const prefix = inputEl.value ? " " : "";
-    inputEl.value += `${prefix}[${ref}](${url}) `;
+    if (isImage) {
+      inputEl.value += `${prefix}![${ref}](${url}) `;
+    } else {
+      inputEl.value += `${prefix}[${ref}](${url}) `;
+    }
     autosizeInput();
     inputEl.focus();
     showToast(`✅ 已上传：${ref}`);

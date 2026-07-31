@@ -78,6 +78,10 @@ class PromptBuilder:
             "读取失败时按系统注入的候选修正，仍失败则跳过并如实告知，禁止编造内容。",
             "8. 讲架构、流程、时序、状态流转时，优先用 ```mermaid 代码块画图"
             "（flowchart / sequenceDiagram / stateDiagram），前端会渲染成图，图比长段文字更直观。",
+            "9. 需要查询互联网最新信息时，用 ACTION 标记调用 web_search 工具："
+            "**独立一行**输出 `[ACTION:{\"action\":\"web_search\",\"args\":{\"query\":\"搜索词\"},"
+            "\"reason\":\"一句话理由\"}]`，输出标记后立即停止该段回复，"
+            "系统会执行搜索并把结果注入给你继续。禁止编造搜索结果。",
             "",
         ]
         project = _project_structure(cfg)

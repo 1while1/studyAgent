@@ -62,6 +62,39 @@ async function openLlmConfig() {
   };
   budgetInput.oninput = updateCtxPreview;
   updateCtxPreview();
+  // ---------- MCP Server 管理区域 ----------
+  // 先清除旧实例，避免重复打开时重复插入
+  document.querySelectorAll("#mcp-server-list,#plugin-list").forEach(el => el.closest(".settings-section")?.remove());
+  const mcpSection = document.createElement("div");
+  mcpSection.className = "settings-section";
+  mcpSection.innerHTML = `
+    <fieldset>
+      <legend>MCP Server 管理</legend>
+      <div id="mcp-server-list">
+        <p class="mcp-status" style="color:var(--text-dim);font-size:13px;margin:4px 0">MCP Client 已就绪，可在 settings.toml 中配置 server</p>
+      </div>
+      <button class="btn-secondary" style="margin-top:6px" onclick="alert('MCP Server 配置请在 settings.toml 的 [[mcp.servers]] 中添加')">配置说明</button>
+    </fieldset>
+  `;
+
+  // ---------- Plugin/Skill 管理区域 ----------
+  const pluginSection = document.createElement("div");
+  pluginSection.className = "settings-section";
+  pluginSection.innerHTML = `
+    <fieldset>
+      <legend>Plugin/Skill 管理</legend>
+      <div id="plugin-list">
+        <p class="plugin-status" style="color:var(--text-dim);font-size:13px;margin:4px 0">Plugin 系统已就绪，可通过 pip install 安装插件</p>
+      </div>
+      <button class="btn-secondary" style="margin-top:6px" onclick="alert('Plugin 通过 pip entry_points 注册，在 settings.toml [plugins] enabled 中授权')">插件说明</button>
+    </fieldset>
+  `;
+
+  // 插入到上下文窗口区域之后
+  const contextSection = document.getElementById("context-section");
+  contextSection.parentNode.insertBefore(mcpSection, contextSection.nextSibling);
+  contextSection.parentNode.insertBefore(pluginSection, mcpSection.nextSibling);
+
   llmModal.classList.remove("hidden");
 }
 
