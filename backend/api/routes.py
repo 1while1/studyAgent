@@ -219,6 +219,27 @@ def chat(body: TextIn):
             text = _analyze_images_in_message(text, deps)
         except Exception:
             pass  # 图片分析失败不阻断
+        # Web 搜索快捷方式：检测 web_search: 前缀，自动执行搜索并注入结果
+        search_context = ""
+        if text.lower().startswith("web_search:"):
+            query = text[len("web_search:"):].strip()
+            if query:
+                try:
+                    from ..services.web_search_service import WebSearchService
+                    svc = WebSearchService(deps.config)
+                    results = svc.search(query, top_k=5)
+                    if results:
+                        lines = [f"Web 搜索「{query}」的结果："]
+                        for i, r in enumerate(results, 1):
+                            lines.append(f"{i}. {r.title}\n   {r.url}\n   {r.snippet}")
+                        search_context = "\n".join(lines)
+                    else:
+                        search_context = f"Web 搜索「{query}」未找到结果。"
+                except Exception:
+                    search_context = f"Web 搜索「{query}」执行失败。"
+                if search_context:
+                    # 将搜索结果作为系统注入附加到用户消息
+                    text = f"{text}\n\n【系统注入】{search_context}\n请基于以上搜索结果回答用户的问题。"
         engine = build_turn_engine(session, deps, tutor=orch)
         instruction = engine.instruction_for(session, text)
         session.chat_history.append({"role": "user", "content": text})

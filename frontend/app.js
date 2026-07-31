@@ -1128,10 +1128,16 @@ function dismissSuggestionCard(card) {
     setTimeout(function() { if (card.parentNode) card.remove(); }, 350);
 }
 
-function adoptTeachingSuggestion(action) {
+function adoptTeachingSuggestion(action, ev) {
     const mapped = actionCommands.hasOwnProperty(action) ? actionCommands[action] : null;
-    // 动画移除卡片
-    const card = event.target.closest('.teaching-suggestion-card');
+    // 动画移除卡片（通过事件参数定位，避免依赖 window.event）
+    let card = null;
+    if (ev && ev.target) {
+        card = ev.target.closest('.teaching-suggestion-card');
+    } else {
+        // 兜底：查找页面中唯一的建议卡片
+        card = document.querySelector('.teaching-suggestion-card');
+    }
     if (card) dismissSuggestionCard(card);
     if (mapped === null || mapped === undefined) return;  // REST：仅视觉弱化
     if (mapped.startsWith('[')) {
@@ -1160,7 +1166,7 @@ function renderTeachingSuggestion(container, ev) {
         <div class="suggestion-title">${escapeHtml(labels[data.action] || data.action)}</div>
         ${data.reason ? `<div class="suggestion-reason">${escapeHtml(data.reason)}</div>` : ''}
         <div class="suggestion-actions">
-            <button class="suggestion-btn adopt" onclick="adoptTeachingSuggestion('${data.action}')">采纳</button>
+            <button class="suggestion-btn adopt" onclick="adoptTeachingSuggestion('${data.action}', event)">采纳</button>
             <button class="suggestion-btn skip" onclick="dismissSuggestionCard(this.closest('.teaching-suggestion-card'))">跳过</button>
         </div>
     `;
